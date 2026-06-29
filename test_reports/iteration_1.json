@@ -1,0 +1,52 @@
+{
+  "summary": "End-to-end backend + UI smoke test for CineReel AI. 30/31 backend pytest cases passing. Confirmed signup → dashboard → new project → project-detail flow works end-to-end. Two real backend issues found: (1) ElevenLabs TTS fails because the provided ELEVENLABS_API_KEY is a FREE-tier key, the API returns 402 'paid_plan_required: Free users cannot use library voices via the API.' (2) Gemini scene-image generation is broken: model 'gemini-2.5-flash-image-preview' returns 404 NotFound from Google ('not found for API version v1beta'). The endpoint correctly returns a warning instead of 500, but the actual feature does not work. Also flagged: /ai endpoints can return raw 500 when emergentintegrations raises ChatError (e.g. budget exceeded) — they should wrap and return 502 like /ai/tts does.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "/api/ai/tts", "issue": "Returns 502 because ELEVENLABS_API_KEY is a free-tier key. ElevenLabs API responds 402 paid_plan_required: 'Free users cannot use library voices via the API. Please upgrade your subscription to use this voice.' Either upgrade key, or supply user-cloned/custom voice IDs.", "priority": "CRITICAL"},
+      {"endpoint": "/api/ai/scene-image", "issue": "Underlying Gemini model 'gemini-2.5-flash-image-preview' returns 404 NotFound ('not supported for generateContent'). Image generation does not actually work — every call returns image_url=null with warning. Update model name (e.g. 'gemini-2.5-flash-image' / 'gemini-2.0-flash-exp-image-generation') in /app/backend/ai_services.py.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "/api/ai/ctas", "issue": "Returned 500 once (Emergent LLM budget exceeded - 'Budget has been exceeded! Current cost: 0.019116, Max budget: 0.001'). Endpoint should catch emergentintegrations.llm.chat.ChatError and return 502 like /ai/tts does. Same applies to /ai/script, /ai/hooks, /ai/ad-ideas which currently propagate as 500."},
+      {"endpoint": "/api/catalog/voices", "issue": "Voices use field 'id' (not 'voice_id' as some docs/tests assumed). Confirm field name in API contract; frontend uses voice.id correctly."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "DashboardLayout sidebar", "issue": "Sidebar nav links DO NOT have the data-testid attributes referenced in the review_request (sidebar-projects, sidebar-script, sidebar-voice, sidebar-scene, sidebar-templates, sidebar-brand-kit, sidebar-assets, sidebar-credits, sidebar-settings). All returned not-found in DOM. Add data-testid to each sidebar <Link> for automated testing.", "selector": "[data-testid^='sidebar-']", "priority": "MEDIUM"},
+      {"component": "ProjectDetail voice-select", "issue": "React hydration warning: <span> placed inside <option> (the static-import/var instrumentation wraps the option text in a span, which is invalid HTML). Console error logged on every project detail load.", "selector": "[data-testid='voice-select'] option", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Generate voiceover (project detail)", "issue": "Will fail with 502 in UI because backend TTS fails (free-tier ElevenLabs key)", "affected_selectors": ["[data-testid='gen-voice']"]},
+      {"flow": "Generate storyboard (project detail)", "issue": "Will produce scene tiles with null image_url (placeholders only) because Gemini image model is 404", "affected_selectors": ["[data-testid='gen-scenes']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_cinereel_backend.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Replace ELEVENLABS_API_KEY with a paid-tier key (or pre-clone voices to user library) so /api/ai/tts works",
+    "Fix Gemini image model name in /app/backend/ai_services.py — 'gemini-2.5-flash-image-preview' no longer exists; try 'gemini-2.5-flash-image' or the current Nano Banana model id",
+    "Wrap LlmChat.send_message calls in try/except (ChatError) for /ai/script, /ai/hooks, /ai/ctas, /ai/ad-ideas — return 502 with friendly message instead of raw 500 (refund credits on failure)",
+    "Add data-testid attributes to sidebar links in /app/frontend/src/pages/DashboardLayout.jsx (sidebar-projects, sidebar-script, sidebar-voice, sidebar-scene, sidebar-templates, sidebar-brand-kit, sidebar-assets, sidebar-credits, sidebar-settings)",
+    "Fix hydration error in voice-select <option> rendering in ProjectDetail.jsx (remove dynamic span wrapper inside option text, or render plain string)"
+  ],
+  "critical_code_review_comments": [
+    "_charge_credits deducts credits BEFORE the AI call. If the AI call throws, the user is charged but gets nothing. Add try/except in /ai/* handlers that refunds on failure.",
+    "Pydantic EmailStr rejects .test TLD — production users with corporate emails will work, but be aware that test domains fail.",
+    "Frontend /signup heading still says 'Sign in to direct your next viral reel.' — should say 'Sign up' or 'Create your account' to match the active tab.",
+    "/api/catalog/assets returns a dict ({images, music, icons, stickers}) while other catalogs return lists. Inconsistent shape — consider normalising or documenting clearly.",
+    "Default admin password 'admin12345' is committed in code — fine for MVP but flag for production hardening."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_cinereel_backend.py (NEW)"
+  ],
+  "success_rate": {"backend": "97% (30/31 — TTS fails due to free-tier ElevenLabs key)", "frontend": "85% (landing + signup + dashboard + new-project + project-detail all load and navigate; missing sidebar testids; voiceover/storyboard generation will not produce real assets due to backend)"},
+  "test_credentials": "Admin: admin@cinereel.ai / admin12345. Test users created on-the-fly via /api/auth/signup with @example.com emails (uitest_*@example.com).",
+  "seed_data_creation": "Each test run creates throw-away users via signup; admin user auto-created at backend startup. No additional seed data needed.",
+  "retest_needed": true,
+  "main_agent_can_self_test": false,
+  "context_for_next_testing_agent": "Use BASE_URL from REACT_APP_BACKEND_URL. Run pytest with -n 0 (or remove pytest-xdist) — the addopts in /app/backend/pytest.ini forces -n 2 --dist loadscope which still works. For email-based signups, use @example.com (Pydantic rejects @cinereel.test). Voices use key 'id' not 'voice_id'. /catalog/assets returns dict not list. TTS will keep failing until ELEVENLABS_API_KEY is upgraded. Scene image will keep returning null until the gemini model id is fixed. The frontend signup→dashboard→new-project→project-detail flow works end-to-end (testids: name-input, email-input, password-input, landing-page, project-title, type-*, ratio-*, gen-script, gen-voice, gen-scenes, voice-select). Sidebar testids are NOT in DOM despite review_request claiming they exist.",
+  "rca of the issue": "TTS 502: ELEVENLABS_API_KEY in /app/backend/.env (6e4126a0...) is a free-tier key. Backend log shows: status_code: 402, body: {'detail': {'type': 'payment_required', 'code': 'paid_plan_required', 'message': 'Free users cannot use library voices via the API. Please upgrade your subscription to use this voice.'}}. Reproduction: POST /api/ai/tts with any library voice_id (e.g. 9BWtsMINqrJLrRacOk9x Aria). Mitigation: (a) upgrade ElevenLabs plan, or (b) clone all voices into the account's library via the ElevenLabs dashboard so they're no longer 'library voices' from the free-tier API's perspective, or (c) accept a user-supplied custom voice_id. Scene image 404: Google deprecated 'gemini-2.5-flash-image-preview'. Update ai_services.generate_scene_image to use the current image-capable Gemini model identifier (check https://ai.google.dev/gemini-api/docs/models for current names)."
+}
