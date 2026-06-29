@@ -858,48 +858,69 @@ async def on_startup():
         logging.info("Default admin created: admin@cinereel.ai / admin12345")
     await db.projects.create_index("user_id")
     await db.user_sessions.create_index("session_token", unique=True)
-    # Background migration so startup is never blocked (large legacy data must not stall health-checks).
-    asyncio.create_task(_migrate_legacy_base64_to_disk())
+    # Background migration — completely opt-in to keep production startup bullet-proof
+    if os.environ.get("RUN_LEGACY_MIGRATION", "0") == "1":
+        asyncio.create_task(_migrate_legacy_base64_to_disk())
 
 
 async def _migrate_legacy_base64_to_disk():
-    cur = db.projects.find(
-        {"$or": [
-            {"audio_url": {"$regex": "^data:"}},
-            {"thumbnail": {"$regex": "^data:"}},
-            {"scenes.image_url": {"$regex": "^data:"}},
-        ]},
-        {"project_id": 1, "user_id": 1, "scenes": 1, "audio_url": 1, "thumbnail": 1},
-    )
-    converted = 0
-    async for p in cur:
-        update = {}
-        if isinstance(p.get("audio_url"), str) and p["audio_url"].startswith("data:"):
-            new_url = save_audio_data_uri(p["audio_url"])
-            if new_url:
-                update["audio_url"] = new_url
-        if isinstance(p.get("thumbnail"), str) and p["thumbnail"].startswith("data:"):
-            new_url = save_data_uri(p["thumbnail"])
-            if new_url:
-                update["thumbnail"] = new_url
-        scenes = p.get("scenes") or []
-        new_scenes = []
-        scenes_changed = False
-        for sc in scenes:
-            img = sc.get("image_url") or ""
-            if img.startswith("data:"):
-                u = save_data_uri(img)
-                if u:
-                    sc = {**sc, "image_url": u}
-                    scenes_changed = True
-            new_scenes.append(sc)
-        if scenes_changed:
-            update["scenes"] = new_scenes
-        if update:
-            await db.projects.update_one({"_id": p["_id"]}, {"$set": update})
-            converted += 1
-    if converted:
-        logging.info(f"Migrated {converted} legacy projects from base64 to disk-backed assets.")
+    """Background migration: move heavy base64 fields out of project docs to disk.
+    Streams one project at a time and yields to the event loop between writes so it
+    never spikes memory or blocks health-checks."""
+    try:
+        # Only iterate the IDs first — keep memory tiny
+        cur = db.projects.find(
+            {"$or": [
+                {"audio_url": {"$regex": "^data:"}},
+                {"thumbnail": {"$regex": "^data:"}},
+                {"scenes.image_url": {"$regex": "^data:"}},
+            ]},
+            {"_id": 1},
+        )
+        ids = [doc["_id"] async for doc in cur]
+        converted = 0
+        for _id in ids:
+            await asyncio.sleep(0.5)  # yield + throttle
+            try:
+                p = await db.projects.find_one(
+                    {"_id": _id},
+                    {"project_id": 1, "scenes": 1, "audio_url": 1, "thumbnail": 1},
+                )
+                if not p:
+                    continue
+                update = {}
+                if isinstance(p.get("audio_url"), str) and p["audio_url"].startswith("data:"):
+                    u = save_audio_data_uri(p["audio_url"])
+                    if u:
+                        update["audio_url"] = u
+                if isinstance(p.get("thumbnail"), str) and p["thumbnail"].startswith("data:"):
+                    u = save_data_uri(p["thumbnail"])
+                    if u:
+                        update["thumbnail"] = u
+                scenes = p.get("scenes") or []
+                new_scenes = []
+                scenes_changed = False
+                for sc in scenes:
+                    img = sc.get("image_url") or ""
+                    if img.startswith("data:"):
+                        u = save_data_uri(img)
+                        if u:
+                            sc = {**sc, "image_url": u}
+                            scenes_changed = True
+                    new_scenes.append(sc)
+                    await asyncio.sleep(0)  # yield between scenes
+                if scenes_changed:
+                    update["scenes"] = new_scenes
+                if update:
+                    await db.projects.update_one({"_id": _id}, {"$set": update})
+                    converted += 1
+            except Exception as e:
+                logging.warning(f"[migration] skipped {_id}: {e}")
+                continue
+        if converted:
+            logging.info(f"Migrated {converted} legacy projects from base64 to disk-backed assets.")
+    except Exception:
+        logging.exception("[migration] aborted")
 
 
 @app.on_event("shutdown")
