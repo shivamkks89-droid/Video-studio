@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Sparkles, Loader2, Copy } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Sparkles, Loader2, Copy, Film } from "lucide-react";
 import { api } from "../lib/api";
 import { toast } from "sonner";
 
