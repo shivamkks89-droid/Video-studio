@@ -587,7 +587,19 @@ async def list_projects(request: Request, folder: Optional[str] = None):
     q = {"user_id": user.user_id}
     if folder:
         q["folder"] = folder
-    items = await db.projects.find(q, {"_id": 0}).sort("updated_at", -1).to_list(200)
+    # Only return summary fields — never embed scenes/script/audio in the list response
+    projection = {
+        "_id": 0, "project_id": 1, "title": 1, "video_type": 1, "language": 1,
+        "aspect_ratio": 1, "resolution": 1, "fps": 1, "duration_sec": 1,
+        "status": 1, "thumbnail": 1, "video_url": 1, "folder": 1,
+        "created_at": 1, "updated_at": 1,
+    }
+    items = await db.projects.find(q, projection).sort("updated_at", -1).to_list(200)
+    # Coerce any leftover base64 thumbnail to a small placeholder so the list response stays tiny
+    for it in items:
+        thumb = it.get("thumbnail") or ""
+        if thumb.startswith("data:") and len(thumb) > 500:
+            it["thumbnail"] = None
     return items
 
 
@@ -798,6 +810,48 @@ async def on_startup():
         logging.info("Default admin created: admin@cinereel.ai / admin12345")
     await db.projects.create_index("user_id")
     await db.user_sessions.create_index("session_token", unique=True)
+    # One-shot migration: move heavy base64 fields out of project documents to disk.
+    await _migrate_legacy_base64_to_disk()
+
+
+async def _migrate_legacy_base64_to_disk():
+    cur = db.projects.find(
+        {"$or": [
+            {"audio_url": {"$regex": "^data:"}},
+            {"thumbnail": {"$regex": "^data:"}},
+            {"scenes.image_url": {"$regex": "^data:"}},
+        ]},
+        {"project_id": 1, "user_id": 1, "scenes": 1, "audio_url": 1, "thumbnail": 1},
+    )
+    converted = 0
+    async for p in cur:
+        update = {}
+        if isinstance(p.get("audio_url"), str) and p["audio_url"].startswith("data:"):
+            new_url = save_audio_data_uri(p["audio_url"])
+            if new_url:
+                update["audio_url"] = new_url
+        if isinstance(p.get("thumbnail"), str) and p["thumbnail"].startswith("data:"):
+            new_url = save_data_uri(p["thumbnail"])
+            if new_url:
+                update["thumbnail"] = new_url
+        scenes = p.get("scenes") or []
+        new_scenes = []
+        scenes_changed = False
+        for sc in scenes:
+            img = sc.get("image_url") or ""
+            if img.startswith("data:"):
+                u = save_data_uri(img)
+                if u:
+                    sc = {**sc, "image_url": u}
+                    scenes_changed = True
+            new_scenes.append(sc)
+        if scenes_changed:
+            update["scenes"] = new_scenes
+        if update:
+            await db.projects.update_one({"_id": p["_id"]}, {"$set": update})
+            converted += 1
+    if converted:
+        logging.info(f"Migrated {converted} legacy projects from base64 to disk-backed assets.")
 
 
 @app.on_event("shutdown")
