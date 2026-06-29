@@ -33,8 +33,12 @@ from ai_services import (
     AIServiceError, generate_ctas, generate_hooks, generate_scene_image,
     generate_script, list_voices, suggest_ad_ideas, synthesize_speech,
 )
-from audio_store import save_audio_data_uri, audio_url_to_path
-from image_store import save_data_uri, url_to_disk_path, IMG_DIR
+from asset_store import (
+    save_image_data_uri as save_image_persistent,
+    save_audio_data_uri as save_audio_persistent,
+    fetch_to_bytes as fetch_asset_bytes,
+)
+from object_storage import init_storage as init_objstore
 from openai_tts import synthesize_openai_tts
 from scraper import scrape as scrape_query, to_script_context
 from video_renderer import STATIC_DIR, render_video
@@ -408,13 +412,13 @@ async def ai_tts(body: TTSRequest, request: Request):
     result = await synthesize_speech(body.text, body.voice_id, body.stability,
                                      body.similarity_boost, body.style)
     if result.get("audio_url"):
-        url = save_audio_data_uri(result["audio_url"]) or result["audio_url"]
+        url = await save_audio_persistent(result["audio_url"]) or result["audio_url"]
         return {"audio_url": url, "provider": "elevenlabs",
                 "credits_left": user.credits}
     # Fallback: OpenAI TTS via Emergent LLM key
     fb = await synthesize_openai_tts(body.text, style="default")
     if fb.get("audio_url"):
-        url = save_audio_data_uri(fb["audio_url"]) or fb["audio_url"]
+        url = await save_audio_persistent(fb["audio_url"]) or fb["audio_url"]
         return {"audio_url": url, "provider": "openai",
                 "voice": fb.get("voice"), "credits_left": user.credits,
                 "note": "ElevenLabs voice unavailable — used OpenAI HD voice."}
@@ -440,7 +444,7 @@ async def ai_tts_openai(body: OpenAITTSReq, request: Request):
         await _refund(user, cost, "tts_openai")
         return {"audio_url": None, "error": result["error"], "refunded": True,
                 "credits_left": user.credits}
-    url = save_audio_data_uri(result["audio_url"]) or result["audio_url"]
+    url = await save_audio_persistent(result["audio_url"]) or result["audio_url"]
     return {"audio_url": url, "voice": result.get("voice"),
             "provider": "openai", "credits_left": user.credits}
 
@@ -455,7 +459,7 @@ async def ai_scene_image(body: SceneImageRequest, request: Request):
         await _refund(user, 3, "scene_image")
         return {"image_url": None, "credits_left": user.credits,
                 "warning": "Image generation unavailable — credits refunded."}
-    url = save_data_uri(img) or img
+    url = await save_image_persistent(img) or img
     return {"image_url": url, "credits_left": user.credits}
 
 
@@ -472,7 +476,7 @@ async def _fetch_as_data_uri(url: str) -> Optional[str]:
             mime = r.headers.get("content-type", "image/jpeg").split(";")[0]
             import base64 as _b64
             data_uri = f"data:{mime};base64,{_b64.b64encode(r.content).decode()}"
-            return save_data_uri(data_uri) or data_uri
+            return (await save_image_persistent(data_uri)) or data_uri
     except Exception:
         return None
 
@@ -537,7 +541,7 @@ async def ai_storyboard(body: StoryboardRequest, request: Request):
             )
             img = await generate_scene_image(full, body.aspect_ratio)
             if img:
-                img = save_data_uri(img) or img
+                img = (await save_image_persistent(img)) or img
                 source_tag = "ai"
 
         if not img:
@@ -858,6 +862,11 @@ async def on_startup():
         logging.info("Default admin created: admin@cinereel.ai / admin12345")
     await db.projects.create_index("user_id")
     await db.user_sessions.create_index("session_token", unique=True)
+    # Initialize object storage (non-fatal)
+    try:
+        await init_objstore()
+    except Exception as e:
+        logging.warning(f"objstore init failed: {e}")
     # Background migration — completely opt-in to keep production startup bullet-proof
     if os.environ.get("RUN_LEGACY_MIGRATION", "0") == "1":
         asyncio.create_task(_migrate_legacy_base64_to_disk())
@@ -890,11 +899,11 @@ async def _migrate_legacy_base64_to_disk():
                     continue
                 update = {}
                 if isinstance(p.get("audio_url"), str) and p["audio_url"].startswith("data:"):
-                    u = save_audio_data_uri(p["audio_url"])
+                    u = await save_audio_persistent(p["audio_url"])
                     if u:
                         update["audio_url"] = u
                 if isinstance(p.get("thumbnail"), str) and p["thumbnail"].startswith("data:"):
-                    u = save_data_uri(p["thumbnail"])
+                    u = await save_image_persistent(p["thumbnail"])
                     if u:
                         update["thumbnail"] = u
                 scenes = p.get("scenes") or []
@@ -903,7 +912,7 @@ async def _migrate_legacy_base64_to_disk():
                 for sc in scenes:
                     img = sc.get("image_url") or ""
                     if img.startswith("data:"):
-                        u = save_data_uri(img)
+                        u = await save_image_persistent(img)
                         if u:
                             sc = {**sc, "image_url": u}
                             scenes_changed = True
@@ -931,8 +940,26 @@ async def on_shutdown():
 # ---------- mount ----------
 app.include_router(api)
 
-# Serve rendered videos under /api/files/videos/...
-app.mount("/api/files", StaticFiles(directory=str(STATIC_DIR.parent)), name="files")
+# Serve files: try local disk first, fallback to object storage (persistent across pod restarts).
+from fastapi import Path as FPath
+from asset_store import url_kind_and_path  # noqa: E402
+
+@app.get("/api/files/{kind}/{filename}")
+async def serve_file(kind: str, filename: str):
+    if kind not in ("images", "audio", "videos"):
+        raise HTTPException(status_code=404, detail="not found")
+    url = f"/api/files/{kind}/{filename}"
+    data = await fetch_asset_bytes(url)
+    if data is None:
+        raise HTTPException(status_code=404, detail="not found")
+    ext = filename.rsplit(".", 1)[-1].lower()
+    media_type = {
+        "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp",
+        "mp3": "audio/mpeg", "wav": "audio/wav", "ogg": "audio/ogg",
+        "mp4": "video/mp4", "mov": "video/quicktime",
+    }.get(ext, "application/octet-stream")
+    return Response(content=data, media_type=media_type,
+                    headers={"Cache-Control": "public, max-age=86400"})
 
 app.add_middleware(
     CORSMiddleware,

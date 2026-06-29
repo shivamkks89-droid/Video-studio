@@ -92,7 +92,14 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
     images = []
     for sc in scenes:
         url = sc.get("image_url") or ""
-        b = _image_to_bytes(url)
+        if not url:
+            continue
+        if url.startswith("data:"):
+            b = _data_uri_to_bytes(url)
+        else:
+            # Fetch via persistent asset store (handles local + object storage)
+            from asset_store import fetch_to_bytes as _fetch
+            b = await _fetch(url)
         if b:
             images.append({"bytes": b,
                            "duration": float(sc.get("duration") or default_scene_seconds),
@@ -102,6 +109,15 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
 
     w, h = _aspect_dims(aspect_ratio)
     job_id = uuid.uuid4().hex[:12]
+
+    # Pre-fetch audio bytes (async) before entering the sync render thread.
+    audio_bytes: Optional[bytes] = None
+    if audio_data_uri:
+        if audio_data_uri.startswith("data:"):
+            audio_bytes = _data_uri_to_bytes(audio_data_uri)
+        else:
+            from asset_store import fetch_to_bytes as _fetch
+            audio_bytes = await _fetch(audio_data_uri)
 
     def _work() -> Optional[str]:
         with tempfile.TemporaryDirectory() as tmp:
@@ -154,17 +170,16 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
 
             # 4) add audio if available
             final = STATIC_DIR / f"{job_id}.mp4"
-            audio_bytes = _audio_to_bytes(audio_data_uri) if audio_data_uri else None
             if audio_bytes:
                 audio_path = tmp_path / "voice.mp3"
                 audio_path.write_bytes(audio_bytes)
                 cmd = [
-                    "ffmpeg", "-y", "-i", str(combined), "-i", str(audio_path),
+                    FFMPEG_BIN, "-y", "-i", str(combined), "-i", str(audio_path),
                     "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
                     "-shortest", str(final),
                 ]
             else:
-                cmd = ["ffmpeg", "-y", "-i", str(combined), "-c", "copy", str(final)]
+                cmd = [FFMPEG_BIN, "-y", "-i", str(combined), "-c", "copy", str(final)]
             r = subprocess.run(cmd, capture_output=True, timeout=120)
             if r.returncode != 0:
                 print("[render] mux fail:", r.stderr.decode()[-300:])
@@ -172,4 +187,17 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
 
             return f"/api/files/videos/{job_id}.mp4"
 
-    return await asyncio.to_thread(_work)
+    out_path = await asyncio.to_thread(_work)
+    if not out_path:
+        return None
+    # Mirror the rendered MP4 to object storage so it survives pod restarts.
+    try:
+        from asset_store import save_video_bytes
+        final_disk = STATIC_DIR / f"{job_id}.mp4"
+        if final_disk.exists():
+            url = await save_video_bytes(final_disk.read_bytes())
+            if url:
+                return url
+    except Exception as e:
+        print(f"[render] objstore mirror failed: {e}")
+    return out_path
