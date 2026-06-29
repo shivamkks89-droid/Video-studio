@@ -12,6 +12,8 @@ from typing import List, Optional
 
 STATIC_DIR = Path(__file__).parent / "static" / "videos"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
+IMG_DIR = Path(__file__).parent / "static" / "images"
+AUD_DIR = Path(__file__).parent / "static" / "audio"
 
 
 def _data_uri_to_bytes(data_uri: str) -> Optional[bytes]:
@@ -21,6 +23,39 @@ def _data_uri_to_bytes(data_uri: str) -> Optional[bytes]:
         return base64.b64decode(data_uri.split(",", 1)[1])
     except Exception:
         return None
+
+
+def _audio_to_bytes(url: str) -> Optional[bytes]:
+    if not url:
+        return None
+    if url.startswith("data:"):
+        return _data_uri_to_bytes(url)
+    if url.startswith("/api/files/audio/"):
+        name = url.rsplit("/", 1)[-1]
+        p = AUD_DIR / name
+        if p.exists():
+            try:
+                return p.read_bytes()
+            except Exception:
+                return None
+    return None
+
+
+def _image_to_bytes(image_url: str) -> Optional[bytes]:
+    """Accept either a data: URI or /api/files/images/<file> reference."""
+    if not image_url:
+        return None
+    if image_url.startswith("data:"):
+        return _data_uri_to_bytes(image_url)
+    if image_url.startswith("/api/files/images/"):
+        name = image_url.rsplit("/", 1)[-1]
+        p = IMG_DIR / name
+        if p.exists():
+            try:
+                return p.read_bytes()
+            except Exception:
+                return None
+    return None
 
 
 def _aspect_dims(aspect: str) -> tuple:
@@ -49,7 +84,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
     images = []
     for sc in scenes:
         url = sc.get("image_url") or ""
-        b = _data_uri_to_bytes(url)
+        b = _image_to_bytes(url)
         if b:
             images.append({"bytes": b,
                            "duration": float(sc.get("duration") or default_scene_seconds),
@@ -111,7 +146,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
 
             # 4) add audio if available
             final = STATIC_DIR / f"{job_id}.mp4"
-            audio_bytes = _data_uri_to_bytes(audio_data_uri) if audio_data_uri else None
+            audio_bytes = _audio_to_bytes(audio_data_uri) if audio_data_uri else None
             if audio_bytes:
                 audio_path = tmp_path / "voice.mp3"
                 audio_path.write_bytes(audio_bytes)

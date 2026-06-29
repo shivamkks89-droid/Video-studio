@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Mic, Loader2, Play } from "lucide-react";
 import { api } from "../lib/api";
 import { toast } from "sonner";
+import { assetUrl } from "../lib/assetUrl";
 
 export default function VoiceStudio() {
   const [voices, setVoices] = useState([]);
@@ -93,7 +94,7 @@ export default function VoiceStudio() {
         {audio && (
           <div className="pt-2">
             <div className="label-mono text-zinc-500 mb-2">RESULT</div>
-            <audio data-testid="vs-audio" controls src={audio} className="w-full" />
+            <audio data-testid="vs-audio" controls src={assetUrl(audio)} className="w-full" />
           </div>
         )}
       </div>

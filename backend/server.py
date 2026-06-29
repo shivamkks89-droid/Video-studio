@@ -32,6 +32,8 @@ from ai_services import (
     AIServiceError, generate_ctas, generate_hooks, generate_scene_image,
     generate_script, list_voices, suggest_ad_ideas, synthesize_speech,
 )
+from audio_store import save_audio_data_uri, audio_url_to_path
+from image_store import save_data_uri, url_to_disk_path, IMG_DIR
 from openai_tts import synthesize_openai_tts
 from scraper import scrape as scrape_query, to_script_context
 from video_renderer import STATIC_DIR, render_video
@@ -405,12 +407,14 @@ async def ai_tts(body: TTSRequest, request: Request):
     result = await synthesize_speech(body.text, body.voice_id, body.stability,
                                      body.similarity_boost, body.style)
     if result.get("audio_url"):
-        return {"audio_url": result["audio_url"], "provider": "elevenlabs",
+        url = save_audio_data_uri(result["audio_url"]) or result["audio_url"]
+        return {"audio_url": url, "provider": "elevenlabs",
                 "credits_left": user.credits}
     # Fallback: OpenAI TTS via Emergent LLM key
     fb = await synthesize_openai_tts(body.text, style="default")
     if fb.get("audio_url"):
-        return {"audio_url": fb["audio_url"], "provider": "openai",
+        url = save_audio_data_uri(fb["audio_url"]) or fb["audio_url"]
+        return {"audio_url": url, "provider": "openai",
                 "voice": fb.get("voice"), "credits_left": user.credits,
                 "note": "ElevenLabs voice unavailable — used OpenAI HD voice."}
     await _refund(user, cost, "tts_generation")
@@ -435,7 +439,8 @@ async def ai_tts_openai(body: OpenAITTSReq, request: Request):
         await _refund(user, cost, "tts_openai")
         return {"audio_url": None, "error": result["error"], "refunded": True,
                 "credits_left": user.credits}
-    return {"audio_url": result["audio_url"], "voice": result.get("voice"),
+    url = save_audio_data_uri(result["audio_url"]) or result["audio_url"]
+    return {"audio_url": url, "voice": result.get("voice"),
             "provider": "openai", "credits_left": user.credits}
 
 
@@ -449,11 +454,12 @@ async def ai_scene_image(body: SceneImageRequest, request: Request):
         await _refund(user, 3, "scene_image")
         return {"image_url": None, "credits_left": user.credits,
                 "warning": "Image generation unavailable — credits refunded."}
-    return {"image_url": img, "credits_left": user.credits}
+    url = save_data_uri(img) or img
+    return {"image_url": url, "credits_left": user.credits}
 
 
 async def _fetch_as_data_uri(url: str) -> Optional[str]:
-    """Download a remote image and return it as a data: URI (or None on failure)."""
+    """Download a remote image, persist it to disk and return a SHORT /api/files/images/... URL."""
     if not url or not url.startswith("http"):
         return None
     try:
@@ -464,7 +470,8 @@ async def _fetch_as_data_uri(url: str) -> Optional[str]:
                 return None
             mime = r.headers.get("content-type", "image/jpeg").split(";")[0]
             import base64 as _b64
-            return f"data:{mime};base64,{_b64.b64encode(r.content).decode()}"
+            data_uri = f"data:{mime};base64,{_b64.b64encode(r.content).decode()}"
+            return save_data_uri(data_uri) or data_uri
     except Exception:
         return None
 
@@ -529,6 +536,7 @@ async def ai_storyboard(body: StoryboardRequest, request: Request):
             )
             img = await generate_scene_image(full, body.aspect_ratio)
             if img:
+                img = save_data_uri(img) or img
                 source_tag = "ai"
 
         if not img:

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Image as ImageIcon, Loader2 } from "lucide-react";
 import { api } from "../lib/api";
 import { toast } from "sonner";
+import { assetUrl } from "../lib/assetUrl";
 
 const RATIOS = ["9:16", "16:9", "1:1"];
 
@@ -55,7 +56,7 @@ export default function SceneStudio() {
           {results.map((r, i) => (
             <div key={i} className="surface rounded-xl overflow-hidden">
               <div className={`relative ${r.aspect === "16:9" ? "ar-169" : r.aspect === "1:1" ? "ar-11" : "ar-916"} bg-[#0A0A0B]`}>
-                {r.url ? <img src={r.url} className="absolute inset-0 w-full h-full object-cover" alt="" /> :
+                {r.url ? <img src={assetUrl(r.url)} className="absolute inset-0 w-full h-full object-cover" alt="" /> :
                   <div className="absolute inset-0 grid place-items-center text-zinc-700"><ImageIcon className="w-8 h-8" /></div>}
               </div>
               <div className="p-3 text-xs text-zinc-500 line-clamp-3">{r.prompt}</div>

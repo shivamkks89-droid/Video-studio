@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { ArrowRight, Film, Layers, Sparkles, Mic, Image as ImageIcon, Plus, Wand2 } from "lucide-react";
 import { toast } from "sonner";
+import { assetUrl } from "../lib/assetUrl";
 
 export default function DashboardHome() {
   const { user } = useAuth();
@@ -149,7 +150,7 @@ export default function DashboardHome() {
                     data-testid={`project-${p.project_id}`}
                     className="surface rounded-xl overflow-hidden group transition">
                 <div className="relative ar-916 bg-[#1C1C1F]">
-                  {p.thumbnail ? <img src={p.thumbnail} alt="" className="absolute inset-0 w-full h-full object-cover" /> :
+                  {p.thumbnail ? <img src={assetUrl(p.thumbnail)} alt="" className="absolute inset-0 w-full h-full object-cover" /> :
                     <div className="absolute inset-0 grid place-items-center"><Film className="w-8 h-8 text-zinc-700" /></div>}
                   <div className="absolute top-2 right-2 glass label-mono text-[10px] px-2 py-1 rounded">{p.aspect_ratio}</div>
                 </div>

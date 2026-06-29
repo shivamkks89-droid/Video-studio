@@ -21,6 +21,8 @@ export default function ProjectDetail() {
 
   const BACKEND = process.env.REACT_APP_BACKEND_URL;
   const videoSrc = project?.video_url ? `${BACKEND}${project.video_url}` : null;
+  const audioSrc = project?.audio_url ? assetUrl(project.audio_url) : null;
+  const thumbSrc = project?.thumbnail ? assetUrl(project.thumbnail) : null;
 
   const load = async () => {
     const { data } = await api.get(`/projects/${id}`);
@@ -249,7 +251,7 @@ export default function ProjectDetail() {
                 {project.scenes.map((s, i) => (
                   <div key={i} className="surface rounded-lg overflow-hidden">
                     <div className="ar-916 relative bg-[#0A0A0B]">
-                      {s.image_url ? <img src={s.image_url} className="absolute inset-0 w-full h-full object-cover" alt="" /> :
+                      {s.image_url ? <img src={assetUrl(s.image_url)} className="absolute inset-0 w-full h-full object-cover" alt="" /> :
                         <div className="absolute inset-0 grid place-items-center text-zinc-700"><ImageIcon className="w-6 h-6" /></div>}
                       <div className="absolute top-1.5 left-1.5 glass label-mono text-[9px] px-1.5 py-0.5 rounded">SCN {String(i+1).padStart(2,"0")}</div>
                       {(s.source === "real" || s.source === "real_icon") && (

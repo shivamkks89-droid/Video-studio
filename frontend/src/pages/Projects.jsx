@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Film, Copy, Trash2, Plus } from "lucide-react";
 import { api } from "../lib/api";
 import { toast } from "sonner";
+import { assetUrl } from "../lib/assetUrl";
 
 export default function Projects() {
   const [items, setItems] = useState([]);
@@ -45,7 +46,7 @@ export default function Projects() {
             <div key={p.project_id} data-testid={`project-card-${p.project_id}`} className="surface rounded-xl overflow-hidden">
               <Link to={`/dashboard/projects/${p.project_id}`}>
                 <div className="relative ar-169 bg-[#1C1C1F]">
-                  {p.thumbnail ? <img src={p.thumbnail} alt="" className="absolute inset-0 w-full h-full object-cover" /> :
+                  {p.thumbnail ? <img src={assetUrl(p.thumbnail)} alt="" className="absolute inset-0 w-full h-full object-cover" /> :
                     <div className="absolute inset-0 grid place-items-center"><Film className="w-8 h-8 text-zinc-700" /></div>}
                   <div className="absolute top-2 right-2 glass label-mono text-[10px] px-2 py-1 rounded">{p.aspect_ratio}</div>
                 </div>
