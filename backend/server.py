@@ -1,4 +1,5 @@
 """CineReel AI — FastAPI backend."""
+import asyncio
 import logging
 import os
 import uuid
@@ -645,6 +646,8 @@ async def duplicate_project(project_id: str, request: Request):
 
 @api.post("/projects/{project_id}/render")
 async def render_project_video(project_id: str, request: Request):
+    """Start a background render job. Returns a job_id immediately.
+    Frontend polls GET /api/render/jobs/{job_id} for completion."""
     user = await _current(request)
     p = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}, {"_id": 0})
     if not p:
@@ -653,20 +656,65 @@ async def render_project_video(project_id: str, request: Request):
     if not scenes or not any(s.get("image_url") for s in scenes):
         raise HTTPException(status_code=400, detail="Generate the storyboard first.")
     user = await _charge_credits(user, 10, "video_render", project_id)
-    video_url = await render_video(
-        scenes=scenes,
-        audio_data_uri=p.get("audio_url"),
-        aspect_ratio=p.get("aspect_ratio", "9:16"),
-        fps=int(p.get("fps", 30)),
-    )
-    if not video_url:
-        await _refund(user, 10, "video_render", project_id)
-        return JSONResponse(status_code=422, content={"error": "Render failed — check storyboard images.", "refunded": True, "credits_left": user.credits})
-    await db.projects.update_one(
-        {"project_id": project_id, "user_id": user.user_id},
-        {"$set": {"video_url": video_url, "status": "complete", "updated_at": utc_now().isoformat()}},
-    )
-    return {"video_url": video_url, "credits_left": user.credits}
+    job_id = "job_" + uuid.uuid4().hex[:12]
+    await db.render_jobs.insert_one({
+        "job_id": job_id,
+        "user_id": user.user_id,
+        "project_id": project_id,
+        "status": "pending",
+        "video_url": None,
+        "error": None,
+        "created_at": utc_now().isoformat(),
+    })
+    asyncio.create_task(_run_render_job(
+        job_id=job_id, user_id=user.user_id, project_id=project_id,
+        scenes=scenes, audio_url=p.get("audio_url"),
+        aspect_ratio=p.get("aspect_ratio", "9:16"), fps=int(p.get("fps", 30)),
+    ))
+    return {"job_id": job_id, "status": "pending", "credits_left": user.credits}
+
+
+@api.get("/render/jobs/{job_id}")
+async def render_job_status(job_id: str, request: Request):
+    user = await _current(request)
+    job = await db.render_jobs.find_one({"job_id": job_id, "user_id": user.user_id}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+async def _run_render_job(job_id: str, user_id: str, project_id: str,
+                          scenes: list, audio_url: Optional[str],
+                          aspect_ratio: str, fps: int):
+    try:
+        video_url = await render_video(scenes=scenes, audio_data_uri=audio_url,
+                                       aspect_ratio=aspect_ratio, fps=fps)
+        if not video_url:
+            # Refund and mark failed
+            udoc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+            if udoc:
+                from models import User as _U
+                await _refund(_U(**{k: v for k, v in udoc.items() if k != "password_hash"}),
+                              10, "video_render", project_id)
+            await db.render_jobs.update_one(
+                {"job_id": job_id},
+                {"$set": {"status": "failed", "error": "Render failed — check storyboard images."}}
+            )
+            return
+        await db.projects.update_one(
+            {"project_id": project_id, "user_id": user_id},
+            {"$set": {"video_url": video_url, "status": "complete", "updated_at": utc_now().isoformat()}},
+        )
+        await db.render_jobs.update_one(
+            {"job_id": job_id},
+            {"$set": {"status": "complete", "video_url": video_url}}
+        )
+    except Exception as e:
+        logging.exception("[render job] failed")
+        await db.render_jobs.update_one(
+            {"job_id": job_id},
+            {"$set": {"status": "failed", "error": str(e)[:200]}}
+        )
 
 
 class QuickProjectFromScript(BaseModel):

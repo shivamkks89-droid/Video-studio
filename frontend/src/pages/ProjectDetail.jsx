@@ -102,12 +102,50 @@ export default function ProjectDetail() {
     setBusyRender(true);
     try {
       const { data } = await api.post(`/projects/${id}/render`);
-      if (data.error) { toast.error(data.error); return; }
-      setProject({ ...project, video_url: data.video_url, status: "complete" });
-      toast.success("Video rendered — play or download below");
+      if (data.error) { toast.error(data.error); setBusyRender(false); return; }
+      const jobId = data.job_id;
+      if (!jobId) {
+        // Fallback: legacy synchronous response
+        if (data.video_url) {
+          setProject({ ...project, video_url: data.video_url, status: "complete" });
+          toast.success("Video rendered");
+        }
+        setBusyRender(false);
+        return;
+      }
+      toast.message("Rendering started — this takes 20-60 seconds…");
+      // Poll job status
+      const start = Date.now();
+      const poll = async () => {
+        try {
+          const { data: job } = await api.get(`/render/jobs/${jobId}`);
+          if (job.status === "complete" && job.video_url) {
+            setProject({ ...project, video_url: job.video_url, status: "complete" });
+            toast.success("Video rendered — play or download below");
+            setBusyRender(false);
+            return;
+          }
+          if (job.status === "failed") {
+            toast.error(job.error || "Render failed");
+            setBusyRender(false);
+            return;
+          }
+          if (Date.now() - start > 5 * 60 * 1000) {
+            toast.error("Render is taking too long — try again later");
+            setBusyRender(false);
+            return;
+          }
+          setTimeout(poll, 3000);
+        } catch (e) {
+          toast.error("Lost connection to render job");
+          setBusyRender(false);
+        }
+      };
+      poll();
     } catch (err) {
       toast.error(err.response?.data?.detail || err.response?.data?.error || "Render failed");
-    } finally { setBusyRender(false); }
+      setBusyRender(false);
+    }
   };
 
   return (

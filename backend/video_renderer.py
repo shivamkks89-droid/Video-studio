@@ -10,6 +10,14 @@ from pathlib import Path
 from typing import List, Optional
 
 
+# Use a bundled-static ffmpeg binary so the renderer works on any deployment without
+# requiring `apt-get install ffmpeg`.
+try:
+    import imageio_ffmpeg
+    FFMPEG_BIN = imageio_ffmpeg.get_ffmpeg_exe()
+except Exception:
+    FFMPEG_BIN = "ffmpeg"  # fall back to system binary
+
 STATIC_DIR = Path(__file__).parent / "static" / "videos"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 IMG_DIR = Path(__file__).parent / "static" / "images"
@@ -119,7 +127,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                     f"format=yuv420p"
                 )
                 cmd = [
-                    "ffmpeg", "-y", "-loop", "1", "-i", str(p),
+                    FFMPEG_BIN, "-y", "-loop", "1", "-i", str(p),
                     "-t", f"{dur:.2f}", "-r", str(fps),
                     "-vf", vf,
                     "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
@@ -136,7 +144,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
             concat_list.write_text("\n".join(f"file '{v}'" for v in scene_videos))
             combined = tmp_path / "combined.mp4"
             r = subprocess.run(
-                ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list),
+                [FFMPEG_BIN, "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list),
                  "-c", "copy", str(combined)],
                 capture_output=True, timeout=120,
             )
