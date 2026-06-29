@@ -12,6 +12,7 @@ export default function DashboardHome() {
   const [ideas, setIdeas] = useState([]);
   const [ideaQuery, setIdeaQuery] = useState("");
   const [loadingIdeas, setLoadingIdeas] = useState(false);
+  const [scrapedSrc, setScrapedSrc] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -30,7 +31,9 @@ export default function DashboardHome() {
     try {
       const { data } = await api.post("/ai/ad-ideas", { query: ideaQuery });
       setIdeas(data.ideas || []);
-      toast.success(`${(data.ideas || []).length} ideas generated`);
+      setScrapedSrc(data.scraped || null);
+      if (data.scraped?.title) toast.success(`${(data.ideas || []).length} ideas — using ${data.scraped.title}`);
+      else toast.success(`${(data.ideas || []).length} ideas generated`);
     } catch (err) {
       toast.error(err.response?.data?.detail || "Could not generate ideas");
     } finally { setLoadingIdeas(false); }
@@ -63,7 +66,7 @@ export default function DashboardHome() {
                 data-testid="idea-input"
                 value={ideaQuery}
                 onChange={(e) => setIdeaQuery(e.target.value)}
-                placeholder="e.g. com.zomato.app, https://nike.com, vegan protein bar"
+                placeholder="Paste Play Store ID, website URL, or product idea (we'll pull real brand assets)"
                 className="flex-1 surface rounded-full px-5 py-3 bg-[#141416] outline-none text-sm focus:border-white/30"
               />
               <button data-testid="idea-submit" disabled={loadingIdeas} className="btn-volt rounded-full px-5 py-3 flex items-center gap-2 disabled:opacity-60">
@@ -103,7 +106,15 @@ export default function DashboardHome() {
       {/* IDEAS */}
       {ideas.length > 0 && (
         <div>
-          <div className="label-mono text-zinc-500 mb-3">/ AI AD IDEAS</div>
+          <div className="flex items-center justify-between mb-3">
+            <div className="label-mono text-zinc-500">/ AI AD IDEAS</div>
+            {scrapedSrc?.title && (
+              <div className="flex items-center gap-2 text-xs text-zinc-400">
+                {scrapedSrc.icon && <img src={scrapedSrc.icon} alt="" className="w-5 h-5 rounded" />}
+                <span className="label-mono text-[#E2FF3D]">REAL ·</span> {scrapedSrc.title}
+              </div>
+            )}
+          </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
             {ideas.map((idea, i) => (
               <div key={i} data-testid={`idea-card-${i}`} className="surface rounded-xl p-5">

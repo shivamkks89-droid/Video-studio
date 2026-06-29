@@ -39,13 +39,22 @@ export default function ProjectDetail() {
         project_id: id, topic, video_type: project.video_type,
         language: project.language, duration_sec: project.duration_sec,
       });
-      toast.success("Script generated");
-      setProject({ ...project, script: data.script });
+      if (data.source_assets?.ok || data.source_assets?.title) {
+        toast.success(`Script ready — pulled real assets from ${data.source_assets.title}`);
+      } else {
+        toast.success("Script generated");
+      }
+      // Reload to pick up source_assets
+      const { data: p } = await api.get(`/projects/${id}`);
+      setProject(p);
     } catch (err) {
       toast.error(err.response?.data?.detail || "Script gen failed");
     } finally { setBusyScript(false); }
   };
 
+  const genVoice = async () => {
+    const text = project.script?.voiceover_script || project.script?.body || "";
+    if (!text) return toast.error("Generate a script first");
   const genVoice = async () => {
     const text = project.script?.voiceover_script || project.script?.body || "";
     if (!text) return toast.error("Generate a script first");
@@ -58,10 +67,12 @@ export default function ProjectDetail() {
       }
       await api.put(`/projects/${id}`, { audio_url: data.audio_url, voice_id: voiceId, status: "voicing" });
       setProject({ ...project, audio_url: data.audio_url, voice_id: voiceId });
-      toast.success("Voiceover ready");
+      if (data.note) toast.message(data.note);
+      else toast.success(`Voiceover ready (${data.provider || "elevenlabs"})`);
     } catch (err) {
       toast.error(err.response?.data?.detail || err.response?.data?.error || "Voice gen failed");
     } finally { setBusyVoice(false); }
+  };
   };
 
   const genScenes = async () => {
@@ -138,12 +149,27 @@ export default function ProjectDetail() {
               <span className="label-mono text-zinc-500">5 CR</span>
             </div>
             <textarea data-testid="topic-input" value={topic} onChange={(e)=>setTopic(e.target.value)} rows={2}
-              placeholder="What is the ad about? e.g. festive sale on premium kurtas, free shipping in India"
+              placeholder="Paste a Play Store package id (com.app.id), a website URL, or describe the ad."
               className="w-full bg-[#0A0A0B] border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-white/30 resize-none" />
+            <p className="text-[11px] text-zinc-500 mt-1.5">
+              Tip: enter <span className="text-[#E2FF3D] mono">com.application.zomato</span> or <span className="text-[#E2FF3D] mono">https://yourbrand.com</span> — we'll pull the REAL brand name, description and screenshots and feed them into the script.
+            </p>
             <button data-testid="gen-script" onClick={genScript} disabled={busyScript} className="mt-3 btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
               {busyScript ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
               {busyScript ? "Writing…" : "Generate script"}
             </button>
+            {project.source_assets?.title && (
+              <div className="mt-3 surface rounded-lg p-3 flex items-center gap-3">
+                {project.source_assets.icon && (
+                  <img src={project.source_assets.icon} alt="" className="w-10 h-10 rounded-md object-cover" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="label-mono text-[#E2FF3D]">REAL ASSETS LOADED</div>
+                  <div className="text-sm truncate">{project.source_assets.title}</div>
+                  <div className="text-xs text-zinc-500">{project.source_assets.screenshots?.length || 0} real screenshots will be mixed into the storyboard</div>
+                </div>
+              </div>
+            )}
             {project.script?.hook && (
               <div className="mt-4 space-y-2 text-sm">
                 <Row label="HOOK">{project.script.hook}</Row>
@@ -195,6 +221,12 @@ export default function ProjectDetail() {
                       {s.image_url ? <img src={s.image_url} className="absolute inset-0 w-full h-full object-cover" alt="" /> :
                         <div className="absolute inset-0 grid place-items-center text-zinc-700"><ImageIcon className="w-6 h-6" /></div>}
                       <div className="absolute top-1.5 left-1.5 glass label-mono text-[9px] px-1.5 py-0.5 rounded">SCN {String(i+1).padStart(2,"0")}</div>
+                      {s.source === "real" && (
+                        <div className="absolute top-1.5 right-1.5 bg-[#E2FF3D] text-black label-mono text-[9px] px-1.5 py-0.5 rounded font-bold">REAL</div>
+                      )}
+                      {s.source === "ai" && (
+                        <div className="absolute top-1.5 right-1.5 glass label-mono text-[9px] px-1.5 py-0.5 rounded">AI</div>
+                      )}
                     </div>
                     <div className="p-2 text-[11px] text-zinc-400 leading-snug line-clamp-3">{s.voiceover || s.visual_prompt}</div>
                   </div>

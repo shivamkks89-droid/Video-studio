@@ -32,6 +32,8 @@ from ai_services import (
     AIServiceError, generate_ctas, generate_hooks, generate_scene_image,
     generate_script, list_voices, suggest_ad_ideas, synthesize_speech,
 )
+from openai_tts import synthesize_openai_tts
+from scraper import scrape as scrape_query, to_script_context
 from video_renderer import STATIC_DIR, render_video
 from templates_seed import AVATARS, PLANS, STOCK_ASSETS, TEMPLATES, VIDEO_TYPES
 
@@ -260,17 +262,37 @@ async def get_plans():
 async def ai_script(body: ScriptRequest, request: Request):
     user = await _current(request)
     user = await _charge_credits(user, 5, "script_generation", body.project_id)
+    payload = body.model_dump()
+    # If topic looks like a URL/Play Store ID, enrich it with real metadata
+    scraped = await scrape_query(body.topic)
+    if scraped.get("ok"):
+        ctx = to_script_context(scraped)
+        payload["extra_notes"] = (payload.get("extra_notes") or "") + (
+            f"\n\nUSE THE FOLLOWING REAL APP / WEBSITE INFO. "
+            f"Use the ACTUAL brand name, ACTUAL features and ACTUAL value props "
+            f"from this block. Do NOT invent a fake brand name.\n{ctx}"
+        )
     try:
-        script = await generate_script(body.model_dump())
+        script = await generate_script(payload)
     except AIServiceError as e:
         await _refund(user, 5, "script_generation", body.project_id)
         return JSONResponse(status_code=422, content={"error": str(e), "refunded": True, "credits_left": user.credits})
     if body.project_id:
+        update = {"script": script, "status": "scripting", "updated_at": utc_now().isoformat()}
+        if scraped.get("ok"):
+            update["source_assets"] = {
+                "kind": scraped.get("kind"),
+                "title": scraped.get("title"),
+                "icon": scraped.get("icon"),
+                "screenshots": scraped.get("screenshots", []),
+                "url": scraped.get("url"),
+            }
         await db.projects.update_one(
             {"project_id": body.project_id, "user_id": user.user_id},
-            {"$set": {"script": script, "status": "scripting", "updated_at": utc_now().isoformat()}},
+            {"$set": update},
         )
-    return {"script": script, "credits_left": user.credits}
+    return {"script": script, "credits_left": user.credits,
+            "source_assets": scraped if scraped.get("ok") else None}
 
 
 @api.post("/ai/hooks")
@@ -302,31 +324,77 @@ class IdeaReq(BaseModel):
     language: str = "english"
 
 
+class ScrapeReq(BaseModel):
+    query: str
+
+
+@api.post("/scrape/inspect")
+async def scrape_inspect(body: ScrapeReq, request: Request):
+    await _current(request)
+    data = await scrape_query(body.query)
+    return data
+
+
 @api.post("/ai/ad-ideas")
 async def ai_ad_ideas(body: IdeaReq, request: Request):
     user = await _current(request)
     user = await _charge_credits(user, 2, "ad_ideas")
+    # If query looks like a URL / Play Store id, fetch real metadata first
+    scraped = await scrape_query(body.query)
+    enriched_query = body.query
+    if scraped.get("ok"):
+        context = to_script_context(scraped)
+        enriched_query = f"{body.query}\n\nReal info:\n{context}"
     try:
-        ideas = await suggest_ad_ideas(body.query, body.language)
+        ideas = await suggest_ad_ideas(enriched_query, body.language)
     except AIServiceError as e:
         await _refund(user, 2, "ad_ideas")
         return JSONResponse(status_code=422, content={"error": str(e), "refunded": True, "credits_left": user.credits})
-    return {"ideas": ideas, "credits_left": user.credits}
+    return {"ideas": ideas, "credits_left": user.credits, "scraped": scraped if scraped.get("ok") else None}
 
 
-# ---------- AI: voice (ElevenLabs) ----------
+# ---------- AI: voice (ElevenLabs + OpenAI fallback) ----------
 @api.post("/ai/tts")
 async def ai_tts(body: TTSRequest, request: Request):
     user = await _current(request)
     cost = max(1, len(body.text) // 200)
     user = await _charge_credits(user, cost, "tts_generation")
+    # Try ElevenLabs first (real human-grade voice if user's plan allows)
     result = await synthesize_speech(body.text, body.voice_id, body.stability,
                                      body.similarity_boost, body.style)
-    if "error" in result:
-        await _refund(user, cost, "tts_generation")
-        # Use 200 + error field so the preview gateway does not strip the body
-        return {"audio_url": None, "error": result["error"], "refunded": True, "credits_left": user.credits}
-    return {"audio_url": result["audio_url"], "credits_left": user.credits}
+    if result.get("audio_url"):
+        return {"audio_url": result["audio_url"], "provider": "elevenlabs",
+                "credits_left": user.credits}
+    # Fallback: OpenAI TTS via Emergent LLM key
+    fb = await synthesize_openai_tts(body.text, style="default")
+    if fb.get("audio_url"):
+        return {"audio_url": fb["audio_url"], "provider": "openai",
+                "voice": fb.get("voice"), "credits_left": user.credits,
+                "note": "ElevenLabs voice unavailable — used OpenAI HD voice."}
+    await _refund(user, cost, "tts_generation")
+    return {"audio_url": None,
+            "error": result.get("error") or fb.get("error") or "Voice service unavailable.",
+            "refunded": True, "credits_left": user.credits}
+
+
+class OpenAITTSReq(BaseModel):
+    text: str
+    voice: str = "nova"
+    model: str = "tts-1"
+
+
+@api.post("/ai/tts/openai")
+async def ai_tts_openai(body: OpenAITTSReq, request: Request):
+    user = await _current(request)
+    cost = max(1, len(body.text) // 200)
+    user = await _charge_credits(user, cost, "tts_openai")
+    result = await synthesize_openai_tts(body.text, style="default", model=body.model)
+    if result.get("error"):
+        await _refund(user, cost, "tts_openai")
+        return {"audio_url": None, "error": result["error"], "refunded": True,
+                "credits_left": user.credits}
+    return {"audio_url": result["audio_url"], "voice": result.get("voice"),
+            "provider": "openai", "credits_left": user.credits}
 
 
 # ---------- AI: scene images ----------
@@ -342,31 +410,78 @@ async def ai_scene_image(body: SceneImageRequest, request: Request):
     return {"image_url": img, "credits_left": user.credits}
 
 
+async def _fetch_as_data_uri(url: str) -> Optional[str]:
+    """Download a remote image and return it as a data: URI (or None on failure)."""
+    if not url or not url.startswith("http"):
+        return None
+    try:
+        import httpx as _httpx
+        async with _httpx.AsyncClient(timeout=10.0, follow_redirects=True) as c:
+            r = await c.get(url, headers={"User-Agent": "Mozilla/5.0 CineReelBot/1.0"})
+            if r.status_code != 200 or len(r.content) < 1024:
+                return None
+            mime = r.headers.get("content-type", "image/jpeg").split(";")[0]
+            import base64 as _b64
+            return f"data:{mime};base64,{_b64.b64encode(r.content).decode()}"
+    except Exception:
+        return None
+
+
 @api.post("/ai/storyboard")
 async def ai_storyboard(body: StoryboardRequest, request: Request):
     user = await _current(request)
+    # Pull project-level source assets (real screenshots from a prior /ai/script scrape)
+    real_assets: List[str] = []
+    real_icon: Optional[str] = None
+    if body.project_id:
+        proj = await db.projects.find_one(
+            {"project_id": body.project_id, "user_id": user.user_id}, {"_id": 0, "source_assets": 1}
+        )
+        sa = (proj or {}).get("source_assets") or {}
+        real_assets = list(sa.get("screenshots") or [])
+        real_icon = sa.get("icon")
+
     out: List[dict] = []
     succeeded = 0
-    for sc in body.scenes:
+    real_idx = 0
+    for i, sc in enumerate(body.scenes):
         user = await _charge_credits(user, 3, "storyboard_scene")
-        prompt = sc.get("visual_prompt") or sc.get("description") or ""
-        camera = sc.get("camera", "")
-        lighting = sc.get("lighting", "")
-        motion = sc.get("motion", "")
-        full = f"{prompt}. Camera: {camera}. Lighting: {lighting}. Motion: {motion}."
-        img = await generate_scene_image(full, body.aspect_ratio)
+        # Prefer a real screenshot for ~half of the scenes (alternating) when we have them.
+        # Real screenshots go where the script suggests product / UI / "show app" type beats.
+        prompt_text = (sc.get("visual_prompt") or sc.get("description") or "").lower()
+        wants_product = any(k in prompt_text for k in [
+            "app", "screen", "ui", "interface", "feature", "product", "download", "store",
+            "phone", "mobile", "dashboard", "logo",
+        ])
+        img: Optional[str] = None
+        if real_assets and (wants_product or i % 2 == 1) and real_idx < len(real_assets):
+            img = await _fetch_as_data_uri(real_assets[real_idx])
+            real_idx += 1
+            if img:
+                sc = {**sc, "source": "real"}
+        if not img:
+            prompt = sc.get("visual_prompt") or sc.get("description") or ""
+            camera = sc.get("camera", "")
+            lighting = sc.get("lighting", "")
+            motion = sc.get("motion", "")
+            full = f"{prompt}. Camera: {camera}. Lighting: {lighting}. Motion: {motion}."
+            img = await generate_scene_image(full, body.aspect_ratio)
+            if img:
+                sc = {**sc, "source": "ai"}
         if not img:
             await _refund(user, 3, "storyboard_scene")
         else:
             succeeded += 1
         out.append({**sc, "image_url": img})
+
     if body.project_id and succeeded > 0:
         thumb = next((s["image_url"] for s in out if s["image_url"]), None)
         await db.projects.update_one(
             {"project_id": body.project_id, "user_id": user.user_id},
             {"$set": {"scenes": out, "updated_at": utc_now().isoformat(), "thumbnail": thumb}},
         )
-    return {"scenes": out, "credits_left": user.credits, "succeeded": succeeded}
+    return {"scenes": out, "credits_left": user.credits, "succeeded": succeeded,
+            "real_screenshots_used": real_idx}
 
 
 # ---------- PROJECTS ----------
