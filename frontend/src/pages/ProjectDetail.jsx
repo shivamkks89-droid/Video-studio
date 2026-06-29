@@ -82,20 +82,29 @@ export default function ProjectDetail() {
   };
   };
 
-  const genScenes = async () => {
-    const scenes = project.script?.scenes || [];
-    if (!scenes.length) return toast.error("Generate a script first");
+  const genScenes = async (only_missing = false) => {
+    const allScenes = project.script?.scenes || [];
+    if (!allScenes.length) return toast.error("Generate a script first");
+    let scenesToRender = allScenes;
+    if (only_missing && project.scenes?.length === allScenes.length) {
+      // Build a list that only refreshes scenes without an image_url
+      scenesToRender = project.scenes.map((s, i) => s.image_url ? s : allScenes[i]);
+    }
     setBusyScenes(true);
     try {
       const { data } = await api.post("/ai/storyboard", {
-        project_id: id, scenes, aspect_ratio: project.aspect_ratio,
+        project_id: id, scenes: scenesToRender, aspect_ratio: project.aspect_ratio,
       });
       setProject({ ...project, scenes: data.scenes, thumbnail: data.scenes[0]?.image_url });
-      toast.success("Storyboard ready");
+      const missing = data.scenes.filter(s => !s.image_url).length;
+      if (missing > 0) toast.message(`Storyboard ready — ${missing} scene(s) still missing. Try Regenerate.`);
+      else toast.success("Storyboard ready");
     } catch (err) {
       toast.error(err.response?.data?.detail || "Scene gen failed");
     } finally { setBusyScenes(false); }
   };
+
+  const missingCount = (project?.scenes || []).filter(s => !s?.image_url).length;
 
   const renderVideo = async () => {
     if (!project.scenes?.length) return toast.error("Generate the storyboard first");
@@ -114,11 +123,13 @@ export default function ProjectDetail() {
         return;
       }
       toast.message("Rendering started — this takes 20-60 seconds…");
-      // Poll job status
+      // Poll job status — tolerate transient network failures
       const start = Date.now();
+      let consecutiveErrors = 0;
       const poll = async () => {
         try {
           const { data: job } = await api.get(`/render/jobs/${jobId}`);
+          consecutiveErrors = 0;
           if (job.status === "complete" && job.video_url) {
             setProject({ ...project, video_url: job.video_url, status: "complete" });
             toast.success("Video rendered — play or download below");
@@ -130,16 +141,21 @@ export default function ProjectDetail() {
             setBusyRender(false);
             return;
           }
-          if (Date.now() - start > 5 * 60 * 1000) {
-            toast.error("Render is taking too long — try again later");
+        } catch (_e) {
+          consecutiveErrors += 1;
+          if (consecutiveErrors >= 5) {
+            toast.error("Lost connection to render job — try refreshing in a minute");
             setBusyRender(false);
             return;
           }
-          setTimeout(poll, 3000);
-        } catch (e) {
-          toast.error("Lost connection to render job");
-          setBusyRender(false);
+          // transient error, keep polling
         }
+        if (Date.now() - start > 5 * 60 * 1000) {
+          toast.error("Render is taking too long — try again later");
+          setBusyRender(false);
+          return;
+        }
+        setTimeout(poll, 3000);
       };
       poll();
     } catch (err) {
@@ -280,11 +296,17 @@ export default function ProjectDetail() {
               <div className="flex items-center gap-2"><ImageIcon className="w-4 h-4 text-[#E2FF3D]" /><div className="font-medium">Cinematic Storyboard</div></div>
               <span className="label-mono text-zinc-500">3 CR / scene</span>
             </div>
-            <button data-testid="gen-scenes" onClick={genScenes} disabled={busyScenes || !project.script}
+            <button data-testid="gen-scenes" onClick={() => genScenes(false)} disabled={busyScenes || !project.script}
               className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
               {busyScenes ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
-              {busyScenes ? "Painting…" : "Generate storyboard"}
+              {busyScenes ? "Painting…" : (project.scenes?.length ? "Regenerate storyboard" : "Generate storyboard")}
             </button>
+            {missingCount > 0 && (
+              <button data-testid="gen-missing-scenes" onClick={() => genScenes(true)} disabled={busyScenes}
+                className="ml-2 rounded-full surface px-4 py-2 text-sm">
+                Retry {missingCount} missing
+              </button>
+            )}
             {project.scenes?.length > 0 && (
               <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {project.scenes.map((s, i) => (
