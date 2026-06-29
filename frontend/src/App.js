@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider } from "./lib/auth";
 import ProtectedRoute from "./lib/ProtectedRoute";
+import ErrorBoundary from "./lib/ErrorBoundary";
 import Landing from "./pages/Landing";
 import Auth from "./pages/Auth";
 import AuthCallback from "./pages/AuthCallback";
@@ -66,7 +67,9 @@ export default function App() {
         <Toaster position="top-right" theme="dark" toastOptions={{
           style: { background: "#141416", border: "1px solid rgba(255,255,255,0.1)", color: "#fff" }
         }} />
-        <AppRouter />
+        <ErrorBoundary>
+          <AppRouter />
+        </ErrorBoundary>
       </AuthProvider>
     </BrowserRouter>
   );

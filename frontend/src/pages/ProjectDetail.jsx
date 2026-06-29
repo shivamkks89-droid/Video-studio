@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { toast } from "sonner";
 import { Sparkles, Mic, Image as ImageIcon, Download, Share2, Loader2, Film, Video } from "lucide-react";
+import { assetUrl } from "../lib/assetUrl";
 
 export default function ProjectDetail() {
   const { id } = useParams();
