@@ -72,6 +72,7 @@ class Project(BaseModel):
     audio_url: Optional[str] = None
     scenes: List[dict] = []  # generated scene images
     thumbnail: Optional[str] = None
+    video_url: Optional[str] = None
     duration_sec: int = 30
     brand_kit_id: Optional[str] = None
     folder: Optional[str] = None

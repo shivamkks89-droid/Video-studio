@@ -7,6 +7,7 @@ const LANGS = ["english", "hindi", "hinglish"];
 const TONES = ["professional", "motivational", "friendly", "emotional", "storytelling"];
 
 export default function ScriptStudio() {
+  const navigate = useNavigate();
   const [topic, setTopic] = useState("");
   const [language, setLanguage] = useState("english");
   const [tone, setTone] = useState("professional");
@@ -19,6 +20,24 @@ export default function ScriptStudio() {
   const [busy, setBusy] = useState(false);
   const [busyH, setBusyH] = useState(false);
   const [busyC, setBusyC] = useState(false);
+  const [busyProj, setBusyProj] = useState(false);
+
+  const createVideoProject = async () => {
+    if (!script) return;
+    setBusyProj(true);
+    try {
+      const title = topic.slice(0, 60) || "Untitled reel";
+      const aspect = ["yt_short","ig_reel","tiktok","app_promo","talking_avatar"].includes(videoType) ? "9:16"
+        : videoType === "product_ad" ? "1:1" : "16:9";
+      const { data } = await api.post("/projects/from-script", {
+        title, video_type: videoType, language, aspect_ratio: aspect, duration_sec: duration, script,
+      });
+      toast.success("Video project created — let's generate scenes & voice");
+      navigate(`/dashboard/projects/${data.project_id}`);
+    } catch (e) {
+      toast.error("Could not create project");
+    } finally { setBusyProj(false); }
+  };
 
   const run = async () => {
     if (!topic.trim()) return toast.error("Add a topic");
@@ -133,6 +152,15 @@ export default function ScriptStudio() {
           </div>
         ) : (
           <div className="space-y-5">
+            <div className="flex items-center justify-between gap-3 flex-wrap pb-3 border-b border-white/5">
+              <div className="label-mono text-[#E2FF3D]">SCRIPT READY</div>
+              <button data-testid="ss-create-video"
+                onClick={createVideoProject} disabled={busyProj}
+                className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
+                {busyProj ? <Loader2 className="w-4 h-4 animate-spin" /> : <Film className="w-4 h-4" />}
+                {busyProj ? "Creating…" : "Make Video from this Script →"}
+              </button>
+            </div>
             <Row label="HOOK">{script.hook}</Row>
             <Row label="BODY">{script.body}</Row>
             <Row label="CTA">{script.cta}</Row>

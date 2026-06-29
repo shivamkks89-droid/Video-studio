@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { toast } from "sonner";
-import { Sparkles, Mic, Image as ImageIcon, Download, Share2, Loader2, Film } from "lucide-react";
+import { Sparkles, Mic, Image as ImageIcon, Download, Share2, Loader2, Film, Video } from "lucide-react";
 
 export default function ProjectDetail() {
   const { id } = useParams();
@@ -13,6 +13,10 @@ export default function ProjectDetail() {
   const [busyScript, setBusyScript] = useState(false);
   const [busyVoice, setBusyVoice] = useState(false);
   const [busyScenes, setBusyScenes] = useState(false);
+  const [busyRender, setBusyRender] = useState(false);
+
+  const BACKEND = process.env.REACT_APP_BACKEND_URL;
+  const videoSrc = project?.video_url ? `${BACKEND}${project.video_url}` : null;
 
   const load = async () => {
     const { data } = await api.get(`/projects/${id}`);
@@ -75,6 +79,19 @@ export default function ProjectDetail() {
     } finally { setBusyScenes(false); }
   };
 
+  const renderVideo = async () => {
+    if (!project.scenes?.length) return toast.error("Generate the storyboard first");
+    setBusyRender(true);
+    try {
+      const { data } = await api.post(`/projects/${id}/render`);
+      if (data.error) { toast.error(data.error); return; }
+      setProject({ ...project, video_url: data.video_url, status: "complete" });
+      toast.success("Video rendered — play or download below");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || err.response?.data?.error || "Render failed");
+    } finally { setBusyRender(false); }
+  };
+
   return (
     <div data-testid="project-detail" className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
@@ -83,9 +100,13 @@ export default function ProjectDetail() {
           <h1 className="text-3xl font-semibold tracking-tight">{project.title}</h1>
           <div className="label-mono text-zinc-500 mt-2">{project.aspect_ratio} · {project.resolution} · {project.fps}fps · {project.duration_sec}s · {project.language}</div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <button data-testid="share-btn" onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success("Link copied"); }} className="rounded-full surface px-4 py-2 text-sm flex items-center gap-2"><Share2 className="w-4 h-4" /> Share</button>
-          <button data-testid="export-btn" disabled={!project.audio_url} onClick={() => toast.message("Export ready — MP4/MOV/GIF generated server-side in Phase 2.")} className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-50"><Download className="w-4 h-4" /> Export</button>
+          {videoSrc ? (
+            <a data-testid="download-btn" href={videoSrc} download={`${project.title || "cinereel"}.mp4`} className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2"><Download className="w-4 h-4" /> Download MP4</a>
+          ) : (
+            <button data-testid="export-btn" disabled className="rounded-full surface px-4 py-2 text-sm flex items-center gap-2 opacity-50"><Download className="w-4 h-4" /> Export</button>
+          )}
         </div>
       </div>
 
@@ -178,6 +199,28 @@ export default function ProjectDetail() {
                     <div className="p-2 text-[11px] text-zinc-400 leading-snug line-clamp-3">{s.voiceover || s.visual_prompt}</div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* RENDER VIDEO */}
+          <div className="surface rounded-xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2"><Video className="w-4 h-4 text-[#E2FF3D]" /><div className="font-medium">Render Final Video</div></div>
+              <span className="label-mono text-zinc-500">10 CR</span>
+            </div>
+            <p className="text-xs text-zinc-500 mb-3">Combine storyboard + voiceover into an MP4 with Ken-Burns motion.
+              {!project.audio_url && " (Add voiceover for sound, or render a silent slideshow.)"}
+            </p>
+            <button data-testid="render-video" onClick={renderVideo} disabled={busyRender || !project.scenes?.length}
+              className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
+              {busyRender ? <Loader2 className="w-4 h-4 animate-spin" /> : <Video className="w-4 h-4" />}
+              {busyRender ? "Rendering…" : videoSrc ? "Re-render video" : "Render video"}
+            </button>
+            {videoSrc && (
+              <div className="mt-3 flex items-center gap-3 text-xs text-zinc-400">
+                <span className="label-mono text-[#E2FF3D]">✓ READY</span>
+                <a href={videoSrc} download={`${project.title || "cinereel"}.mp4`} className="underline hover:text-white">Download MP4</a>
               </div>
             )}
           </div>

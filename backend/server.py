@@ -9,6 +9,7 @@ from typing import List, Optional
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 from starlette.middleware.cors import CORSMiddleware
@@ -31,6 +32,7 @@ from ai_services import (
     AIServiceError, generate_ctas, generate_hooks, generate_scene_image,
     generate_script, list_voices, suggest_ad_ideas, synthesize_speech,
 )
+from video_renderer import STATIC_DIR, render_video
 from templates_seed import AVATARS, PLANS, STOCK_ASSETS, TEMPLATES, VIDEO_TYPES
 
 
@@ -426,6 +428,58 @@ async def duplicate_project(project_id: str, request: Request):
     return new_p.model_dump()
 
 
+@api.post("/projects/{project_id}/render")
+async def render_project_video(project_id: str, request: Request):
+    user = await _current(request)
+    p = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}, {"_id": 0})
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+    scenes = p.get("scenes") or []
+    if not scenes or not any(s.get("image_url") for s in scenes):
+        raise HTTPException(status_code=400, detail="Generate the storyboard first.")
+    user = await _charge_credits(user, 10, "video_render", project_id)
+    video_url = await render_video(
+        scenes=scenes,
+        audio_data_uri=p.get("audio_url"),
+        aspect_ratio=p.get("aspect_ratio", "9:16"),
+        fps=int(p.get("fps", 30)),
+    )
+    if not video_url:
+        await _refund(user, 10, "video_render", project_id)
+        return JSONResponse(status_code=422, content={"error": "Render failed — check storyboard images.", "refunded": True, "credits_left": user.credits})
+    await db.projects.update_one(
+        {"project_id": project_id, "user_id": user.user_id},
+        {"$set": {"video_url": video_url, "status": "complete", "updated_at": utc_now().isoformat()}},
+    )
+    return {"video_url": video_url, "credits_left": user.credits}
+
+
+class QuickProjectFromScript(BaseModel):
+    title: str
+    video_type: str = "cinematic_ad"
+    language: str = "english"
+    aspect_ratio: str = "9:16"
+    duration_sec: int = 30
+    script: dict
+
+
+@api.post("/projects/from-script")
+async def create_project_from_script(body: QuickProjectFromScript, request: Request):
+    user = await _current(request)
+    p = Project(
+        user_id=user.user_id,
+        title=body.title,
+        video_type=body.video_type,
+        language=body.language,
+        aspect_ratio=body.aspect_ratio,
+        duration_sec=body.duration_sec,
+        script=body.script,
+        status="scripting",
+    )
+    await db.projects.insert_one(_doc(p))
+    return p.model_dump()
+
+
 # ---------- BRAND KITS ----------
 @api.post("/brand-kits")
 async def create_brand_kit(body: BrandKitCreate, request: Request):
@@ -550,6 +604,9 @@ async def on_shutdown():
 
 # ---------- mount ----------
 app.include_router(api)
+
+# Serve rendered videos under /api/files/videos/...
+app.mount("/api/files", StaticFiles(directory=str(STATIC_DIR.parent)), name="files")
 
 app.add_middleware(
     CORSMiddleware,
