@@ -262,7 +262,7 @@ async def ai_script(body: ScriptRequest, request: Request):
         script = await generate_script(body.model_dump())
     except AIServiceError as e:
         await _refund(user, 5, "script_generation", body.project_id)
-        raise HTTPException(status_code=502, detail=str(e))
+        return JSONResponse(status_code=422, content={"error": str(e), "refunded": True, "credits_left": user.credits})
     if body.project_id:
         await db.projects.update_one(
             {"project_id": body.project_id, "user_id": user.user_id},
@@ -279,7 +279,7 @@ async def ai_hooks(body: HookRequest, request: Request):
         hooks = await generate_hooks(body.topic, body.language, body.count)
     except AIServiceError as e:
         await _refund(user, 1, "hook_generation")
-        raise HTTPException(status_code=502, detail=str(e))
+        return JSONResponse(status_code=422, content={"error": str(e), "refunded": True, "credits_left": user.credits})
     return {"hooks": hooks, "credits_left": user.credits}
 
 
@@ -291,7 +291,7 @@ async def ai_ctas(body: CTARequest, request: Request):
         ctas = await generate_ctas(body.topic, body.language, body.count)
     except AIServiceError as e:
         await _refund(user, 1, "cta_generation")
-        raise HTTPException(status_code=502, detail=str(e))
+        return JSONResponse(status_code=422, content={"error": str(e), "refunded": True, "credits_left": user.credits})
     return {"ctas": ctas, "credits_left": user.credits}
 
 
@@ -308,7 +308,7 @@ async def ai_ad_ideas(body: IdeaReq, request: Request):
         ideas = await suggest_ad_ideas(body.query, body.language)
     except AIServiceError as e:
         await _refund(user, 2, "ad_ideas")
-        raise HTTPException(status_code=502, detail=str(e))
+        return JSONResponse(status_code=422, content={"error": str(e), "refunded": True, "credits_left": user.credits})
     return {"ideas": ideas, "credits_left": user.credits}
 
 
@@ -322,7 +322,8 @@ async def ai_tts(body: TTSRequest, request: Request):
                                      body.similarity_boost, body.style)
     if "error" in result:
         await _refund(user, cost, "tts_generation")
-        raise HTTPException(status_code=502, detail=result["error"])
+        # Use 200 + error field so the preview gateway does not strip the body
+        return {"audio_url": None, "error": result["error"], "refunded": True, "credits_left": user.credits}
     return {"audio_url": result["audio_url"], "credits_left": user.credits}
 
 

@@ -48,11 +48,15 @@ export default function ProjectDetail() {
     setBusyVoice(true);
     try {
       const { data } = await api.post("/ai/tts", { text, voice_id: voiceId });
+      if (data.error) {
+        toast.error(data.error);
+        return;
+      }
       await api.put(`/projects/${id}`, { audio_url: data.audio_url, voice_id: voiceId, status: "voicing" });
       setProject({ ...project, audio_url: data.audio_url, voice_id: voiceId });
       toast.success("Voiceover ready");
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Voice gen failed");
+      toast.error(err.response?.data?.detail || err.response?.data?.error || "Voice gen failed");
     } finally { setBusyVoice(false); }
   };
 

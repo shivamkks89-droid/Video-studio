@@ -30,10 +30,11 @@ export default function VoiceStudio() {
       const { data } = await api.post("/ai/tts", {
         text, voice_id: voiceId, stability, similarity_boost: similarity, style,
       });
+      if (data.error) { toast.error(data.error); return; }
       setAudio(data.audio_url);
       toast.success("Voiceover ready");
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Voice gen failed");
+      toast.error(e.response?.data?.detail || e.response?.data?.error || "Voice gen failed");
     } finally { setBusy(false); }
   };
 
