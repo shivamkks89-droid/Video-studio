@@ -53,7 +53,7 @@ You ALWAYS respond with valid JSON only (no markdown, no commentary), in this ex
       "index": 1,
       "duration": 5,
       "voiceover": "what is spoken in this scene",
-      "visual_prompt": "cinematic prompt to feed an image generator (subject, environment, mood)",
+      "visual_prompt": "cinematic prompt to feed an image generator (subject, environment, mood). NEVER include a fake brand name, logo text, app-store badge or any made-up wordmark in the visual_prompt.",
       "camera": "wide shot / close-up / tracking / dolly-in / drone aerial / etc.",
       "lighting": "golden hour / neon noir / soft daylight / volumetric god rays / etc.",
       "motion": "zoom-in / parallax / static / slow pan / dynamic / etc.",
@@ -64,7 +64,10 @@ You ALWAYS respond with valid JSON only (no markdown, no commentary), in this ex
   "music_mood": "string (e.g., uplifting cinematic, lo-fi, epic trailer)"
 }
 
-Rules:
+CRITICAL RULES — read carefully:
+- If REAL APP / WEBSITE INFO is provided in the user message, use ONLY that brand name. Never alter it. Never invent additional product names.
+- If NO real brand info is provided, you MUST NOT invent a brand name or app name. Use the token [BRAND] wherever a brand name would go (in hook, body, cta, voiceover_script, captions). Do NOT write "HeartLink", "FitWell", "QuickPay" or any other made-up wordmark. Use the placeholder [BRAND].
+- visual_prompt MUST NOT contain any fake logos, fake wordmarks, fake app icons, app-store badges or fake brand text. Describe the SCENE only (people, environment, action, mood).
 - Match the requested language exactly. Hinglish = mix Hindi/English casually.
 - Scenes must total roughly the requested duration in seconds.
 - Hooks must stop the scroll: question, bold claim, or contrarian idea.

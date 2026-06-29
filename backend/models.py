@@ -101,6 +101,9 @@ class ScriptRequest(BaseModel):
     target_audience: Optional[str] = None
     cta: Optional[str] = None
     extra_notes: Optional[str] = None
+    brand_name: Optional[str] = None
+    brand_url: Optional[str] = None
+    brand_logo: Optional[str] = None
 
 
 class HookRequest(BaseModel):

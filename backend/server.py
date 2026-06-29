@@ -263,20 +263,49 @@ async def ai_script(body: ScriptRequest, request: Request):
     user = await _current(request)
     user = await _charge_credits(user, 5, "script_generation", body.project_id)
     payload = body.model_dump()
-    # If topic looks like a URL/Play Store ID, enrich it with real metadata
-    scraped = await scrape_query(body.topic)
+    # Resolve a real brand identity from any of: brand_url, brand_name, or the topic itself.
+    scraped = {}
+    for candidate in [body.brand_url, body.topic]:
+        if not candidate:
+            continue
+        s = await scrape_query(candidate)
+        if s.get("ok"):
+            scraped = s
+            break
+    # If user provided a brand_name + logo but no URL/Play Store, still register it.
+    if not scraped and body.brand_name:
+        scraped = {
+            "ok": True, "kind": "manual",
+            "title": body.brand_name,
+            "icon": body.brand_logo,
+            "screenshots": [],
+        }
     if scraped.get("ok"):
-        ctx = to_script_context(scraped)
+        ctx_lines = [f"App / Brand name: {scraped.get('title')}"]
+        if scraped.get("developer"):
+            ctx_lines.append(f"Developer / Company: {scraped['developer']}")
+        if scraped.get("category"):
+            ctx_lines.append(f"Category: {scraped['category']}")
+        if scraped.get("description"):
+            ctx_lines.append(f"Real description: {scraped['description'][:900]}")
+        if scraped.get("installs"):
+            ctx_lines.append(f"Installs: {scraped['installs']}")
+        if scraped.get("score"):
+            ctx_lines.append(f"Rating: {scraped['score']}")
         payload["extra_notes"] = (payload.get("extra_notes") or "") + (
-            f"\n\nUSE THE FOLLOWING REAL APP / WEBSITE INFO. "
-            f"Use the ACTUAL brand name, ACTUAL features and ACTUAL value props "
-            f"from this block. Do NOT invent a fake brand name.\n{ctx}"
+            "\n\nUSE THE FOLLOWING REAL BRAND INFO. Use the ACTUAL brand name everywhere. "
+            "Do NOT invent any other brand name.\n" + "\n".join(ctx_lines)
         )
     try:
         script = await generate_script(payload)
     except AIServiceError as e:
         await _refund(user, 5, "script_generation", body.project_id)
         return JSONResponse(status_code=422, content={"error": str(e), "refunded": True, "credits_left": user.credits})
+    # If we still don't have a real brand, replace any [BRAND] placeholder with a friendly
+    # generic so we never ship an invented wordmark.
+    brand_label = (scraped.get("title") if scraped.get("ok") else body.brand_name) or None
+    if brand_label:
+        script = _replace_brand_token(script, brand_label)
     if body.project_id:
         update = {"script": script, "status": "scripting", "updated_at": utc_now().isoformat()}
         if scraped.get("ok"):
@@ -292,7 +321,20 @@ async def ai_script(body: ScriptRequest, request: Request):
             {"$set": update},
         )
     return {"script": script, "credits_left": user.credits,
-            "source_assets": scraped if scraped.get("ok") else None}
+            "source_assets": scraped if scraped.get("ok") else None,
+            "warning": None if (scraped.get("ok") or brand_label) else
+            "No real brand info provided — script uses the [BRAND] placeholder. Add a Play Store ID, website URL or brand name & logo for real assets."}
+
+
+def _replace_brand_token(obj, brand: str):
+    """Walk script JSON and replace [BRAND] / [BRAND_NAME] with the resolved brand label."""
+    if isinstance(obj, str):
+        return obj.replace("[BRAND]", brand).replace("[BRAND_NAME]", brand).replace("[YOUR BRAND]", brand)
+    if isinstance(obj, list):
+        return [_replace_brand_token(x, brand) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _replace_brand_token(v, brand) for k, v in obj.items()}
+    return obj
 
 
 @api.post("/ai/hooks")
@@ -430,9 +472,10 @@ async def _fetch_as_data_uri(url: str) -> Optional[str]:
 @api.post("/ai/storyboard")
 async def ai_storyboard(body: StoryboardRequest, request: Request):
     user = await _current(request)
-    # Pull project-level source assets (real screenshots from a prior /ai/script scrape)
+    # Pull project-level source assets (real screenshots / icon from a prior /ai/script scrape)
     real_assets: List[str] = []
     real_icon: Optional[str] = None
+    real_title: Optional[str] = None
     if body.project_id:
         proj = await db.projects.find_one(
             {"project_id": body.project_id, "user_id": user.user_id}, {"_id": 0, "source_assets": 1}
@@ -440,39 +483,59 @@ async def ai_storyboard(body: StoryboardRequest, request: Request):
         sa = (proj or {}).get("source_assets") or {}
         real_assets = list(sa.get("screenshots") or [])
         real_icon = sa.get("icon")
+        real_title = sa.get("title")
 
     out: List[dict] = []
     succeeded = 0
     real_idx = 0
+    icon_used = False
     for i, sc in enumerate(body.scenes):
         user = await _charge_credits(user, 3, "storyboard_scene")
-        # Prefer a real screenshot for ~half of the scenes (alternating) when we have them.
-        # Real screenshots go where the script suggests product / UI / "show app" type beats.
         prompt_text = (sc.get("visual_prompt") or sc.get("description") or "").lower()
+        wants_logo = any(k in prompt_text for k in ["logo", "icon", "brand mark", "wordmark", "app icon"])
         wants_product = any(k in prompt_text for k in [
             "app", "screen", "ui", "interface", "feature", "product", "download", "store",
-            "phone", "mobile", "dashboard", "logo",
+            "phone", "mobile", "dashboard",
         ])
         img: Optional[str] = None
-        if real_assets and (wants_product or i % 2 == 1) and real_idx < len(real_assets):
-            img = await _fetch_as_data_uri(real_assets[real_idx])
-            real_idx += 1
+        source_tag = None
+
+        # 1. Logo scene → use the real icon (only once if we have it)
+        if wants_logo and real_icon and not icon_used:
+            img = await _fetch_as_data_uri(real_icon)
             if img:
-                sc = {**sc, "source": "real"}
+                icon_used = True
+                source_tag = "real_icon"
+
+        # 2. Product / UI scene → use a real screenshot
+        if not img and real_assets and (wants_product or (i % 2 == 1 and not wants_logo)):
+            while real_idx < len(real_assets) and not img:
+                img = await _fetch_as_data_uri(real_assets[real_idx])
+                real_idx += 1
+            if img:
+                source_tag = "real"
+
+        # 3. Otherwise generate via Nano Banana — but strip any brand text from the prompt
         if not img:
             prompt = sc.get("visual_prompt") or sc.get("description") or ""
+            # Remove any potential fake-brand directives — keep it scene-only.
+            prompt = _strip_brand_directives(prompt, real_title)
             camera = sc.get("camera", "")
             lighting = sc.get("lighting", "")
             motion = sc.get("motion", "")
-            full = f"{prompt}. Camera: {camera}. Lighting: {lighting}. Motion: {motion}."
+            full = (
+                f"{prompt}. Camera: {camera}. Lighting: {lighting}. Motion: {motion}. "
+                f"Do not include any text, logo, wordmark or app-store badge in this image."
+            )
             img = await generate_scene_image(full, body.aspect_ratio)
             if img:
-                sc = {**sc, "source": "ai"}
+                source_tag = "ai"
+
         if not img:
             await _refund(user, 3, "storyboard_scene")
         else:
             succeeded += 1
-        out.append({**sc, "image_url": img})
+        out.append({**sc, "image_url": img, "source": source_tag})
 
     if body.project_id and succeeded > 0:
         thumb = next((s["image_url"] for s in out if s["image_url"]), None)
@@ -481,7 +544,24 @@ async def ai_storyboard(body: StoryboardRequest, request: Request):
             {"$set": {"scenes": out, "updated_at": utc_now().isoformat(), "thumbnail": thumb}},
         )
     return {"scenes": out, "credits_left": user.credits, "succeeded": succeeded,
-            "real_screenshots_used": real_idx}
+            "real_screenshots_used": real_idx, "real_icon_used": icon_used}
+
+
+def _strip_brand_directives(text: str, real_title: Optional[str]) -> str:
+    """Remove any 'brand named X' / made-up brand names from a visual prompt."""
+    if not text:
+        return text
+    # Remove quoted strings (often fake brand wordmarks)
+    import re as _re
+    cleaned = _re.sub(r'"[^"]{2,40}"', "", text)
+    # Drop common 'app store' badge phrases
+    for token in ["app store", "google play", "play store", "get it on", "download on the",
+                  "5 stars", "4.5 stars", "10000 reviews"]:
+        cleaned = _re.sub(token, "", cleaned, flags=_re.IGNORECASE)
+    if real_title:
+        # Keep the real brand mention as-is.
+        pass
+    return cleaned.strip()
 
 
 # ---------- PROJECTS ----------

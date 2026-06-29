@@ -14,6 +14,10 @@ export default function ProjectDetail() {
   const [busyVoice, setBusyVoice] = useState(false);
   const [busyScenes, setBusyScenes] = useState(false);
   const [busyRender, setBusyRender] = useState(false);
+  const [brandOpen, setBrandOpen] = useState(false);
+  const [brandName, setBrandName] = useState("");
+  const [brandUrl, setBrandUrl] = useState("");
+  const [brandLogo, setBrandLogo] = useState("");
 
   const BACKEND = process.env.REACT_APP_BACKEND_URL;
   const videoSrc = project?.video_url ? `${BACKEND}${project.video_url}` : null;
@@ -38,13 +42,13 @@ export default function ProjectDetail() {
       const { data } = await api.post("/ai/script", {
         project_id: id, topic, video_type: project.video_type,
         language: project.language, duration_sec: project.duration_sec,
+        brand_name: brandName || undefined,
+        brand_url: brandUrl || undefined,
+        brand_logo: brandLogo || undefined,
       });
-      if (data.source_assets?.ok || data.source_assets?.title) {
-        toast.success(`Script ready — pulled real assets from ${data.source_assets.title}`);
-      } else {
-        toast.success("Script generated");
-      }
-      // Reload to pick up source_assets
+      if (data.warning) toast.message(data.warning);
+      else if (data.source_assets?.title) toast.success(`Script ready — using ${data.source_assets.title}`);
+      else toast.success("Script generated");
       const { data: p } = await api.get(`/projects/${id}`);
       setProject(p);
     } catch (err) {
@@ -154,6 +158,33 @@ export default function ProjectDetail() {
             <p className="text-[11px] text-zinc-500 mt-1.5">
               Tip: enter <span className="text-[#E2FF3D] mono">com.application.zomato</span> or <span className="text-[#E2FF3D] mono">https://yourbrand.com</span> — we'll pull the REAL brand name, description and screenshots and feed them into the script.
             </p>
+            <button type="button" onClick={() => setBrandOpen(o => !o)}
+              data-testid="brand-toggle"
+              className="mt-2 text-xs text-[#E2FF3D] hover:underline">
+              {brandOpen ? "− Hide brand details" : "+ Add brand name / logo manually"}
+            </button>
+            {brandOpen && (
+              <div className="mt-2 space-y-2 surface rounded-lg p-3">
+                <div>
+                  <div className="label-mono text-zinc-500 mb-1">Brand name</div>
+                  <input data-testid="brand-name" value={brandName} onChange={(e)=>setBrandName(e.target.value)}
+                    placeholder="e.g. Acme Coffee"
+                    className="w-full bg-[#0A0A0B] border border-white/10 rounded-md px-2 py-1.5 text-sm outline-none" />
+                </div>
+                <div>
+                  <div className="label-mono text-zinc-500 mb-1">Brand URL or Play Store ID (optional)</div>
+                  <input data-testid="brand-url" value={brandUrl} onChange={(e)=>setBrandUrl(e.target.value)}
+                    placeholder="https://acme.com or com.acme.coffee"
+                    className="w-full bg-[#0A0A0B] border border-white/10 rounded-md px-2 py-1.5 text-sm outline-none" />
+                </div>
+                <div>
+                  <div className="label-mono text-zinc-500 mb-1">Logo image URL (optional)</div>
+                  <input data-testid="brand-logo" value={brandLogo} onChange={(e)=>setBrandLogo(e.target.value)}
+                    placeholder="https://acme.com/logo.png"
+                    className="w-full bg-[#0A0A0B] border border-white/10 rounded-md px-2 py-1.5 text-sm outline-none" />
+                </div>
+              </div>
+            )}
             <button data-testid="gen-script" onClick={genScript} disabled={busyScript} className="mt-3 btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
               {busyScript ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
               {busyScript ? "Writing…" : "Generate script"}
@@ -221,8 +252,10 @@ export default function ProjectDetail() {
                       {s.image_url ? <img src={s.image_url} className="absolute inset-0 w-full h-full object-cover" alt="" /> :
                         <div className="absolute inset-0 grid place-items-center text-zinc-700"><ImageIcon className="w-6 h-6" /></div>}
                       <div className="absolute top-1.5 left-1.5 glass label-mono text-[9px] px-1.5 py-0.5 rounded">SCN {String(i+1).padStart(2,"0")}</div>
-                      {s.source === "real" && (
-                        <div className="absolute top-1.5 right-1.5 bg-[#E2FF3D] text-black label-mono text-[9px] px-1.5 py-0.5 rounded font-bold">REAL</div>
+                      {(s.source === "real" || s.source === "real_icon") && (
+                        <div className="absolute top-1.5 right-1.5 bg-[#E2FF3D] text-black label-mono text-[9px] px-1.5 py-0.5 rounded font-bold">
+                          {s.source === "real_icon" ? "LOGO" : "REAL"}
+                        </div>
                       )}
                       {s.source === "ai" && (
                         <div className="absolute top-1.5 right-1.5 glass label-mono text-[9px] px-1.5 py-0.5 rounded">AI</div>
