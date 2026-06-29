@@ -1,0 +1,123 @@
+{
+  "project_name": "CineReel AI",
+  "domain": "AI Video Creation Platform",
+  "design_vision": {
+    "theme": "Dark",
+    "archetype": "Archetype 5 (Luxury) combined with Archetype 4 (Swiss & High-Contrast)",
+    "mood": "Cinematic, Professional, Powerful, Limitless",
+    "narrative": "A dark-room editing suite built for the future. The interface drops away, letting the vibrant, cinematic video content shine. Precision meets creative freedom.",
+    "core_principles": [
+      "Dark-First: True black and obsidian surfaces to reduce eye strain and make media pop.",
+      "Neon Tension: A single, high-contrast electric accent color (Volt Yellow) to guide action.",
+      "Control Room Grid: High density, rigid 1px borders, and clear hierarchy in the dashboard.",
+      "Crystal Glassmorphism: Premium floating elements over grainy cinematic backgrounds."
+    ]
+  },
+  "color_palette": {
+    "background": {
+      "base": "#0A0A0B",
+      "surface": "#141416",
+      "surface_hover": "#1C1C1F",
+      "glass": "rgba(10, 10, 11, 0.6)"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#A1A1AA",
+      "muted": "#52525B",
+      "accent": "#E2FF3D"
+    },
+    "brand": {
+      "primary": "#E2FF3D",
+      "primary_hover": "#D4FF00",
+      "primary_foreground": "#000000",
+      "border": "rgba(255, 255, 255, 0.1)"
+    },
+    "status": {
+      "success": "#34D399",
+      "error": "#EF4444",
+      "warning": "#F59E0B"
+    }
+  },
+  "typography": {
+    "font_families": {
+      "heading": "'Outfit', sans-serif",
+      "body": "'Manrope', sans-serif",
+      "mono": "'JetBrains Mono', monospace"
+    },
+    "rules": {
+      "h1": "text-5xl sm:text-6xl font-semibold tracking-tight leading-tight",
+      "h2": "text-3xl sm:text-4xl font-semibold tracking-tight",
+      "h3": "text-xl sm:text-2xl font-medium tracking-tight",
+      "h4": "text-lg sm:text-xl font-medium",
+      "body": "text-base leading-relaxed text-zinc-400",
+      "small_labels": "text-xs font-mono uppercase tracking-[0.2em] text-zinc-500",
+      "button": "font-medium tracking-wide"
+    }
+  },
+  "spacing_and_layout": {
+    "marketing_page": {
+      "grid": "grid-cols-1 md:grid-cols-12 gap-8",
+      "padding": "py-24 sm:py-32",
+      "strategy": "Bento layouts, heavy asymmetry, generous negative space."
+    },
+    "dashboard": {
+      "grid": "grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4",
+      "padding": "p-6",
+      "strategy": "Control Room Grid. Dense, compact, every pixel utilized. Use h-full to stretch children. 1px borders to map out sections."
+    },
+    "borders": "rounded-lg to rounded-xl (subtle roundness, max 12px for primary surfaces, sharp edges for inner widgets)."
+  },
+  "surfaces_and_micro_themes": {
+    "header": "Crystal Glassmorphism: backdrop-blur-xl bg-black/60 with a subtle border-b border-white/10.",
+    "cards_dashboard": "Flat background (bg-[#141416]), 1px border-white/10, no ambient shadow. Hover state: border-white/30 and subtle -translate-y-1.",
+    "primary_button": "Solid Acid Yellow (bg-[#E2FF3D]) with stark black text. No gradients. Hover: brightness increase.",
+    "textures": "Use subtle noise/grain overlays on the marketing hero section to prevent digital flatness."
+  },
+  "motion_and_interactions": {
+    "hover_states": "All interactives must have clear hover states. Buttons scale up slightly, borders brighten.",
+    "page_transitions": "Smooth fade-ins. Staggered entrance for dashboard grid items.",
+    "marquee": "Use a slow, organic 'Editorial Ribbon' for the 'Trusted By' section on the landing page."
+  },
+  "components_strategy": {
+    "framework": "React, Tailwind CSS, pure HTML/Tailwind for marketing, heavily customized Shadcn for dashboard.",
+    "icons": "lucide-react (default choice) for clean, minimalist SVG icons.",
+    "forms": "Use Shadcn components (Input, Select, Checkbox). Never use native HTML elements for complex inputs.",
+    "tables_lists": "Shadcn Table with border-b border-white/10 for rows. Striped backgrounds are banned; use hover states.",
+    "data_testid": "MANDATORY on all interactive elements (buttons, links, inputs). Format: kebab-case, role-based."
+  },
+  "media_and_assets": {
+    "images": [
+      {
+        "category": "hero_background",
+        "url": "https://images.pexels.com/photos/13812458/pexels-photo-13812458.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Atmospheric cinematic set, used as a dark ambient background behind the main hero text. Opacity 30%."
+      },
+      {
+        "category": "texture_overlay",
+        "url": "https://images.unsplash.com/photo-1602475063211-3d98d60e3b1f",
+        "description": "Abstract dark noise texture. Overlay on the dashboard sidebar or marketing section with mix-blend-overlay."
+      },
+      {
+        "category": "user_avatar_1",
+        "url": "https://images.pexels.com/photos/31869537/pexels-photo-31869537.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Professional portrait for the dashboard user profile."
+      },
+      {
+        "category": "user_avatar_2",
+        "url": "https://images.pexels.com/photos/36623225/pexels-photo-36623225.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Avatar for AI generated persona / team member."
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Strictly follow the color palette. No arbitrary shades of gray.",
+    "Implement pure HTML/Tailwind for the landing page for maximum layout freedom.",
+    "Implement customized Shadcn UI for the dashboard, stripping out default light mode borders.",
+    "Ensure all `.js` files (not `.tsx`) include `data-testid` attributes on interactive elements.",
+    "Use the specific font families: Outfit (headings), Manrope (body). Add them to index.css or via Google Fonts in index.html.",
+    "NEVER use generic placeholder images (via.placeholder.com). Use the URLs provided in the media_and_assets section.",
+    "For the Video Templates and Assets Library, use a tight Bento Grid to display the content cards.",
+    "The primary CTA button must be the Volt Yellow color (#E2FF3D) with black text. Do not use generic blue or purple.",
+    "Dashboard should feature a fixed sidebar and a top sticky header with Crystal Glassmorphism."
+  ]
+}
