@@ -858,8 +858,8 @@ async def on_startup():
         logging.info("Default admin created: admin@cinereel.ai / admin12345")
     await db.projects.create_index("user_id")
     await db.user_sessions.create_index("session_token", unique=True)
-    # One-shot migration: move heavy base64 fields out of project documents to disk.
-    await _migrate_legacy_base64_to_disk()
+    # Background migration so startup is never blocked (large legacy data must not stall health-checks).
+    asyncio.create_task(_migrate_legacy_base64_to_disk())
 
 
 async def _migrate_legacy_base64_to_disk():
