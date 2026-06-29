@@ -113,11 +113,11 @@ export default function Login({ mode = "login" }) {
               <span className="font-semibold tracking-tight">CineReel.AI</span>
             </Link>
           </div>
-          <h1 className="text-3xl font-semibold tracking-tight">
+          <h1 className="text-3xl font-semibold tracking-tight" data-testid="auth-heading">
             {tab === "signup" ? "Create your account" : tab === "otp" ? "Sign in with code" : "Welcome back"}
           </h1>
           <p className="text-sm text-zinc-400 mt-2">
-            {tab === "signup" ? "100 free credits to start." : "Continue with email or Google."}
+            {tab === "signup" ? "100 free credits to start." : tab === "otp" ? "We'll email you a 6-digit code." : "Continue with email or Google."}
           </p>
 
           <div className="mt-6 grid grid-cols-3 gap-1 surface !p-1 rounded-full !border-0 bg-[#1C1C1F]">

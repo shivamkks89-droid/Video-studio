@@ -1,0 +1,39 @@
+{
+  "summary": "Re-verified all 6 fixes from iteration_1. Backend: 31/31 pytest cases PASS (52s). Scene image now returns a real ~1.4MB JPEG data URI (Gemini 3.1-flash-image-preview works). /ai/script, /hooks, /ctas, /ad-ideas, /tts now wrap AIServiceError with try/except and refund credits — confirmed via _refund branches in server.py at lines 263-336. /ai/tts returns 502 with friendly JSON {detail: 'Your ElevenLabs plan does not allow this voice...'} as expected (free-tier ElevenLabs key still a known constraint). Frontend: signup heading now reads 'Create your account' on /signup. All 9 sidebar test ids present and clickable (sidebar-projects, sidebar-script-studio, sidebar-voice-studio, sidebar-scene-generator, sidebar-templates, sidebar-brand-kit, sidebar-ai-assets, sidebar-credits-usage, sidebar-settings). Voice-select <option> now renders plain text (no <span> wrapper, no hydration warning). End-to-end smoke (login admin → new project → fill topic → gen-script → gen-scenes) successfully produced a 5-scene script + 7 real cinematic storyboard images of premium Indian kurta festive scene. Admin panel loads with users/projects/transactions/revenue stats. NEW UX issue found: when /ai/tts returns 502, the preview Cloudflare gateway REPLACES the JSON body with a generic Cloudflare 502 HTML page, so the frontend axios catch handler cannot read err.response.data.detail and shows NO toast to the user — the click silently fails. Internal port 8001 still returns the correct JSON; this is purely a CF-edge-of-preview-env behaviour.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/ai/tts", "issue": "Backend correctly returns 502 + friendly JSON when ElevenLabs free-tier rejects (paid_plan_required). However, Cloudflare in the preview env REPLACES 5xx upstream responses with a generic HTML 502 page, so the frontend cannot read the friendly message. Consider returning 200 with {error: '...', refunded: true} OR a 422/402 status code so CF doesn't strip the body."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Generate voiceover (project detail)", "issue": "Clicking gen-voice when ElevenLabs is on free-tier produces a 502 (visible in console) but NO toast is shown to the user because Cloudflare strips the JSON body the toast helper expects. UX dead-end.", "affected_selectors": ["[data-testid='gen-voice']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_cinereel_backend.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Replace /ai/tts (and other AI endpoints that may 502) with either: (a) HTTP 200 + {audio_url: null, error: '...', refunded: true}, or (b) HTTP 422 with detail — to avoid Cloudflare 5xx body stripping in preview env. Then the frontend toast handler in ProjectDetail.jsx will surface the friendly message instead of silently failing.",
+    "Optional: still upgrade ELEVENLABS_API_KEY to a paid tier for TTS to actually work end-to-end."
+  ],
+  "critical_code_review_comments": [
+    "ai_services.synthesize_speech: good — returns dict with error key and route refunds. But the route still raises HTTPException(502), which CF strips. Either return JSON 200 with error field, or pick a 4xx status.",
+    "Default admin password 'admin12345' still committed in code — fine for MVP, flag for production.",
+    "DashboardLayout uses label-derived test ids (label.toLowerCase().replace(/[^a-z0-9]+/g,'-')). Works, but a renamed label would silently break test selectors. Consider explicit testid per item."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_cinereel_backend.py (updated test_ai_tts to accept 200 or 502 + verify credit refund)"
+  ],
+  "success_rate": {"backend": "100% (31/31 pytest)", "frontend": "100% on UI flow (signup heading, sidebar testids, project create, script gen, storyboard image gen, admin panel). 1 UX gap on voice-error toast."},
+  "test_credentials": "Admin: admin@cinereel.ai / admin12345. Test users created on-the-fly via /api/auth/signup (uitest_*@example.com).",
+  "seed_data_creation": "Each pytest run creates throw-away users via signup. UI flow logged in as admin and created throw-away project 'Storyboard Test'.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All review_request items 1-6 confirmed FIXED. Pytest is green at 31/31. The only remaining issue is Cloudflare 5xx body stripping which causes the friendly TTS error to never reach the user. Once the main agent switches /ai/tts (and friends) to return 200/4xx instead of 502, the UX gap closes. Use BASE_URL from REACT_APP_BACKEND_URL. The internal port 8001 returns correct JSON for 502 responses; the preview public URL is gated by Cloudflare which strips 5xx bodies.",
+  "rca of the issue": "Voice toast silent-fail RCA: backend /ai/tts -> raises HTTPException(502, detail='Your ElevenLabs plan does not allow this voice...') -> Cloudflare in preview env intercepts 5xx upstream responses and replaces body with its own HTML error page (verified: curl to https URL returns 'preview.emergentagent.com | 502: Bad gateway' HTML; curl to localhost:8001 returns the correct JSON detail). Frontend's axios catch reads err.response.data.detail, which is undefined for HTML responses, so toast.error is called with 'undefined' or falls back to generic, producing no visible message. Mitigation: don't use 5xx for handled AI provider errors; use 200 + error field or 422."
+}

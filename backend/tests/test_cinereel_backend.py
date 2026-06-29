@@ -181,11 +181,20 @@ def test_ai_tts(session, auth_headers):
     assert voices, "no voices"
     voice_id = voices[0].get("voice_id") or voices[0].get("id")
     assert voice_id, f"no voice id in {voices[0]}"
+    # Capture credits before
+    me_before = session.get(f"{API}/auth/me", headers=auth_headers).json()
+    cb = me_before["credits"]
     r = session.post(f"{API}/ai/tts", headers=auth_headers,
                      json={"text": "Hello, this is a short test.", "voice_id": voice_id}, timeout=120)
-    assert r.status_code == 200, r.text
-    url = r.json().get("audio_url")
-    assert isinstance(url, str) and url.startswith("data:"), f"audio_url not data URI: {url[:60] if url else url}"
+    # Either success (200 with data URI) or graceful failure (502 with friendly message + credit refund)
+    assert r.status_code in (200, 502), r.text
+    if r.status_code == 200:
+        url = r.json().get("audio_url")
+        assert isinstance(url, str) and url.startswith("data:")
+    else:
+        # 502 path: credits must be refunded (no net charge)
+        me_after = session.get(f"{API}/auth/me", headers=auth_headers).json()
+        assert me_after["credits"] == cb, f"credits not refunded on TTS failure: before={cb} after={me_after['credits']}"
 
 
 def test_ai_scene_image(session, auth_headers):

@@ -50,7 +50,7 @@ export default function DashboardLayout() {
               key={l.to}
               to={l.to}
               end={l.exact}
-              data-testid={`nav-${l.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+              data-testid={`sidebar-${l.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition ${
                   isActive ? "bg-[#141416] text-white border border-white/10" : "text-zinc-400 hover:text-white hover:bg-[#141416]"

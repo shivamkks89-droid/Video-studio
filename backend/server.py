@@ -28,8 +28,8 @@ from auth import (
     hash_password, issue_jwt, send_otp_email, verify_password,
 )
 from ai_services import (
-    generate_ctas, generate_hooks, generate_scene_image, generate_script,
-    list_voices, suggest_ad_ideas, synthesize_speech,
+    AIServiceError, generate_ctas, generate_hooks, generate_scene_image,
+    generate_script, list_voices, suggest_ad_ideas, synthesize_speech,
 )
 from templates_seed import AVATARS, PLANS, STOCK_ASSETS, TEMPLATES, VIDEO_TYPES
 
@@ -67,6 +67,15 @@ async def _charge_credits(user: User, amount: int, reason: str, project_id: Opti
     new_credits = user.credits - amount
     await db.users.update_one({"user_id": user.user_id}, {"$set": {"credits": new_credits}})
     txn = CreditTransaction(user_id=user.user_id, delta=-amount, reason=reason, project_id=project_id)
+    await db.credit_transactions.insert_one(_doc(txn))
+    user.credits = new_credits
+    return user
+
+
+async def _refund(user: User, amount: int, reason: str, project_id: Optional[str] = None) -> User:
+    new_credits = user.credits + amount
+    await db.users.update_one({"user_id": user.user_id}, {"$set": {"credits": new_credits}})
+    txn = CreditTransaction(user_id=user.user_id, delta=amount, reason=f"refund_{reason}", project_id=project_id)
     await db.credit_transactions.insert_one(_doc(txn))
     user.credits = new_credits
     return user
@@ -249,7 +258,11 @@ async def get_plans():
 async def ai_script(body: ScriptRequest, request: Request):
     user = await _current(request)
     user = await _charge_credits(user, 5, "script_generation", body.project_id)
-    script = await generate_script(body.model_dump())
+    try:
+        script = await generate_script(body.model_dump())
+    except AIServiceError as e:
+        await _refund(user, 5, "script_generation", body.project_id)
+        raise HTTPException(status_code=502, detail=str(e))
     if body.project_id:
         await db.projects.update_one(
             {"project_id": body.project_id, "user_id": user.user_id},
@@ -262,7 +275,11 @@ async def ai_script(body: ScriptRequest, request: Request):
 async def ai_hooks(body: HookRequest, request: Request):
     user = await _current(request)
     user = await _charge_credits(user, 1, "hook_generation")
-    hooks = await generate_hooks(body.topic, body.language, body.count)
+    try:
+        hooks = await generate_hooks(body.topic, body.language, body.count)
+    except AIServiceError as e:
+        await _refund(user, 1, "hook_generation")
+        raise HTTPException(status_code=502, detail=str(e))
     return {"hooks": hooks, "credits_left": user.credits}
 
 
@@ -270,7 +287,11 @@ async def ai_hooks(body: HookRequest, request: Request):
 async def ai_ctas(body: CTARequest, request: Request):
     user = await _current(request)
     user = await _charge_credits(user, 1, "cta_generation")
-    ctas = await generate_ctas(body.topic, body.language, body.count)
+    try:
+        ctas = await generate_ctas(body.topic, body.language, body.count)
+    except AIServiceError as e:
+        await _refund(user, 1, "cta_generation")
+        raise HTTPException(status_code=502, detail=str(e))
     return {"ctas": ctas, "credits_left": user.credits}
 
 
@@ -283,7 +304,11 @@ class IdeaReq(BaseModel):
 async def ai_ad_ideas(body: IdeaReq, request: Request):
     user = await _current(request)
     user = await _charge_credits(user, 2, "ad_ideas")
-    ideas = await suggest_ad_ideas(body.query, body.language)
+    try:
+        ideas = await suggest_ad_ideas(body.query, body.language)
+    except AIServiceError as e:
+        await _refund(user, 2, "ad_ideas")
+        raise HTTPException(status_code=502, detail=str(e))
     return {"ideas": ideas, "credits_left": user.credits}
 
 
@@ -293,11 +318,12 @@ async def ai_tts(body: TTSRequest, request: Request):
     user = await _current(request)
     cost = max(1, len(body.text) // 200)
     user = await _charge_credits(user, cost, "tts_generation")
-    audio = await synthesize_speech(body.text, body.voice_id, body.stability,
-                                    body.similarity_boost, body.style)
-    if not audio:
-        raise HTTPException(status_code=502, detail="Voice service failed. Please retry.")
-    return {"audio_url": audio, "credits_left": user.credits}
+    result = await synthesize_speech(body.text, body.voice_id, body.stability,
+                                     body.similarity_boost, body.style)
+    if "error" in result:
+        await _refund(user, cost, "tts_generation")
+        raise HTTPException(status_code=502, detail=result["error"])
+    return {"audio_url": result["audio_url"], "credits_left": user.credits}
 
 
 # ---------- AI: scene images ----------
@@ -307,31 +333,37 @@ async def ai_scene_image(body: SceneImageRequest, request: Request):
     user = await _charge_credits(user, 3, "scene_image")
     img = await generate_scene_image(body.prompt, body.aspect_ratio)
     if not img:
+        await _refund(user, 3, "scene_image")
         return {"image_url": None, "credits_left": user.credits,
-                "warning": "Image generation unavailable — using placeholder."}
+                "warning": "Image generation unavailable — credits refunded."}
     return {"image_url": img, "credits_left": user.credits}
 
 
 @api.post("/ai/storyboard")
 async def ai_storyboard(body: StoryboardRequest, request: Request):
     user = await _current(request)
-    total_cost = 3 * len(body.scenes)
-    user = await _charge_credits(user, total_cost, "storyboard")
     out: List[dict] = []
+    succeeded = 0
     for sc in body.scenes:
+        user = await _charge_credits(user, 3, "storyboard_scene")
         prompt = sc.get("visual_prompt") or sc.get("description") or ""
         camera = sc.get("camera", "")
         lighting = sc.get("lighting", "")
         motion = sc.get("motion", "")
         full = f"{prompt}. Camera: {camera}. Lighting: {lighting}. Motion: {motion}."
         img = await generate_scene_image(full, body.aspect_ratio)
+        if not img:
+            await _refund(user, 3, "storyboard_scene")
+        else:
+            succeeded += 1
         out.append({**sc, "image_url": img})
-    if body.project_id:
+    if body.project_id and succeeded > 0:
+        thumb = next((s["image_url"] for s in out if s["image_url"]), None)
         await db.projects.update_one(
             {"project_id": body.project_id, "user_id": user.user_id},
-            {"$set": {"scenes": out, "updated_at": utc_now().isoformat()}},
+            {"$set": {"scenes": out, "updated_at": utc_now().isoformat(), "thumbnail": thumb}},
         )
-    return {"scenes": out, "credits_left": user.credits}
+    return {"scenes": out, "credits_left": user.credits, "succeeded": succeeded}
 
 
 # ---------- PROJECTS ----------

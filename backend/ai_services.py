@@ -1,7 +1,6 @@
 """AI service wrappers: Claude script gen, Nano Banana scene images, ElevenLabs TTS."""
 import asyncio
 import base64
-import io
 import json
 import os
 import re
@@ -14,7 +13,7 @@ EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 ELEVEN_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
 
 
-# ---------- Indian / Multilingual voice catalog (ElevenLabs voice IDs) ----------
+# ---------- Voice catalog ----------
 INDIAN_VOICES = [
     {"id": "9BWtsMINqrJLrRacOk9x", "name": "Aria", "gender": "female", "language": "english", "style": "professional"},
     {"id": "EXAVITQu4vr4xnSDxMaL", "name": "Sarah", "gender": "female", "language": "english", "style": "friendly"},
@@ -26,7 +25,6 @@ INDIAN_VOICES = [
     {"id": "XB0fDUnXU5powFXDhCwa", "name": "Charlotte", "gender": "female", "language": "english", "style": "natural"},
     {"id": "pFZP5JQG7iQjIQuC4Bku", "name": "Lily", "gender": "female", "language": "english", "style": "friendly"},
     {"id": "Xb7hH8MSUJpSbSDYk0k2", "name": "Alice", "gender": "female", "language": "english", "style": "professional"},
-    # Tag a few for Hindi/Hinglish — multilingual_v2 supports all
     {"id": "JBFqnCBsd6RMkjVDRZzb", "name": "Arjun", "gender": "male", "language": "hindi", "style": "motivational"},
     {"id": "EXAVITQu4vr4xnSDxMaL", "name": "Priya", "gender": "female", "language": "hindi", "style": "friendly"},
     {"id": "TX3LPaxmHKxFdv7VOQHJ", "name": "Rohan", "gender": "male", "language": "hinglish", "style": "natural"},
@@ -40,7 +38,7 @@ def list_voices(language: Optional[str] = None) -> List[dict]:
     return [v for v in INDIAN_VOICES if v["language"] == language]
 
 
-# ---------- Claude script generation ----------
+# ---------- LLM helpers ----------
 SCRIPT_SYSTEM = """You are CineReel, a world-class scriptwriter for cinematic ads, social media reels and AI avatar videos.
 You write punchy, viral, conversion-driven scripts.
 
@@ -67,10 +65,27 @@ You ALWAYS respond with valid JSON only (no markdown, no commentary), in this ex
 }
 
 Rules:
-- Match the requested language exactly. Hinglish = mix Hindi-Devanagari/transliterated with English casually.
+- Match the requested language exactly. Hinglish = mix Hindi/English casually.
 - Scenes must total roughly the requested duration in seconds.
 - Hooks must stop the scroll: question, bold claim, or contrarian idea.
 - CTA must be specific and trackable."""
+
+
+class AIServiceError(Exception):
+    """Raised when an AI provider returns an error (so the API can refund credits)."""
+
+
+async def _claude_send(system: str, user: str) -> str:
+    chat = LlmChat(
+        api_key=EMERGENT_KEY,
+        session_id=f"sess-{os.urandom(4).hex()}",
+        system_message=system,
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    try:
+        resp = await chat.send_message(UserMessage(text=user))
+    except Exception as e:
+        raise AIServiceError(f"LLM error: {e}") from e
+    return resp if isinstance(resp, str) else str(resp)
 
 
 async def generate_script(payload: dict) -> dict:
@@ -82,7 +97,6 @@ async def generate_script(payload: dict) -> dict:
     audience = payload.get("target_audience") or "general audience"
     cta = payload.get("cta") or "Sign up / Visit website"
     notes = payload.get("extra_notes") or ""
-
     user_prompt = f"""Write a {duration}-second {video_type.replace('_', ' ')} script.
 Topic: {topic}
 Language: {language}
@@ -92,28 +106,15 @@ Desired CTA: {cta}
 Notes: {notes}
 
 Break into {max(3, min(8, duration // 5))} scenes. Return JSON only."""
-
-    chat = LlmChat(
-        api_key=EMERGENT_KEY,
-        session_id=f"script-{os.urandom(4).hex()}",
-        system_message=SCRIPT_SYSTEM,
-    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-
-    resp = await chat.send_message(UserMessage(text=user_prompt))
-    text = resp if isinstance(resp, str) else str(resp)
+    text = await _claude_send(SCRIPT_SYSTEM, user_prompt)
     return _safe_json(text)
 
 
 async def generate_hooks(topic: str, language: str, count: int = 5) -> List[str]:
-    chat = LlmChat(
-        api_key=EMERGENT_KEY,
-        session_id=f"hooks-{os.urandom(4).hex()}",
-        system_message="You write scroll-stopping video hooks. Respond with a JSON array of strings only.",
-    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-    resp = await chat.send_message(
-        UserMessage(text=f"Give {count} viral hook lines in {language} for: {topic}. JSON array only.")
+    text = await _claude_send(
+        "You write scroll-stopping video hooks. Respond with a JSON array of strings only.",
+        f"Give {count} viral hook lines in {language} for: {topic}. JSON array only.",
     )
-    text = resp if isinstance(resp, str) else str(resp)
     data = _safe_json(text)
     if isinstance(data, list):
         return data
@@ -121,15 +122,10 @@ async def generate_hooks(topic: str, language: str, count: int = 5) -> List[str]
 
 
 async def generate_ctas(topic: str, language: str, count: int = 5) -> List[str]:
-    chat = LlmChat(
-        api_key=EMERGENT_KEY,
-        session_id=f"ctas-{os.urandom(4).hex()}",
-        system_message="You write high-converting call-to-action lines. Respond with a JSON array of strings only.",
-    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-    resp = await chat.send_message(
-        UserMessage(text=f"Give {count} powerful CTAs in {language} for: {topic}. JSON array only.")
+    text = await _claude_send(
+        "You write high-converting call-to-action lines. Respond with a JSON array of strings only.",
+        f"Give {count} powerful CTAs in {language} for: {topic}. JSON array only.",
     )
-    text = resp if isinstance(resp, str) else str(resp)
     data = _safe_json(text)
     if isinstance(data, list):
         return data
@@ -137,34 +133,23 @@ async def generate_ctas(topic: str, language: str, count: int = 5) -> List[str]:
 
 
 async def suggest_ad_ideas(query: str, language: str = "english") -> List[dict]:
-    """Auto-suggest ad ideas from a website URL, Play Store app ID, or topic keyword."""
-    chat = LlmChat(
-        api_key=EMERGENT_KEY,
-        session_id=f"ideas-{os.urandom(4).hex()}",
-        system_message=(
-            "You are an ad strategist. Given a brand, website URL, Play Store app ID, "
-            "or product idea, output 6 distinct ad concepts. Respond JSON only as: "
-            '{"ideas":[{"title":"","angle":"","hook":"","video_type":"cinematic_ad|product_ad|ig_reel|yt_short|tiktok|talking_avatar","duration_sec":15}]}'
-        ),
-    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-    resp = await chat.send_message(
-        UserMessage(text=f"Brand / input: {query}. Language: {language}.")
+    text = await _claude_send(
+        ("You are an ad strategist. Given a brand, website URL, Play Store app ID, "
+         "or product idea, output 6 distinct ad concepts. Respond JSON only as: "
+         '{"ideas":[{"title":"","angle":"","hook":"","video_type":"cinematic_ad|product_ad|ig_reel|yt_short|tiktok|talking_avatar","duration_sec":15}]}'),
+        f"Brand / input: {query}. Language: {language}.",
     )
-    text = resp if isinstance(resp, str) else str(resp)
     data = _safe_json(text)
     return data.get("ideas", []) if isinstance(data, dict) else []
 
 
 def _safe_json(text: str):
-    """Robustly parse JSON from LLM text output."""
     text = text.strip()
-    # strip markdown fences
     text = re.sub(r"^```(?:json)?", "", text).strip()
     text = re.sub(r"```$", "", text).strip()
     try:
         return json.loads(text)
     except Exception:
-        # try to find first {...} or [...] block
         m = re.search(r"(\{.*\}|\[.*\])", text, re.DOTALL)
         if m:
             try:
@@ -176,42 +161,42 @@ def _safe_json(text: str):
 
 # ---------- Gemini Nano Banana image generation ----------
 async def generate_scene_image(prompt: str, aspect_ratio: str = "9:16") -> Optional[str]:
-    """Returns base64 data URL of the generated image, or None on failure."""
+    """Returns a data: URL of a PNG image, or None on failure."""
     try:
-        from emergentintegrations.llm.chat import LlmChat as _Chat, UserMessage as _Msg
-        chat = _Chat(
+        chat = LlmChat(
             api_key=EMERGENT_KEY,
             session_id=f"img-{os.urandom(4).hex()}",
             system_message="You generate cinematic still images.",
-        ).with_model("gemini", "gemini-2.5-flash-image-preview")
-        full_prompt = f"Cinematic photo, {aspect_ratio} aspect ratio. {prompt}. High detail, professional lighting, no text overlays."
-        resp = await chat.send_message(_Msg(text=full_prompt))
-        # emergentintegrations image-capable models may return a dict / bytes / string
-        if isinstance(resp, dict):
-            for k in ("image", "image_b64", "data", "url"):
-                v = resp.get(k)
-                if isinstance(v, str) and v.startswith("data:"):
-                    return v
-                if isinstance(v, str) and len(v) > 200:
-                    return f"data:image/png;base64,{v}"
-        if isinstance(resp, (bytes, bytearray)):
-            return "data:image/png;base64," + base64.b64encode(resp).decode()
-        if isinstance(resp, str) and resp.startswith("data:image"):
-            return resp
+        ).with_model("gemini", "gemini-3.1-flash-image-preview").with_params(modalities=["image", "text"])
+        full_prompt = (
+            f"Cinematic photo, {aspect_ratio} aspect ratio. {prompt}. "
+            f"High detail, professional lighting, no text overlays, no captions."
+        )
+        text, images = await chat.send_message_multimodal_response(UserMessage(text=full_prompt))
+        if not images:
+            print(f"[Image gen] no images returned; text={text[:120] if text else ''}")
+            return None
+        img = images[0]
+        mime = img.get("mime_type", "image/png")
+        data = img.get("data", "")
+        if not data:
+            return None
+        return f"data:{mime};base64,{data}"
     except Exception as e:
         print(f"[Image gen error] {e}")
-    return None
+        return None
 
 
 # ---------- ElevenLabs TTS ----------
 async def synthesize_speech(text: str, voice_id: str, stability: float = 0.55,
-                            similarity_boost: float = 0.75, style: float = 0.3) -> Optional[str]:
-    """Returns a data: URL containing the MP3."""
+                            similarity_boost: float = 0.75, style: float = 0.3) -> dict:
+    """Returns {audio_url} on success or {error} on failure (so the route can refund credits)."""
     if not ELEVEN_KEY:
-        return None
+        return {"error": "ELEVENLABS_API_KEY missing"}
     try:
         from elevenlabs.client import ElevenLabs
-        # Run blocking SDK in thread
+        from elevenlabs.core.api_error import ApiError  # type: ignore
+
         def _call():
             client = ElevenLabs(api_key=ELEVEN_KEY)
             audio_iter = client.text_to_speech.convert(
@@ -231,7 +216,11 @@ async def synthesize_speech(text: str, voice_id: str, stability: float = 0.55,
                     buf += chunk
             return buf
         audio = await asyncio.to_thread(_call)
-        return "data:audio/mpeg;base64," + base64.b64encode(audio).decode()
-    except Exception as e:
-        print(f"[TTS error] {e}")
-        return None
+        if not audio:
+            return {"error": "Empty audio"}
+        return {"audio_url": "data:audio/mpeg;base64," + base64.b64encode(audio).decode()}
+    except Exception as e:  # ApiError or generic
+        msg = str(e)
+        if "paid_plan_required" in msg or "Free users cannot use library voices" in msg:
+            return {"error": "Your ElevenLabs plan does not allow this voice. Please upgrade ElevenLabs or clone a voice into your library."}
+        return {"error": f"Voice service error: {msg[:160]}"}

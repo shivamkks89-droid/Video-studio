@@ -139,9 +139,10 @@ export default function ProjectDetail() {
             </div>
             <select data-testid="voice-select" value={voiceId} onChange={(e)=>setVoiceId(e.target.value)}
               className="w-full bg-[#0A0A0B] border border-white/10 rounded-lg px-3 py-2 text-sm outline-none">
-              {filteredVoices.map((v, i) => (
-                <option key={`${v.id}-${i}`} value={v.id}>{v.name} — {v.language} · {v.style}</option>
-              ))}
+              {filteredVoices.map((v, i) => {
+                const label = `${v.name} — ${v.language} · ${v.style}`;
+                return <option key={`${v.id}-${i}`} value={v.id}>{label}</option>;
+              })}
             </select>
             <button data-testid="gen-voice" onClick={genVoice} disabled={busyVoice || !project.script}
               className="mt-3 btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
