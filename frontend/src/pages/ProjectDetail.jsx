@@ -62,9 +62,6 @@ export default function ProjectDetail() {
   const genVoice = async () => {
     const text = project.script?.voiceover_script || project.script?.body || "";
     if (!text) return toast.error("Generate a script first");
-  const genVoice = async () => {
-    const text = project.script?.voiceover_script || project.script?.body || "";
-    if (!text) return toast.error("Generate a script first");
     setBusyVoice(true);
     try {
       const { data } = await api.post("/ai/tts", { text, voice_id: voiceId });
@@ -79,7 +76,6 @@ export default function ProjectDetail() {
     } catch (err) {
       toast.error(err.response?.data?.detail || err.response?.data?.error || "Voice gen failed");
     } finally { setBusyVoice(false); }
-  };
   };
 
   const genScenes = async (only_missing = false) => {
@@ -108,6 +104,12 @@ export default function ProjectDetail() {
 
   const renderVideo = async () => {
     if (!project.scenes?.length) return toast.error("Generate the storyboard first");
+    if (!project.audio_url) {
+      const proceed = window.confirm(
+        "Voiceover not generated yet — the video will be SILENT. Click Cancel to first press 'Generate voiceover', or OK to render a silent slideshow."
+      );
+      if (!proceed) return;
+    }
     setBusyRender(true);
     try {
       const { data } = await api.post(`/projects/${id}/render`);
