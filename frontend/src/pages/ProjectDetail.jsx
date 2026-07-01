@@ -122,14 +122,18 @@ export default function ProjectDetail() {
         setBusyRender(false);
         return;
       }
-      toast.message("Rendering started — this takes 20-60 seconds…");
-      // Poll job status — tolerate transient network failures
+      toast.message("Rendering started — this takes 30-90 seconds…");
+      // Poll job status — tolerate transient network failures (Cloudflare 524s during
+      // ffmpeg CPU bursts are common). Fall back to reading the project directly
+      // when the job endpoint stalls.
       const start = Date.now();
       let consecutiveErrors = 0;
+      let pollInterval = 4000;
       const poll = async () => {
         try {
           const { data: job } = await api.get(`/render/jobs/${jobId}`);
           consecutiveErrors = 0;
+          pollInterval = 4000;
           if (job.status === "complete" && job.video_url) {
             setProject({ ...project, video_url: job.video_url, status: "complete" });
             toast.success("Video rendered — play or download below");
@@ -143,19 +147,31 @@ export default function ProjectDetail() {
           }
         } catch (_e) {
           consecutiveErrors += 1;
-          if (consecutiveErrors >= 5) {
-            toast.error("Lost connection to render job — try refreshing in a minute");
+          // Fallback: read the project directly (much lighter query) — the background
+          // job writes video_url onto the project on success.
+          try {
+            const { data: proj } = await api.get(`/projects/${id}`);
+            if (proj?.video_url && proj?.status === "complete") {
+              setProject(proj);
+              toast.success("Video rendered — play or download below");
+              setBusyRender(false);
+              return;
+            }
+          } catch (_e2) { /* keep retrying */ }
+          // Back-off polling to reduce load on origin during CPU spikes.
+          pollInterval = Math.min(15000, pollInterval + 2000);
+          if (consecutiveErrors >= 25) {
+            toast.message("Render is still working in the background — refresh in a minute to see it.");
             setBusyRender(false);
             return;
           }
-          // transient error, keep polling
         }
-        if (Date.now() - start > 5 * 60 * 1000) {
-          toast.error("Render is taking too long — try again later");
+        if (Date.now() - start > 8 * 60 * 1000) {
+          toast.message("Render is still working — refresh this page shortly.");
           setBusyRender(false);
           return;
         }
-        setTimeout(poll, 3000);
+        setTimeout(poll, pollInterval);
       };
       poll();
     } catch (err) {

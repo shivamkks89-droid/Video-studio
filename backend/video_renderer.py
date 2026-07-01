@@ -134,22 +134,25 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
             for i, (p, meta) in enumerate(zip(img_paths, images)):
                 out = tmp_path / f"scn_{i:03d}.mp4"
                 dur = max(1.5, min(6.0, meta["duration"]))
-                # Cover-scale to a 2x canvas, then zoompan to target.
+                # Zoompan on a 1.4x canvas — enough for a subtle ken-burns without
+                # hammering CPU/RAM on small production pods.
                 dur_frames = max(45, int(dur * fps))
+                cw, ch = int(w * 1.4), int(h * 1.4)
                 vf = (
-                    f"scale={w*2}:{h*2}:force_original_aspect_ratio=increase,"
-                    f"crop={w*2}:{h*2},"
-                    f"zoompan=z='min(zoom+0.0015,1.15)':d={dur_frames}:s={w}x{h}:fps={fps},"
+                    f"scale={cw}:{ch}:force_original_aspect_ratio=increase,"
+                    f"crop={cw}:{ch},"
+                    f"zoompan=z='min(zoom+0.0012,1.12)':d={dur_frames}:s={w}x{h}:fps={fps},"
                     f"format=yuv420p"
                 )
                 cmd = [
-                    FFMPEG_BIN, "-y", "-loop", "1", "-i", str(p),
+                    FFMPEG_BIN, "-y", "-threads", "1", "-loop", "1", "-i", str(p),
                     "-t", f"{dur:.2f}", "-r", str(fps),
                     "-vf", vf,
-                    "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
+                    "-pix_fmt", "yuv420p", "-threads", "1",
                     str(out),
                 ]
-                r = subprocess.run(cmd, capture_output=True, timeout=60)
+                r = subprocess.run(cmd, capture_output=True, timeout=90)
                 if r.returncode != 0:
                     print("[render] scene fail:", r.stderr.decode()[-300:])
                     return None
@@ -160,7 +163,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
             concat_list.write_text("\n".join(f"file '{v}'" for v in scene_videos))
             combined = tmp_path / "combined.mp4"
             r = subprocess.run(
-                [FFMPEG_BIN, "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list),
+                [FFMPEG_BIN, "-y", "-threads", "1", "-f", "concat", "-safe", "0", "-i", str(concat_list),
                  "-c", "copy", str(combined)],
                 capture_output=True, timeout=120,
             )
@@ -174,12 +177,12 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                 audio_path = tmp_path / "voice.mp3"
                 audio_path.write_bytes(audio_bytes)
                 cmd = [
-                    FFMPEG_BIN, "-y", "-i", str(combined), "-i", str(audio_path),
+                    FFMPEG_BIN, "-y", "-threads", "1", "-i", str(combined), "-i", str(audio_path),
                     "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
                     "-shortest", str(final),
                 ]
             else:
-                cmd = [FFMPEG_BIN, "-y", "-i", str(combined), "-c", "copy", str(final)]
+                cmd = [FFMPEG_BIN, "-y", "-threads", "1", "-i", str(combined), "-c", "copy", str(final)]
             r = subprocess.run(cmd, capture_output=True, timeout=120)
             if r.returncode != 0:
                 print("[render] mux fail:", r.stderr.decode()[-300:])
