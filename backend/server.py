@@ -334,37 +334,103 @@ async def ai_script(body: ScriptRequest, request: Request):
 
 
 # ---------- Audience-targeted script variants ----------
-AUDIENCE_PROFILES = {
-    "girls": {
-        "label": "Girls / Women",
-        "notes": ("Target audience: young women & girls (ages 16-32). Use an emotionally warm, "
-                  "aspirational, self-love and empowerment-forward tone. Reference feelings, "
-                  "friendship, glow-up, confidence, style, wellness and celebrations. Use "
-                  "words girls actually use on Instagram Reels. Avoid tech-jargon. Hooks should "
-                  "spark curiosity or FOMO."),
+# Three variant axes — each has 3 profiles.
+VARIANT_AXES = {
+    "gender": {
+        "girls": {
+            "label": "Girls / Women",
+            "notes": ("Target audience: young women & girls (ages 16-32). Use an emotionally warm, "
+                      "aspirational, self-love and empowerment-forward tone. Reference feelings, "
+                      "friendship, glow-up, confidence, style, wellness and celebrations. Use "
+                      "words girls actually use on Instagram Reels. Avoid tech-jargon. Hooks should "
+                      "spark curiosity or FOMO."),
+        },
+        "boys": {
+            "label": "Boys / Men",
+            "notes": ("Target audience: young men & boys (ages 16-32). Use a punchy, action-driven, "
+                      "high-energy and achievement-oriented tone. Reference hustle, results, gains, "
+                      "gadgets, sports, gaming, adventure and status. Direct, no-fluff sentences. "
+                      "Hooks should challenge or promise a payoff."),
+        },
+        "unisex": {
+            "label": "Everyone (Unisex)",
+            "notes": ("Target audience: universal — mixed genders 16-40. Use a neutral, benefit-first, "
+                      "inclusive tone. Emphasise the outcome and value proposition without gender-coded "
+                      "language. Hook should be a bold universal claim."),
+        },
     },
-    "boys": {
-        "label": "Boys / Men",
-        "notes": ("Target audience: young men & boys (ages 16-32). Use a punchy, action-driven, "
-                  "high-energy and achievement-oriented tone. Reference hustle, results, gains, "
-                  "gadgets, sports, gaming, adventure and status. Direct, no-fluff sentences. "
-                  "Hooks should challenge or promise a payoff."),
+    "age": {
+        "genz": {
+            "label": "Gen Z (16-26)",
+            "notes": ("Target: Gen Z, ages 16-26. Use TikTok/Reels-native slang, mixed Hindi-English, "
+                      "meme-adjacent phrasing, fast cuts implied. Reference short-form culture, "
+                      "aesthetic vibes, main-character energy, hustle-lite. Hook must scroll-stop in "
+                      "under 3 words. Avoid corporate voice completely."),
+        },
+        "millennial": {
+            "label": "Millennial (27-40)",
+            "notes": ("Target: Millennials, ages 27-40. Use a smart, slightly self-aware, "
+                      "story-driven tone. Reference careers, EMIs, weekend brunches, side hustles, "
+                      "life admin, saving-for-family. Values ROI and honesty. Hooks work as "
+                      "relatable one-liners about 'adulting'."),
+        },
+        "parents": {
+            "label": "Parents (32-55)",
+            "notes": ("Target: parents with school-age kids, ages 32-55. Use a trustworthy, "
+                      "protective, family-first tone. Reference kids' futures, safety, savings, "
+                      "quality time, health, education. Avoid slang. Hooks should tap into "
+                      "'ek smart decision aaj, family ka better kal.'"),
+        },
     },
-    "unisex": {
-        "label": "Everyone (Unisex)",
-        "notes": ("Target audience: universal — mixed genders 16-40. Use a neutral, benefit-first, "
-                  "inclusive tone. Emphasise the outcome and value proposition without gender-coded "
-                  "language. Hook should be a bold universal claim."),
+    "region": {
+        "delhi_ncr": {
+            "label": "Delhi NCR",
+            "notes": ("Target: Delhi, Gurgaon, Noida audience. Confident, slightly bold, "
+                      "value-conscious tone. Sprinkle Delhi Hindi phrases ('scene', 'setting', "
+                      "'jugaad', 'bhai/behen', 'yaar'). Reference metro life, Connaught Place, "
+                      "Cyber Hub, weekend Manali/Rishikesh trips. Fast-paced sentences."),
+        },
+        "mumbai": {
+            "label": "Mumbai",
+            "notes": ("Target: Mumbai audience. Fast-talking, hustler, aspirational tone. Mix "
+                      "Bambaiya Hindi ('bindaas', 'apun', 'ekdum', 'scene set hai'). Reference "
+                      "local trains, Bandra cafés, Marine Drive, ambition, side hustles. "
+                      "Sentences short and punchy — Mumbai has no time."),
+        },
+        "south": {
+            "label": "South India (BLR/HYD/CHN)",
+            "notes": ("Target: Bengaluru / Hyderabad / Chennai urban audience. Warm, professional, "
+                      "family-and-quality-first tone. Mostly English with subtle regional respect "
+                      "cues ('anna/akka/uncle/madam'). Reference tech-work-life balance, "
+                      "filter coffee, weekend Coorg/Pondi trips, savings mindset. Slightly slower "
+                      "but content-dense sentences."),
+        },
     },
 }
 
+# Keys in the order they are returned to the client.
+VARIANT_ORDER = {
+    "gender": ["girls", "boys", "unisex"],
+    "age": ["genz", "millennial", "parents"],
+    "region": ["delhi_ncr", "mumbai", "south"],
+}
+
+
+class VariantsReq(ScriptRequest):
+    axis: Optional[str] = "gender"  # gender | age | region
+
 
 @api.post("/ai/script/variants")
-async def ai_script_variants(body: ScriptRequest, request: Request):
-    """Generate 3 script variants in parallel — one each for girls, boys, and unisex audiences."""
+async def ai_script_variants(body: VariantsReq, request: Request):
+    """Generate 3 script variants in parallel along a chosen axis (gender / age / region)."""
+    axis = (body.axis or "gender").lower()
+    if axis not in VARIANT_AXES:
+        raise HTTPException(status_code=400, detail=f"axis must be one of: {list(VARIANT_AXES)}")
+    profiles = VARIANT_AXES[axis]
+    order = VARIANT_ORDER[axis]
+
     user = await _current(request)
-    # 5 credits per variant × 3 = 15 credits
-    user = await _charge_credits(user, 15, "script_variants", body.project_id)
+    user = await _charge_credits(user, 15, f"script_variants_{axis}", body.project_id)
 
     # Resolve real brand identity once (shared across variants).
     scraped = {}
@@ -391,7 +457,7 @@ async def ai_script_variants(body: ScriptRequest, request: Request):
                      "Do NOT invent any other brand name.\n" + "\n".join(ctx_lines))
 
     async def _one(audience_key: str) -> dict:
-        prof = AUDIENCE_PROFILES[audience_key]
+        prof = profiles[audience_key]
         payload = body.model_dump()
         payload["target_audience"] = prof["label"]
         payload["extra_notes"] = ((payload.get("extra_notes") or "") + "\n\n" + prof["notes"] + brand_ctx).strip()
@@ -404,10 +470,8 @@ async def ai_script_variants(body: ScriptRequest, request: Request):
             script = _replace_brand_token(script, brand_label)
         return {"audience": audience_key, "label": prof["label"], "script": script}
 
-    # Run all 3 in parallel — total ~1 LLM roundtrip in wall-clock time.
-    variants = await asyncio.gather(*[_one(k) for k in ("girls", "boys", "unisex")])
+    variants = await asyncio.gather(*[_one(k) for k in order])
 
-    # Refund credits for any variant that failed.
     failed = sum(1 for v in variants if v.get("error"))
     if failed:
         await _refund(user, failed * 5, "script_variants_refund", body.project_id)
@@ -416,6 +480,7 @@ async def ai_script_variants(body: ScriptRequest, request: Request):
             user.credits = user_doc.get("credits", user.credits)
 
     return {
+        "axis": axis,
         "variants": variants,
         "source_assets": scraped if scraped.get("ok") else None,
         "credits_left": user.credits,
@@ -427,6 +492,8 @@ class ApplyVariantReq(BaseModel):
     project_id: str
     script: dict
     audience_label: Optional[str] = None
+    audience_key: Optional[str] = None
+    axis: Optional[str] = None
     source_assets: Optional[dict] = None
 
 
@@ -438,6 +505,8 @@ async def ai_script_apply(body: ApplyVariantReq, request: Request):
         "script": body.script,
         "status": "scripting",
         "target_audience": body.audience_label,
+        "variant_axis": body.axis,
+        "variant_key": body.audience_key,
         "updated_at": utc_now().isoformat(),
     }
     if body.source_assets and body.source_assets.get("ok"):
@@ -455,6 +524,72 @@ async def ai_script_apply(body: ApplyVariantReq, request: Request):
     if not res.matched_count:
         raise HTTPException(status_code=404, detail="Project not found")
     return {"ok": True}
+
+
+# ---------- A/B tracking ----------
+# Public tracking endpoint — no auth so it can be called from a shared link / QR.
+# Events are aggregated per (project_id, variant_key). Fire-and-forget by client.
+_TRACK_EVENTS = {"view", "click", "share", "conversion"}
+
+
+class TrackEventReq(BaseModel):
+    event: str  # view | click | share | conversion
+
+
+@app.post("/api/track/{project_id}")
+async def track_variant_event(project_id: str, body: TrackEventReq):
+    if body.event not in _TRACK_EVENTS:
+        raise HTTPException(status_code=400, detail=f"event must be one of {_TRACK_EVENTS}")
+    proj = await db.projects.find_one(
+        {"project_id": project_id},
+        {"_id": 0, "variant_key": 1, "variant_axis": 1, "user_id": 1},
+    )
+    if not proj:
+        raise HTTPException(status_code=404, detail="Project not found")
+    key = proj.get("variant_key") or "none"
+    axis = proj.get("variant_axis") or "none"
+    field = f"metrics.{axis}.{key}.{body.event}"
+    await db.projects.update_one(
+        {"project_id": project_id},
+        {"$inc": {field: 1, f"metrics.totals.{body.event}": 1}},
+    )
+    return {"ok": True}
+
+
+@app.get("/api/projects/public/{project_id}")
+async def public_project(project_id: str):
+    """Public read-only view for the share page — returns only fields safe to expose."""
+    proj = await db.projects.find_one(
+        {"project_id": project_id},
+        {"_id": 0, "project_id": 1, "title": 1, "video_url": 1, "thumbnail": 1,
+         "aspect_ratio": 1, "target_audience": 1, "script": 1, "duration_sec": 1},
+    )
+    if not proj:
+        raise HTTPException(status_code=404, detail="Not found")
+    # Only expose the CTA + hook from the script, never the full internal payload.
+    if isinstance(proj.get("script"), dict):
+        proj["script"] = {"hook": proj["script"].get("hook"), "cta": proj["script"].get("cta")}
+    return proj
+
+
+@api.get("/projects/{project_id}/metrics")
+async def get_project_metrics(project_id: str, request: Request):
+    """Return the A/B rollup for the current project."""
+    user = await _current(request)
+    proj = await db.projects.find_one(
+        {"project_id": project_id, "user_id": user.user_id},
+        {"_id": 0, "metrics": 1, "variant_axis": 1, "variant_key": 1, "target_audience": 1},
+    )
+    if not proj:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {
+        "metrics": proj.get("metrics") or {},
+        "active_variant": {
+            "axis": proj.get("variant_axis"),
+            "key": proj.get("variant_key"),
+            "label": proj.get("target_audience"),
+        },
+    }
 
 
 def _replace_brand_token(obj, brand: str):

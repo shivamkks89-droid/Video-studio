@@ -13,7 +13,9 @@ export default function ProjectDetail() {
   const [voiceId, setVoiceId] = useState("");
   const [busyScript, setBusyScript] = useState(false);
   const [busyVariants, setBusyVariants] = useState(false);
-  const [variants, setVariants] = useState(null); // { variants: [{audience, label, script}], source_assets }
+  const [variants, setVariants] = useState(null); // { variants: [{audience, label, script}], source_assets, axis }
+  const [axis, setAxis] = useState("gender"); // gender | age | region
+  const [metrics, setMetrics] = useState(null);
   const [busyVoice, setBusyVoice] = useState(false);
   const [busyScenes, setBusyScenes] = useState(false);
   const [busyRender, setBusyRender] = useState(false);
@@ -31,8 +33,15 @@ export default function ProjectDetail() {
     const { data } = await api.get(`/projects/${id}`);
     setProject(data);
   };
+  const loadMetrics = async () => {
+    try {
+      const { data } = await api.get(`/projects/${id}/metrics`);
+      setMetrics(data);
+    } catch { /* silent */ }
+  };
   useEffect(() => {
     load();
+    loadMetrics();
     api.get("/catalog/voices").then(({ data }) => { setVoices(data); setVoiceId(data[0]?.id || ""); });
   }, [id]);
 
@@ -69,13 +78,14 @@ export default function ProjectDetail() {
       const { data } = await api.post("/ai/script/variants", {
         project_id: id, topic, video_type: project.video_type,
         language: project.language, duration_sec: project.duration_sec,
+        axis,
         brand_name: brandName || undefined,
         brand_url: brandUrl || undefined,
         brand_logo: brandLogo || undefined,
       });
       setVariants(data);
       if (data.warning) toast.message(data.warning);
-      else toast.success("3 audience variants ready — pick one below");
+      else toast.success(`3 ${axis} variants ready — pick one below`);
     } catch (err) {
       toast.error(err.response?.data?.detail || err.response?.data?.error || "Variants failed");
     } finally { setBusyVariants(false); }
@@ -87,15 +97,25 @@ export default function ProjectDetail() {
         project_id: id,
         script: v.script,
         audience_label: v.label,
+        audience_key: v.audience,
+        axis: variants?.axis || axis,
         source_assets: variants?.source_assets || null,
       });
       const { data: p } = await api.get(`/projects/${id}`);
       setProject(p);
       setVariants(null);
-      toast.success(`Applied — ${v.label} script`);
+      loadMetrics();
+      toast.success(`Applied — ${v.label}`);
     } catch (err) {
       toast.error(err.response?.data?.detail || "Could not apply variant");
     }
+  };
+
+  const copyShareLink = () => {
+    // Public share link — every view fires a tracking beacon
+    const link = `${window.location.origin}/share/${id}`;
+    navigator.clipboard.writeText(link);
+    toast.success("Share link copied — each open counts as a view");
   };
 
   const genVoice = async () => {
@@ -299,15 +319,28 @@ export default function ProjectDetail() {
                 </div>
               </div>
             )}
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <button data-testid="gen-script" onClick={genScript} disabled={busyScript || busyVariants} className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
                 {busyScript ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                 {busyScript ? "Writing…" : "Generate script"}
               </button>
+              <div className="flex items-center gap-1 surface rounded-full p-0.5" role="tablist" data-testid="axis-tabs">
+                {[
+                  { key: "gender", label: "Gender" },
+                  { key: "age", label: "Age" },
+                  { key: "region", label: "Region" },
+                ].map(t => (
+                  <button key={t.key} onClick={() => setAxis(t.key)}
+                    data-testid={`axis-${t.key}`}
+                    className={`px-3 py-1 text-xs rounded-full transition-colors ${axis === t.key ? "bg-[#E2FF3D] text-black" : "text-zinc-400 hover:text-white"}`}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
               <button data-testid="gen-variants" onClick={genVariants} disabled={busyVariants || busyScript}
                 className="rounded-full surface px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60 border border-[#E2FF3D]/30 hover:border-[#E2FF3D]">
                 {busyVariants ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                {busyVariants ? "Crafting 3 variants…" : "3 audience variants (15 CR)"}
+                {busyVariants ? `Crafting 3 ${axis} variants…` : `3 ${axis} variants (15 CR)`}
               </button>
             </div>
             {variants?.variants && (
@@ -436,6 +469,67 @@ export default function ProjectDetail() {
               <div className="mt-3 flex items-center gap-3 text-xs text-zinc-400">
                 <span className="label-mono text-[#E2FF3D]">✓ READY</span>
                 <a href={videoSrc} download={`${project.title || "cinereel"}.mp4`} className="underline hover:text-white">Download MP4</a>
+              </div>
+            )}
+          </div>
+
+          {/* A/B ANALYTICS */}
+          <div className="surface rounded-xl p-5" data-testid="ab-panel">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2"><Share2 className="w-4 h-4 text-[#E2FF3D]" /><div className="font-medium">A/B Variant Tracker</div></div>
+              <button onClick={loadMetrics} className="label-mono text-zinc-500 hover:text-white text-[11px]">↻ Refresh</button>
+            </div>
+            {metrics?.active_variant?.label ? (
+              <div className="mb-3 flex items-center gap-2 text-xs">
+                <span className="label-mono text-zinc-500">ACTIVE VARIANT</span>
+                <span className="px-2 py-0.5 rounded-full bg-[#E2FF3D]/15 text-[#E2FF3D] label-mono text-[10px]">
+                  {metrics.active_variant.axis?.toUpperCase() || "—"} · {metrics.active_variant.label}
+                </span>
+              </div>
+            ) : (
+              <p className="text-xs text-zinc-500 mb-3">Pick a variant from the Script section to start tracking.</p>
+            )}
+            <div className="grid grid-cols-4 gap-2 mb-3">
+              {["view", "click", "share", "conversion"].map(ev => (
+                <div key={ev} className="surface rounded-lg p-2 text-center" data-testid={`metric-total-${ev}`}>
+                  <div className="text-lg font-semibold">{metrics?.metrics?.totals?.[ev] ?? 0}</div>
+                  <div className="label-mono text-zinc-500 text-[10px] uppercase">{ev}</div>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={copyShareLink} data-testid="copy-share" className="rounded-full surface px-3 py-1.5 text-xs flex items-center gap-1 border border-white/10 hover:border-[#E2FF3D]/40">
+                <Share2 className="w-3 h-3" /> Copy share link
+              </button>
+              <button onClick={async () => { await api.post(`/track/${id}`, { event: "click" }); loadMetrics(); toast.success("Click logged"); }}
+                data-testid="log-click"
+                className="rounded-full surface px-3 py-1.5 text-xs border border-white/10 hover:border-white/30">
+                + Log click
+              </button>
+              <button onClick={async () => { await api.post(`/track/${id}`, { event: "conversion" }); loadMetrics(); toast.success("Conversion logged"); }}
+                data-testid="log-conversion"
+                className="rounded-full surface px-3 py-1.5 text-xs border border-white/10 hover:border-white/30">
+                + Log conversion
+              </button>
+            </div>
+            {metrics?.metrics && Object.keys(metrics.metrics).filter(k => k !== "totals").length > 0 && (
+              <div className="mt-4">
+                <div className="label-mono text-zinc-500 mb-2 text-[10px]">BREAKDOWN BY VARIANT</div>
+                <div className="space-y-2">
+                  {Object.entries(metrics.metrics).filter(([k]) => k !== "totals").map(([axisName, byKey]) => (
+                    <div key={axisName} className="surface rounded-lg p-2">
+                      <div className="label-mono text-zinc-500 text-[10px] mb-1">{axisName.toUpperCase()}</div>
+                      {Object.entries(byKey || {}).map(([key, evs]) => (
+                        <div key={key} className="flex items-center justify-between text-xs py-0.5">
+                          <span className="text-zinc-300">{key}</span>
+                          <span className="text-zinc-500">
+                            {["view", "click", "share", "conversion"].map(e => `${e[0].toUpperCase()}:${evs?.[e] ?? 0}`).join(" · ")}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>

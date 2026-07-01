@@ -21,6 +21,7 @@ import Credits from "./pages/Credits";
 import Pricing from "./pages/Pricing";
 import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
+import SharePage from "./pages/SharePage";
 
 function AppRouter() {
   const location = useLocation();
@@ -34,6 +35,7 @@ function AppRouter() {
       <Route path="/login" element={<Auth mode="login" />} />
       <Route path="/signup" element={<Auth mode="signup" />} />
       <Route path="/pricing" element={<Pricing />} />
+      <Route path="/share/:id" element={<SharePage />} />
       <Route
         path="/dashboard"
         element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}
