@@ -86,25 +86,40 @@ def _safe_filter(text: str) -> str:
 async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                        aspect_ratio: str = "9:16", fps: int = 30,
                        default_scene_seconds: float = 3.5) -> Optional[str]:
-    """Render an MP4 from a list of scenes (each with image_url + voiceover/duration).
-    Returns the relative path under static/videos/<uuid>.mp4 on success, else None."""
+    """Render an MP4 from a list of scenes.
 
-    images = []
-    for sc in scenes:
-        url = sc.get("image_url") or ""
+    Each scene can carry either a still `image_url` (rendered with ken-burns) or
+    a `video_clip_url` (a Seedance MP4 that is preferred over the image).
+    """
+
+    async def _fetch(url: str) -> Optional[bytes]:
         if not url:
-            continue
+            return None
         if url.startswith("data:"):
-            b = _data_uri_to_bytes(url)
-        else:
-            # Fetch via persistent asset store (handles local + object storage)
-            from asset_store import fetch_to_bytes as _fetch
-            b = await _fetch(url)
+            return _data_uri_to_bytes(url)
+        from asset_store import fetch_to_bytes as _f
+        return await _f(url)
+
+    items = []
+    for sc in scenes:
+        dur = float(sc.get("duration") or default_scene_seconds)
+        clip_url = sc.get("video_clip_url")
+        if clip_url:
+            b = await _fetch(clip_url)
+            if b:
+                items.append({"type": "clip", "bytes": b,
+                              "duration": float(sc.get("video_clip_duration") or dur),
+                              "caption": sc.get("voiceover") or ""})
+                continue
+            # fall through to image if clip fetch fails
+        img_url = sc.get("image_url") or ""
+        if not img_url:
+            continue
+        b = await _fetch(img_url)
         if b:
-            images.append({"bytes": b,
-                           "duration": float(sc.get("duration") or default_scene_seconds),
-                           "caption": sc.get("voiceover") or ""})
-    if not images:
+            items.append({"type": "image", "bytes": b,
+                          "duration": dur, "caption": sc.get("voiceover") or ""})
+    if not items:
         return None
 
     w, h = _aspect_dims(aspect_ratio)
@@ -116,41 +131,55 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
         if audio_data_uri.startswith("data:"):
             audio_bytes = _data_uri_to_bytes(audio_data_uri)
         else:
-            from asset_store import fetch_to_bytes as _fetch
-            audio_bytes = await _fetch(audio_data_uri)
+            from asset_store import fetch_to_bytes as _fetch2
+            audio_bytes = await _fetch2(audio_data_uri)
 
     def _work() -> Optional[str]:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            # 1) write images
-            img_paths = []
-            for i, img in enumerate(images):
-                p = tmp_path / f"scn_{i:03d}.png"
-                p.write_bytes(img["bytes"])
-                img_paths.append(p)
 
-            # 2) write each scene as a short MP4 with zoom+pan
             scene_videos = []
-            for i, (p, meta) in enumerate(zip(img_paths, images)):
+            for i, item in enumerate(items):
                 out = tmp_path / f"scn_{i:03d}.mp4"
-                dur = max(1.5, min(6.0, meta["duration"]))
+                if item["type"] == "clip":
+                    src = tmp_path / f"scn_{i:03d}_src.mp4"
+                    src.write_bytes(item["bytes"])
+                    dur = max(1.0, float(item["duration"]))
+                    # Normalise the Seedance MP4 into our target canvas + codec so
+                    # concat -c copy can splice it seamlessly with ken-burns scenes.
+                    vf = (
+                        f"scale={w}:{h}:force_original_aspect_ratio=increase,"
+                        f"crop={w}:{h},format=yuv420p"
+                    )
+                    cmd = [
+                        FFMPEG_BIN, "-y", "-threads", "1", "-i", str(src),
+                        "-t", f"{dur:.2f}", "-r", str(fps),
+                        "-vf", vf,
+                        "-c:v", "libx264", "-preset", "ultrafast",
+                        "-crf", "20", "-pix_fmt", "yuv420p",
+                        "-an", "-threads", "1",
+                        str(out),
+                    ]
+                    r = subprocess.run(cmd, capture_output=True, timeout=120)
+                    if r.returncode != 0:
+                        print("[render] clip normalise fail:", r.stderr.decode()[-400:])
+                        return None
+                    scene_videos.append(out)
+                    continue
+
+                # --- Still image → ken-burns ---
+                p = tmp_path / f"scn_{i:03d}.png"
+                p.write_bytes(item["bytes"])
+                dur = max(1.5, min(6.0, item["duration"]))
                 dur_frames = max(45, int(dur * fps))
-                # Fit the image onto the target canvas without cropping — pad
-                # letterbox/pillarbox with a blurred version of the same image so
-                # portrait screenshots keep their full detail on a portrait output.
-                # Then apply a gentle ken-burns zoom on a 1.3x oversize buffer.
                 cw, ch = int(w * 1.3), int(h * 1.3)
                 vf = (
-                    # Build a blurred background layer at target size
                     f"[0:v]split=2[fg][bg];"
                     f"[bg]scale={w}:{h}:force_original_aspect_ratio=increase,"
                     f"crop={w}:{h},boxblur=luma_radius=30:luma_power=1,"
                     f"eq=brightness=-0.15[bgb];"
-                    # Foreground: contain-fit into the canvas (no crop, no distortion)
                     f"[fg]scale={w}:{h}:force_original_aspect_ratio=decrease[fgs];"
-                    # Composite fg over blurred bg
                     f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2,"
-                    # Now upscale to zoom-canvas & apply subtle ken-burns
                     f"scale={cw}:{ch},"
                     f"zoompan=z='min(zoom+0.0010,1.10)':d={dur_frames}:s={w}x{h}:fps={fps},"
                     f"format=yuv420p"

@@ -13,6 +13,7 @@ export default function ProjectDetail() {
   const [voiceId, setVoiceId] = useState("");
   const [busyScript, setBusyScript] = useState(false);
   const [busyVariants, setBusyVariants] = useState(false);
+  const [busySeedanceIdx, setBusySeedanceIdx] = useState(null);
   const [variants, setVariants] = useState(null); // { variants: [{audience, label, script}], source_assets, axis }
   const [axis, setAxis] = useState("gender"); // gender | age | region
   const [metrics, setMetrics] = useState(null);
@@ -116,6 +117,43 @@ export default function ProjectDetail() {
     const link = `${window.location.origin}/share/${id}`;
     navigator.clipboard.writeText(link);
     toast.success("Share link copied — each open counts as a view");
+  };
+
+  const runSeedance = async (idx, mode) => {
+    setBusySeedanceIdx(idx);
+    const t = toast.loading(`${mode === "i2v" ? "Animating scene" : "Generating video"} · this takes 30-90s…`);
+    try {
+      const { data } = await api.post("/ai/seedance/generate", {
+        project_id: id,
+        scene_index: idx,
+        mode,
+        duration_seconds: 5,
+      });
+      const { data: p } = await api.get(`/projects/${id}`);
+      setProject(p);
+      toast.success("Motion clip ready — plays on hover", { id: t });
+      // silence unused var
+      void data;
+    } catch (err) {
+      const msg = err.response?.data?.detail || "Seedance failed";
+      if (String(msg).toLowerCase().includes("balance")) {
+        toast.error("fal.ai balance exhausted — top up at fal.ai/dashboard/billing", { id: t, duration: 6000 });
+      } else {
+        toast.error(msg, { id: t });
+      }
+    } finally { setBusySeedanceIdx(null); }
+  };
+
+  const clearSeedance = async (idx) => {
+    setBusySeedanceIdx(idx);
+    try {
+      await api.post("/ai/seedance/clear", { project_id: id, scene_index: idx });
+      const { data: p } = await api.get(`/projects/${id}`);
+      setProject(p);
+      toast.success("Motion removed — falls back to still image");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Could not clear");
+    } finally { setBusySeedanceIdx(null); }
   };
 
   const genVoice = async () => {
@@ -430,21 +468,58 @@ export default function ProjectDetail() {
             {project.scenes?.length > 0 && (
               <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {project.scenes.map((s, i) => (
-                  <div key={i} className="surface rounded-lg overflow-hidden">
+                  <div key={i} className="surface rounded-lg overflow-hidden" data-testid={`scene-card-${i}`}>
                     <div className="ar-916 relative bg-[#0A0A0B]">
-                      {s.image_url ? <img src={assetUrl(s.image_url)} className="absolute inset-0 w-full h-full object-cover" alt="" /> :
-                        <div className="absolute inset-0 grid place-items-center text-zinc-700"><ImageIcon className="w-6 h-6" /></div>}
+                      {s.video_clip_url ? (
+                        <video src={assetUrl(s.video_clip_url)} muted loop playsInline
+                          className="absolute inset-0 w-full h-full object-cover"
+                          onMouseEnter={e => e.currentTarget.play()} onMouseLeave={e => e.currentTarget.pause()} />
+                      ) : s.image_url ? (
+                        <img src={assetUrl(s.image_url)} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                      ) : (
+                        <div className="absolute inset-0 grid place-items-center text-zinc-700"><ImageIcon className="w-6 h-6" /></div>
+                      )}
                       <div className="absolute top-1.5 left-1.5 glass label-mono text-[9px] px-1.5 py-0.5 rounded">SCN {String(i+1).padStart(2,"0")}</div>
-                      {(s.source === "real" || s.source === "real_icon") && (
+                      {s.video_clip_url && (
+                        <div className="absolute top-1.5 right-1.5 bg-fuchsia-500 text-white label-mono text-[9px] px-1.5 py-0.5 rounded font-bold">
+                          MOTION
+                        </div>
+                      )}
+                      {!s.video_clip_url && (s.source === "real" || s.source === "real_icon") && (
                         <div className="absolute top-1.5 right-1.5 bg-[#E2FF3D] text-black label-mono text-[9px] px-1.5 py-0.5 rounded font-bold">
                           {s.source === "real_icon" ? "LOGO" : "REAL"}
                         </div>
                       )}
-                      {s.source === "ai" && (
+                      {!s.video_clip_url && s.source === "ai" && (
                         <div className="absolute top-1.5 right-1.5 glass label-mono text-[9px] px-1.5 py-0.5 rounded">AI</div>
                       )}
                     </div>
-                    <div className="p-2 text-[11px] text-zinc-400 leading-snug line-clamp-3">{s.voiceover || s.visual_prompt}</div>
+                    <div className="p-2 text-[11px] text-zinc-400 leading-snug line-clamp-2">{s.voiceover || s.visual_prompt}</div>
+                    <div className="px-2 pb-2 flex items-center gap-1 flex-wrap">
+                      {s.video_clip_url ? (
+                        <button data-testid={`clear-clip-${i}`} onClick={() => clearSeedance(i)}
+                          disabled={busySeedanceIdx === i}
+                          className="rounded-full surface px-2 py-1 text-[10px] border border-white/10 hover:border-white/30 disabled:opacity-50">
+                          Remove motion
+                        </button>
+                      ) : (
+                        <>
+                          <button data-testid={`animate-scene-${i}`} onClick={() => runSeedance(i, "i2v")}
+                            disabled={busySeedanceIdx !== null || !s.image_url}
+                            title="Animate this still (30 CR)"
+                            className="rounded-full px-2 py-1 text-[10px] flex items-center gap-1 bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/30 hover:border-fuchsia-400 disabled:opacity-50">
+                            {busySeedanceIdx === i ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                            Animate (30 CR)
+                          </button>
+                          <button data-testid={`regen-scene-${i}`} onClick={() => runSeedance(i, "t2v")}
+                            disabled={busySeedanceIdx !== null}
+                            title="Text-to-video from scene prompt (40 CR)"
+                            className="rounded-full px-2 py-1 text-[10px] border border-white/10 text-zinc-400 hover:text-white hover:border-white/30 disabled:opacity-50">
+                            T2V (40 CR)
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

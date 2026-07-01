@@ -36,11 +36,18 @@ from ai_services import (
 from asset_store import (
     save_image_data_uri as save_image_persistent,
     save_audio_data_uri as save_audio_persistent,
+    save_video_bytes as save_video_persistent,
     fetch_to_bytes as fetch_asset_bytes,
 )
 from object_storage import init_storage as init_objstore
 from openai_tts import synthesize_openai_tts
 from scraper import scrape as scrape_query, to_script_context
+from seedance import (
+    SeedanceError,
+    download_to_bytes as seedance_download,
+    image_to_video as seedance_i2v,
+    text_to_video as seedance_t2v,
+)
 from video_renderer import STATIC_DIR, render_video
 from templates_seed import AVATARS, PLANS, STOCK_ASSETS, TEMPLATES, VIDEO_TYPES
 
@@ -590,6 +597,145 @@ async def get_project_metrics(project_id: str, request: Request):
             "label": proj.get("target_audience"),
         },
     }
+
+
+# ---------- Seedance (fal.ai) video-clip generation ----------
+# Two modes per scene:
+#   text-to-video (T2V) : generate a clip purely from a prompt
+#   image-to-video (I2V): animate an existing scene image
+# Both charge credits, persist the resulting MP4 to our own object store, and
+# attach the URL onto the scene inside the project document so the renderer
+# uses it instead of the still-image ken-burns fallback.
+SEEDANCE_CREDIT_COST_T2V = 40
+SEEDANCE_CREDIT_COST_I2V = 30
+
+
+class SeedanceReq(BaseModel):
+    project_id: str
+    scene_index: int
+    mode: str  # "t2v" | "i2v"
+    prompt: Optional[str] = None       # overrides scene prompt when given
+    duration_seconds: Optional[int] = 5
+    aspect_ratio: Optional[str] = None  # inherits from project
+
+
+def _absolute_asset_url(request: Request, path: str) -> str:
+    """Turn an internal /api/files/... path into a fully-qualified URL that fal.ai can fetch."""
+    if not path:
+        return ""
+    if path.startswith("http://") or path.startswith("https://") or path.startswith("data:"):
+        return path
+    # Prefer public base URL from env; fall back to the incoming request's host.
+    base = os.environ.get("PUBLIC_BASE_URL")
+    if not base:
+        base = str(request.base_url).rstrip("/")
+    return f"{base}{path}"
+
+
+@api.post("/ai/seedance/generate")
+async def seedance_generate(body: SeedanceReq, request: Request):
+    """Kick off a Seedance generation for a single scene and return the finished MP4 URL.
+
+    Blocking call — Seedance clips finish in 30-90s. The frontend should treat this
+    like the render polling and show a spinner.
+    """
+    if body.mode not in ("t2v", "i2v"):
+        raise HTTPException(status_code=400, detail="mode must be 't2v' or 'i2v'")
+    user = await _current(request)
+
+    proj = await db.projects.find_one(
+        {"project_id": body.project_id, "user_id": user.user_id},
+    )
+    if not proj:
+        raise HTTPException(status_code=404, detail="Project not found")
+    scenes = proj.get("scenes") or []
+    if body.scene_index < 0 or body.scene_index >= len(scenes):
+        raise HTTPException(status_code=400, detail="scene_index out of range")
+    scene = scenes[body.scene_index]
+
+    aspect = body.aspect_ratio or proj.get("aspect_ratio") or "9:16"
+    duration = max(5, min(10, int(body.duration_seconds or 5)))
+
+    # Build the prompt: scene.prompt + subtle motion instructions
+    scene_prompt = body.prompt or scene.get("prompt") or scene.get("voiceover") or ""
+    motion_hint = "cinematic subtle motion, natural camera movement, high detail, no text, no watermarks"
+    prompt = f"{scene_prompt}. {motion_hint}".strip(". ").strip()
+
+    cost = SEEDANCE_CREDIT_COST_T2V if body.mode == "t2v" else SEEDANCE_CREDIT_COST_I2V
+    user = await _charge_credits(user, cost, f"seedance_{body.mode}", body.project_id)
+
+    try:
+        if body.mode == "t2v":
+            fal_url = await seedance_t2v(prompt, aspect_ratio=aspect, duration_seconds=duration)
+        else:
+            src = scene.get("image_url")
+            if not src:
+                raise SeedanceError("Scene has no image to animate — regenerate the storyboard first.")
+            fal_url = await seedance_i2v(
+                _absolute_asset_url(request, src),
+                prompt=prompt,
+                aspect_ratio=aspect,
+                duration_seconds=duration,
+            )
+    except SeedanceError as e:
+        # Refund on failure — user shouldn't lose credits for a provider outage.
+        await _refund(user, cost, f"seedance_refund_{body.mode}", body.project_id)
+        detail = str(e)
+        if "exhausted balance" in detail.lower() or "top up" in detail.lower():
+            raise HTTPException(status_code=402, detail="fal.ai account balance exhausted — top up at fal.ai/dashboard/billing")
+        raise HTTPException(status_code=502, detail=f"Seedance error: {detail[:300]}")
+
+    # Mirror the fal.ai MP4 to our own persistent storage so the link never expires
+    # and the renderer can pull it locally.
+    try:
+        video_bytes = await seedance_download(fal_url)
+        local_url = await save_video_persistent(video_bytes) or fal_url
+    except Exception as e:
+        print(f"[seedance] mirror to object-store failed, using fal URL directly: {e}")
+        local_url = fal_url
+
+    # Save on the scene
+    scenes[body.scene_index] = {
+        **scene,
+        "video_clip_url": local_url,
+        "video_clip_source": body.mode,
+        "video_clip_duration": duration,
+    }
+    await db.projects.update_one(
+        {"project_id": body.project_id, "user_id": user.user_id},
+        {"$set": {"scenes": scenes, "updated_at": utc_now().isoformat()}},
+    )
+
+    return {
+        "ok": True,
+        "video_clip_url": local_url,
+        "credits_left": user.credits,
+        "scene_index": body.scene_index,
+    }
+
+
+class SeedanceClearReq(BaseModel):
+    project_id: str
+    scene_index: int
+
+
+@api.post("/ai/seedance/clear")
+async def seedance_clear(body: SeedanceClearReq, request: Request):
+    """Drop a scene's video-clip so the renderer falls back to the still image."""
+    user = await _current(request)
+    proj = await db.projects.find_one({"project_id": body.project_id, "user_id": user.user_id})
+    if not proj:
+        raise HTTPException(status_code=404, detail="Not found")
+    scenes = proj.get("scenes") or []
+    if body.scene_index < 0 or body.scene_index >= len(scenes):
+        raise HTTPException(status_code=400, detail="scene_index out of range")
+    scenes[body.scene_index] = {k: v for k, v in scenes[body.scene_index].items()
+                                 if k not in {"video_clip_url", "video_clip_source", "video_clip_duration"}}
+    await db.projects.update_one(
+        {"project_id": body.project_id, "user_id": user.user_id},
+        {"$set": {"scenes": scenes}},
+    )
+    return {"ok": True}
 
 
 def _replace_brand_token(obj, brand: str):
