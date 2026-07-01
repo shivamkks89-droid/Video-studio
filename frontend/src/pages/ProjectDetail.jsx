@@ -12,6 +12,8 @@ export default function ProjectDetail() {
   const [topic, setTopic] = useState("");
   const [voiceId, setVoiceId] = useState("");
   const [busyScript, setBusyScript] = useState(false);
+  const [busyVariants, setBusyVariants] = useState(false);
+  const [variants, setVariants] = useState(null); // { variants: [{audience, label, script}], source_assets }
   const [busyVoice, setBusyVoice] = useState(false);
   const [busyScenes, setBusyScenes] = useState(false);
   const [busyRender, setBusyRender] = useState(false);
@@ -57,6 +59,43 @@ export default function ProjectDetail() {
     } catch (err) {
       toast.error(err.response?.data?.detail || "Script gen failed");
     } finally { setBusyScript(false); }
+  };
+
+  const genVariants = async () => {
+    if (!topic.trim()) return toast.error("Add a topic first");
+    setBusyVariants(true);
+    setVariants(null);
+    try {
+      const { data } = await api.post("/ai/script/variants", {
+        project_id: id, topic, video_type: project.video_type,
+        language: project.language, duration_sec: project.duration_sec,
+        brand_name: brandName || undefined,
+        brand_url: brandUrl || undefined,
+        brand_logo: brandLogo || undefined,
+      });
+      setVariants(data);
+      if (data.warning) toast.message(data.warning);
+      else toast.success("3 audience variants ready — pick one below");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || err.response?.data?.error || "Variants failed");
+    } finally { setBusyVariants(false); }
+  };
+
+  const applyVariant = async (v) => {
+    try {
+      await api.post("/ai/script/apply", {
+        project_id: id,
+        script: v.script,
+        audience_label: v.label,
+        source_assets: variants?.source_assets || null,
+      });
+      const { data: p } = await api.get(`/projects/${id}`);
+      setProject(p);
+      setVariants(null);
+      toast.success(`Applied — ${v.label} script`);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Could not apply variant");
+    }
   };
 
   const genVoice = async () => {
@@ -260,10 +299,40 @@ export default function ProjectDetail() {
                 </div>
               </div>
             )}
-            <button data-testid="gen-script" onClick={genScript} disabled={busyScript} className="mt-3 btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
-              {busyScript ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-              {busyScript ? "Writing…" : "Generate script"}
-            </button>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button data-testid="gen-script" onClick={genScript} disabled={busyScript || busyVariants} className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
+                {busyScript ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                {busyScript ? "Writing…" : "Generate script"}
+              </button>
+              <button data-testid="gen-variants" onClick={genVariants} disabled={busyVariants || busyScript}
+                className="rounded-full surface px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60 border border-[#E2FF3D]/30 hover:border-[#E2FF3D]">
+                {busyVariants ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                {busyVariants ? "Crafting 3 variants…" : "3 audience variants (15 CR)"}
+              </button>
+            </div>
+            {variants?.variants && (
+              <div data-testid="variants-panel" className="mt-4 grid gap-3 md:grid-cols-3">
+                {variants.variants.map((v) => (
+                  <div key={v.audience} data-testid={`variant-${v.audience}`}
+                    className="surface rounded-lg p-3 flex flex-col gap-2 border border-white/10 hover:border-[#E2FF3D]/40 transition-colors">
+                    <div className="label-mono text-[#E2FF3D] text-[11px]">{v.label}</div>
+                    {v.error ? (
+                      <div className="text-xs text-red-400">Failed: {v.error}</div>
+                    ) : (
+                      <>
+                        <div className="text-sm font-medium line-clamp-3">{v.script?.hook}</div>
+                        <div className="text-xs text-zinc-400 line-clamp-4">{v.script?.body}</div>
+                        <div className="text-[11px] text-zinc-500 italic line-clamp-2">CTA: {v.script?.cta}</div>
+                        <button data-testid={`apply-${v.audience}`} onClick={() => applyVariant(v)}
+                          className="mt-auto btn-volt rounded-full px-3 py-1.5 text-xs flex items-center justify-center gap-1">
+                          Use this script
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
             {project.source_assets?.title && (
               <div className="mt-3 surface rounded-lg p-3 flex items-center gap-3">
                 {project.source_assets.icon && (

@@ -333,6 +333,130 @@ async def ai_script(body: ScriptRequest, request: Request):
             "No real brand info provided — script uses the [BRAND] placeholder. Add a Play Store ID, website URL or brand name & logo for real assets."}
 
 
+# ---------- Audience-targeted script variants ----------
+AUDIENCE_PROFILES = {
+    "girls": {
+        "label": "Girls / Women",
+        "notes": ("Target audience: young women & girls (ages 16-32). Use an emotionally warm, "
+                  "aspirational, self-love and empowerment-forward tone. Reference feelings, "
+                  "friendship, glow-up, confidence, style, wellness and celebrations. Use "
+                  "words girls actually use on Instagram Reels. Avoid tech-jargon. Hooks should "
+                  "spark curiosity or FOMO."),
+    },
+    "boys": {
+        "label": "Boys / Men",
+        "notes": ("Target audience: young men & boys (ages 16-32). Use a punchy, action-driven, "
+                  "high-energy and achievement-oriented tone. Reference hustle, results, gains, "
+                  "gadgets, sports, gaming, adventure and status. Direct, no-fluff sentences. "
+                  "Hooks should challenge or promise a payoff."),
+    },
+    "unisex": {
+        "label": "Everyone (Unisex)",
+        "notes": ("Target audience: universal — mixed genders 16-40. Use a neutral, benefit-first, "
+                  "inclusive tone. Emphasise the outcome and value proposition without gender-coded "
+                  "language. Hook should be a bold universal claim."),
+    },
+}
+
+
+@api.post("/ai/script/variants")
+async def ai_script_variants(body: ScriptRequest, request: Request):
+    """Generate 3 script variants in parallel — one each for girls, boys, and unisex audiences."""
+    user = await _current(request)
+    # 5 credits per variant × 3 = 15 credits
+    user = await _charge_credits(user, 15, "script_variants", body.project_id)
+
+    # Resolve real brand identity once (shared across variants).
+    scraped = {}
+    for candidate in [body.brand_url, body.topic]:
+        if not candidate:
+            continue
+        s = await scrape_query(candidate)
+        if s.get("ok"):
+            scraped = s
+            break
+    if not scraped and body.brand_name:
+        scraped = {"ok": True, "kind": "manual", "title": body.brand_name,
+                   "icon": body.brand_logo, "screenshots": []}
+    brand_ctx = ""
+    if scraped.get("ok"):
+        ctx_lines = [f"App / Brand name: {scraped.get('title')}"]
+        for k, label in [("developer", "Developer"), ("category", "Category"),
+                         ("installs", "Installs"), ("score", "Rating")]:
+            if scraped.get(k):
+                ctx_lines.append(f"{label}: {scraped[k]}")
+        if scraped.get("description"):
+            ctx_lines.append(f"Real description: {scraped['description'][:900]}")
+        brand_ctx = ("\n\nUSE THE FOLLOWING REAL BRAND INFO. Use the ACTUAL brand name everywhere. "
+                     "Do NOT invent any other brand name.\n" + "\n".join(ctx_lines))
+
+    async def _one(audience_key: str) -> dict:
+        prof = AUDIENCE_PROFILES[audience_key]
+        payload = body.model_dump()
+        payload["target_audience"] = prof["label"]
+        payload["extra_notes"] = ((payload.get("extra_notes") or "") + "\n\n" + prof["notes"] + brand_ctx).strip()
+        try:
+            script = await generate_script(payload)
+        except AIServiceError as e:
+            return {"audience": audience_key, "label": prof["label"], "error": str(e), "script": None}
+        brand_label = (scraped.get("title") if scraped.get("ok") else body.brand_name) or None
+        if brand_label:
+            script = _replace_brand_token(script, brand_label)
+        return {"audience": audience_key, "label": prof["label"], "script": script}
+
+    # Run all 3 in parallel — total ~1 LLM roundtrip in wall-clock time.
+    variants = await asyncio.gather(*[_one(k) for k in ("girls", "boys", "unisex")])
+
+    # Refund credits for any variant that failed.
+    failed = sum(1 for v in variants if v.get("error"))
+    if failed:
+        await _refund(user, failed * 5, "script_variants_refund", body.project_id)
+        user_doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0})
+        if user_doc:
+            user.credits = user_doc.get("credits", user.credits)
+
+    return {
+        "variants": variants,
+        "source_assets": scraped if scraped.get("ok") else None,
+        "credits_left": user.credits,
+        "warning": None if scraped.get("ok") else "No brand info — variants use the [BRAND] placeholder.",
+    }
+
+
+class ApplyVariantReq(BaseModel):
+    project_id: str
+    script: dict
+    audience_label: Optional[str] = None
+    source_assets: Optional[dict] = None
+
+
+@api.post("/ai/script/apply")
+async def ai_script_apply(body: ApplyVariantReq, request: Request):
+    """Save one of the returned variants as the project's active script."""
+    user = await _current(request)
+    update = {
+        "script": body.script,
+        "status": "scripting",
+        "target_audience": body.audience_label,
+        "updated_at": utc_now().isoformat(),
+    }
+    if body.source_assets and body.source_assets.get("ok"):
+        update["source_assets"] = {
+            "kind": body.source_assets.get("kind"),
+            "title": body.source_assets.get("title"),
+            "icon": body.source_assets.get("icon"),
+            "screenshots": body.source_assets.get("screenshots", []),
+            "url": body.source_assets.get("url"),
+        }
+    res = await db.projects.update_one(
+        {"project_id": body.project_id, "user_id": user.user_id},
+        {"$set": update},
+    )
+    if not res.matched_count:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return {"ok": True}
+
+
 def _replace_brand_token(obj, brand: str):
     """Walk script JSON and replace [BRAND] / [BRAND_NAME] with the resolved brand label."""
     if isinstance(obj, str):
