@@ -467,10 +467,21 @@ async def _fetch_as_data_uri(url: str) -> Optional[str]:
     """Download a remote image, persist it to disk and return a SHORT /api/files/images/... URL."""
     if not url or not url.startswith("http"):
         return None
+    # Upgrade Play Store / Google-hosted image URLs to their maximum resolution.
+    # These CDN URLs use =wXXX-hYYY suffixes to request specific sizes; stripping
+    # them returns the original hi-res asset.
+    hi_url = url
+    if any(host in url for host in ("googleusercontent.com", "gstatic.com", "ggpht.com")):
+        base = url.split("=", 1)[0]
+        # Request a large landscape/portrait rendering. s0 = original size.
+        hi_url = base + "=s0"
     try:
         import httpx as _httpx
-        async with _httpx.AsyncClient(timeout=10.0, follow_redirects=True) as c:
-            r = await c.get(url, headers={"User-Agent": "Mozilla/5.0 CineReelBot/1.0"})
+        async with _httpx.AsyncClient(timeout=15.0, follow_redirects=True) as c:
+            r = await c.get(hi_url, headers={"User-Agent": "Mozilla/5.0 CineReelBot/1.0"})
+            # Fallback to original URL if the upgraded one 4xx-ed.
+            if r.status_code != 200 and hi_url != url:
+                r = await c.get(url, headers={"User-Agent": "Mozilla/5.0 CineReelBot/1.0"})
             if r.status_code != 200 or len(r.content) < 1024:
                 return None
             mime = r.headers.get("content-type", "image/jpeg").split(";")[0]

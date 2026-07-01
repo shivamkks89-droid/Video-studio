@@ -171,9 +171,25 @@ async def generate_scene_image(prompt: str, aspect_ratio: str = "9:16") -> Optio
             session_id=f"img-{os.urandom(4).hex()}",
             system_message="You generate cinematic still images.",
         ).with_model("gemini", "gemini-3.1-flash-image-preview").with_params(modalities=["image", "text"])
+        prompt_lower = prompt.lower()
+        has_phone = any(k in prompt_lower for k in ("phone", "smartphone", "mobile", "device", "screen"))
+        has_person = any(k in prompt_lower for k in ("person", "man", "woman", "hand", "user", "people", "people's"))
+        orientation_hint = ""
+        if has_phone:
+            orientation_hint = (
+                " The smartphone MUST be held upright in natural portrait orientation, "
+                "screen facing directly toward the camera and clearly visible, "
+                "fingers gripping the sides naturally (not inverted, not upside down, "
+                "not rotated, screen not hidden). Realistic human hand anatomy."
+            )
+        elif has_person:
+            orientation_hint = " Realistic human anatomy, hands and fingers correctly proportioned, natural pose."
         full_prompt = (
-            f"Cinematic photo, {aspect_ratio} aspect ratio. {prompt}. "
-            f"High detail, professional lighting, no text overlays, no captions."
+            f"Cinematic photograph, {aspect_ratio} vertical aspect ratio. {prompt}."
+            f"{orientation_hint} "
+            f"Ultra high detail, 8K quality, professional cinematography, sharp focus, "
+            f"studio-grade lighting, magazine-quality composition. "
+            f"Absolutely NO text, NO captions, NO logos, NO watermarks, NO subtitles anywhere in the image."
         )
         text, images = await chat.send_message_multimodal_response(UserMessage(text=full_prompt))
         if not images:

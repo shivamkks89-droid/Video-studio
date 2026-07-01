@@ -134,27 +134,38 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
             for i, (p, meta) in enumerate(zip(img_paths, images)):
                 out = tmp_path / f"scn_{i:03d}.mp4"
                 dur = max(1.5, min(6.0, meta["duration"]))
-                # Zoompan on a 1.4x canvas — enough for a subtle ken-burns without
-                # hammering CPU/RAM on small production pods.
                 dur_frames = max(45, int(dur * fps))
-                cw, ch = int(w * 1.4), int(h * 1.4)
+                # Fit the image onto the target canvas without cropping — pad
+                # letterbox/pillarbox with a blurred version of the same image so
+                # portrait screenshots keep their full detail on a portrait output.
+                # Then apply a gentle ken-burns zoom on a 1.3x oversize buffer.
+                cw, ch = int(w * 1.3), int(h * 1.3)
                 vf = (
-                    f"scale={cw}:{ch}:force_original_aspect_ratio=increase,"
-                    f"crop={cw}:{ch},"
-                    f"zoompan=z='min(zoom+0.0012,1.12)':d={dur_frames}:s={w}x{h}:fps={fps},"
+                    # Build a blurred background layer at target size
+                    f"[0:v]split=2[fg][bg];"
+                    f"[bg]scale={w}:{h}:force_original_aspect_ratio=increase,"
+                    f"crop={w}:{h},boxblur=luma_radius=30:luma_power=1,"
+                    f"eq=brightness=-0.15[bgb];"
+                    # Foreground: contain-fit into the canvas (no crop, no distortion)
+                    f"[fg]scale={w}:{h}:force_original_aspect_ratio=decrease[fgs];"
+                    # Composite fg over blurred bg
+                    f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2,"
+                    # Now upscale to zoom-canvas & apply subtle ken-burns
+                    f"scale={cw}:{ch},"
+                    f"zoompan=z='min(zoom+0.0010,1.10)':d={dur_frames}:s={w}x{h}:fps={fps},"
                     f"format=yuv420p"
                 )
                 cmd = [
                     FFMPEG_BIN, "-y", "-threads", "1", "-loop", "1", "-i", str(p),
                     "-t", f"{dur:.2f}", "-r", str(fps),
-                    "-vf", vf,
+                    "-filter_complex", vf,
                     "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
-                    "-pix_fmt", "yuv420p", "-threads", "1",
+                    "-crf", "20", "-pix_fmt", "yuv420p", "-threads", "1",
                     str(out),
                 ]
-                r = subprocess.run(cmd, capture_output=True, timeout=90)
+                r = subprocess.run(cmd, capture_output=True, timeout=120)
                 if r.returncode != 0:
-                    print("[render] scene fail:", r.stderr.decode()[-300:])
+                    print("[render] scene fail:", r.stderr.decode()[-400:])
                     return None
                 scene_videos.append(out)
 
