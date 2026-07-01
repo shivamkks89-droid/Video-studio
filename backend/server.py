@@ -48,6 +48,7 @@ from seedance import (
     image_to_video as seedance_i2v,
     text_to_video as seedance_t2v,
 )
+from sora import SoraError, text_to_video as sora_t2v
 from video_renderer import STATIC_DIR, render_video
 from templates_seed import AVATARS, PLANS, STOCK_ASSETS, TEMPLATES, VIDEO_TYPES
 
@@ -599,24 +600,28 @@ async def get_project_metrics(project_id: str, request: Request):
     }
 
 
-# ---------- Seedance (fal.ai) video-clip generation ----------
-# Two modes per scene:
-#   text-to-video (T2V) : generate a clip purely from a prompt
-#   image-to-video (I2V): animate an existing scene image
-# Both charge credits, persist the resulting MP4 to our own object store, and
-# attach the URL onto the scene inside the project document so the renderer
-# uses it instead of the still-image ken-burns fallback.
-SEEDANCE_CREDIT_COST_T2V = 40
-SEEDANCE_CREDIT_COST_I2V = 30
+# ---------- Video-clip generation (Sora 2 free / Seedance paid) ----------
+# Two engines, plan-gated:
+#   sora     — OpenAI Sora 2 via Emergent Universal Key. Available on ALL plans
+#              (including free). T2V only, 4/8/12s clips at 1024x1792 / 1792x1024 / 1024x1024.
+#   seedance — ByteDance Seedance via fal.ai. Requires FAL_KEY and a paid plan
+#              (creator / studio / enterprise). Supports both T2V and I2V.
+SEEDANCE_ALLOWED_PLANS = {"creator", "studio", "enterprise"}
+CLIP_COST = {
+    ("sora", "t2v"): 20,
+    ("seedance", "t2v"): 40,
+    ("seedance", "i2v"): 30,
+}
 
 
-class SeedanceReq(BaseModel):
+class VideoClipReq(BaseModel):
     project_id: str
     scene_index: int
-    mode: str  # "t2v" | "i2v"
-    prompt: Optional[str] = None       # overrides scene prompt when given
-    duration_seconds: Optional[int] = 5
-    aspect_ratio: Optional[str] = None  # inherits from project
+    engine: str = "sora"       # "sora" | "seedance"
+    mode: str = "t2v"          # "t2v" | "i2v" (i2v is seedance-only)
+    prompt: Optional[str] = None
+    duration_seconds: Optional[int] = None
+    aspect_ratio: Optional[str] = None
 
 
 def _absolute_asset_url(request: Request, path: str) -> str:
@@ -625,27 +630,34 @@ def _absolute_asset_url(request: Request, path: str) -> str:
         return ""
     if path.startswith("http://") or path.startswith("https://") or path.startswith("data:"):
         return path
-    # Prefer public base URL from env; fall back to the incoming request's host.
     base = os.environ.get("PUBLIC_BASE_URL")
     if not base:
         base = str(request.base_url).rstrip("/")
     return f"{base}{path}"
 
 
-@api.post("/ai/seedance/generate")
-async def seedance_generate(body: SeedanceReq, request: Request):
-    """Kick off a Seedance generation for a single scene and return the finished MP4 URL.
-
-    Blocking call — Seedance clips finish in 30-90s. The frontend should treat this
-    like the render polling and show a spinner.
-    """
-    if body.mode not in ("t2v", "i2v"):
+@api.post("/ai/video-clip/generate")
+async def video_clip_generate(body: VideoClipReq, request: Request):
+    """Generate a video clip for a single scene using either Sora 2 (free) or Seedance (paid)."""
+    engine = (body.engine or "sora").lower()
+    mode = (body.mode or "t2v").lower()
+    if engine not in ("sora", "seedance"):
+        raise HTTPException(status_code=400, detail="engine must be 'sora' or 'seedance'")
+    if mode not in ("t2v", "i2v"):
         raise HTTPException(status_code=400, detail="mode must be 't2v' or 'i2v'")
+    if engine == "sora" and mode == "i2v":
+        raise HTTPException(status_code=400, detail="Sora 2 supports text-to-video only. Use engine='seedance' for image-to-video.")
+
     user = await _current(request)
 
-    proj = await db.projects.find_one(
-        {"project_id": body.project_id, "user_id": user.user_id},
-    )
+    # Plan gating for Seedance (paid)
+    if engine == "seedance" and user.plan not in SEEDANCE_ALLOWED_PLANS:
+        raise HTTPException(
+            status_code=402,
+            detail="Seedance is available on Creator plan and above. Upgrade at /pricing — or use the free Sora 2 engine.",
+        )
+
+    proj = await db.projects.find_one({"project_id": body.project_id, "user_id": user.user_id})
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
     scenes = proj.get("scenes") or []
@@ -654,52 +666,61 @@ async def seedance_generate(body: SeedanceReq, request: Request):
     scene = scenes[body.scene_index]
 
     aspect = body.aspect_ratio or proj.get("aspect_ratio") or "9:16"
-    duration = max(5, min(10, int(body.duration_seconds or 5)))
 
-    # Build the prompt: scene.prompt + subtle motion instructions
     scene_prompt = body.prompt or scene.get("prompt") or scene.get("voiceover") or ""
     motion_hint = "cinematic subtle motion, natural camera movement, high detail, no text, no watermarks"
     prompt = f"{scene_prompt}. {motion_hint}".strip(". ").strip()
 
-    cost = SEEDANCE_CREDIT_COST_T2V if body.mode == "t2v" else SEEDANCE_CREDIT_COST_I2V
-    user = await _charge_credits(user, cost, f"seedance_{body.mode}", body.project_id)
+    cost = CLIP_COST[(engine, mode)]
+    user = await _charge_credits(user, cost, f"videoclip_{engine}_{mode}", body.project_id)
 
     try:
-        if body.mode == "t2v":
-            fal_url = await seedance_t2v(prompt, aspect_ratio=aspect, duration_seconds=duration)
+        if engine == "sora":
+            # Sora 2: T2V only, 4/8/12s. Default 4s for speed.
+            duration = int(body.duration_seconds or 4)
+            video_bytes = await sora_t2v(prompt, aspect_ratio=aspect, duration_seconds=duration)
+            # Persist to our own store; Sora returns bytes directly.
+            local_url = await save_video_persistent(video_bytes)
+            if not local_url:
+                raise SoraError("Failed to persist Sora video to storage")
+            actual_duration = duration
         else:
-            src = scene.get("image_url")
-            if not src:
-                raise SeedanceError("Scene has no image to animate — regenerate the storyboard first.")
-            fal_url = await seedance_i2v(
-                _absolute_asset_url(request, src),
-                prompt=prompt,
-                aspect_ratio=aspect,
-                duration_seconds=duration,
-            )
-    except SeedanceError as e:
-        # Refund on failure — user shouldn't lose credits for a provider outage.
-        await _refund(user, cost, f"seedance_refund_{body.mode}", body.project_id)
+            # Seedance: T2V or I2V, 5/10s
+            duration = max(5, min(10, int(body.duration_seconds or 5)))
+            if mode == "i2v":
+                src = scene.get("image_url")
+                if not src:
+                    raise SeedanceError("Scene has no image to animate — regenerate the storyboard first.")
+                fal_url = await seedance_i2v(_absolute_asset_url(request, src),
+                                             prompt=prompt, aspect_ratio=aspect,
+                                             duration_seconds=duration)
+            else:
+                fal_url = await seedance_t2v(prompt, aspect_ratio=aspect, duration_seconds=duration)
+            # Mirror the fal.ai URL to our own store so the link never expires.
+            try:
+                vb = await seedance_download(fal_url)
+                local_url = await save_video_persistent(vb) or fal_url
+            except Exception as e:
+                print(f"[videoclip] mirror to object-store failed: {e}")
+                local_url = fal_url
+            actual_duration = duration
+    except (SoraError, SeedanceError) as e:
+        await _refund(user, cost, f"videoclip_refund_{engine}", body.project_id)
         detail = str(e)
         if "exhausted balance" in detail.lower() or "top up" in detail.lower():
-            raise HTTPException(status_code=402, detail="fal.ai account balance exhausted — top up at fal.ai/dashboard/billing")
-        raise HTTPException(status_code=502, detail=f"Seedance error: {detail[:300]}")
+            raise HTTPException(
+                status_code=402,
+                detail=("fal.ai account balance exhausted — top up at fal.ai/dashboard/billing, "
+                        "or switch to the free Sora 2 engine."),
+            )
+        raise HTTPException(status_code=502, detail=f"{engine.title()} error: {detail[:300]}")
 
-    # Mirror the fal.ai MP4 to our own persistent storage so the link never expires
-    # and the renderer can pull it locally.
-    try:
-        video_bytes = await seedance_download(fal_url)
-        local_url = await save_video_persistent(video_bytes) or fal_url
-    except Exception as e:
-        print(f"[seedance] mirror to object-store failed, using fal URL directly: {e}")
-        local_url = fal_url
-
-    # Save on the scene
     scenes[body.scene_index] = {
         **scene,
         "video_clip_url": local_url,
-        "video_clip_source": body.mode,
-        "video_clip_duration": duration,
+        "video_clip_engine": engine,
+        "video_clip_source": mode,
+        "video_clip_duration": actual_duration,
     }
     await db.projects.update_one(
         {"project_id": body.project_id, "user_id": user.user_id},
@@ -709,9 +730,37 @@ async def seedance_generate(body: SeedanceReq, request: Request):
     return {
         "ok": True,
         "video_clip_url": local_url,
+        "engine": engine,
         "credits_left": user.credits,
         "scene_index": body.scene_index,
     }
+
+
+# Backwards-compat alias — old /ai/seedance/generate paths just route through the
+# generic endpoint with engine='seedance'.
+class SeedanceReq(BaseModel):
+    project_id: str
+    scene_index: int
+    mode: str
+    prompt: Optional[str] = None
+    duration_seconds: Optional[int] = 5
+    aspect_ratio: Optional[str] = None
+
+
+@api.post("/ai/seedance/generate")
+async def seedance_generate_legacy(body: SeedanceReq, request: Request):
+    return await video_clip_generate(
+        VideoClipReq(
+            project_id=body.project_id,
+            scene_index=body.scene_index,
+            engine="seedance",
+            mode=body.mode,
+            prompt=body.prompt,
+            duration_seconds=body.duration_seconds,
+            aspect_ratio=body.aspect_ratio,
+        ),
+        request,
+    )
 
 
 class SeedanceClearReq(BaseModel):
@@ -730,12 +779,41 @@ async def seedance_clear(body: SeedanceClearReq, request: Request):
     if body.scene_index < 0 or body.scene_index >= len(scenes):
         raise HTTPException(status_code=400, detail="scene_index out of range")
     scenes[body.scene_index] = {k: v for k, v in scenes[body.scene_index].items()
-                                 if k not in {"video_clip_url", "video_clip_source", "video_clip_duration"}}
+                                 if k not in {"video_clip_url", "video_clip_source",
+                                              "video_clip_engine", "video_clip_duration"}}
     await db.projects.update_one(
         {"project_id": body.project_id, "user_id": user.user_id},
         {"$set": {"scenes": scenes}},
     )
     return {"ok": True}
+
+
+@api.get("/ai/video-clip/engines")
+async def list_video_engines(request: Request):
+    """Return which engines are unlocked for the current user's plan."""
+    user = await _current(request)
+    return {
+        "current_plan": user.plan,
+        "engines": [
+            {
+                "id": "sora",
+                "label": "Sora 2 (Free)",
+                "modes": ["t2v"],
+                "cost": {"t2v": CLIP_COST[("sora", "t2v")]},
+                "unlocked": True,
+                "note": "Included in every plan. 4-12s clips, portrait/landscape/square.",
+            },
+            {
+                "id": "seedance",
+                "label": "Seedance (Premium)",
+                "modes": ["t2v", "i2v"],
+                "cost": {"t2v": CLIP_COST[("seedance", "t2v")],
+                         "i2v": CLIP_COST[("seedance", "i2v")]},
+                "unlocked": user.plan in SEEDANCE_ALLOWED_PLANS,
+                "note": "Available on Creator plan and above. Higher realism + image-to-video mode.",
+            },
+        ],
+    }
 
 
 def _replace_brand_token(obj, brand: str):

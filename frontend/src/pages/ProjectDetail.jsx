@@ -14,6 +14,7 @@ export default function ProjectDetail() {
   const [busyScript, setBusyScript] = useState(false);
   const [busyVariants, setBusyVariants] = useState(false);
   const [busySeedanceIdx, setBusySeedanceIdx] = useState(null);
+  const [engines, setEngines] = useState(null); // { engines: [{id,label,unlocked,cost,modes}], current_plan }
   const [variants, setVariants] = useState(null); // { variants: [{audience, label, script}], source_assets, axis }
   const [axis, setAxis] = useState("gender"); // gender | age | region
   const [metrics, setMetrics] = useState(null);
@@ -44,6 +45,7 @@ export default function ProjectDetail() {
     load();
     loadMetrics();
     api.get("/catalog/voices").then(({ data }) => { setVoices(data); setVoiceId(data[0]?.id || ""); });
+    api.get("/ai/video-clip/engines").then(({ data }) => setEngines(data)).catch(() => {});
   }, [id]);
 
   if (!project) return <div className="label-mono text-zinc-500">Loading…</div>;
@@ -119,25 +121,27 @@ export default function ProjectDetail() {
     toast.success("Share link copied — each open counts as a view");
   };
 
-  const runSeedance = async (idx, mode) => {
+  const runSeedance = async (idx, engine, mode) => {
     setBusySeedanceIdx(idx);
-    const t = toast.loading(`${mode === "i2v" ? "Animating scene" : "Generating video"} · this takes 30-90s…`);
+    const engineLabel = engine === "sora" ? "Sora 2" : "Seedance";
+    const t = toast.loading(`${engineLabel} · ${mode === "i2v" ? "animating scene" : "generating clip"} · this takes 30-120s…`);
     try {
-      const { data } = await api.post("/ai/seedance/generate", {
+      await api.post("/ai/video-clip/generate", {
         project_id: id,
         scene_index: idx,
+        engine,
         mode,
-        duration_seconds: 5,
       });
       const { data: p } = await api.get(`/projects/${id}`);
       setProject(p);
-      toast.success("Motion clip ready — plays on hover", { id: t });
-      // silence unused var
-      void data;
+      toast.success(`${engineLabel} clip ready — plays on hover`, { id: t });
     } catch (err) {
-      const msg = err.response?.data?.detail || "Seedance failed";
-      if (String(msg).toLowerCase().includes("balance")) {
-        toast.error("fal.ai balance exhausted — top up at fal.ai/dashboard/billing", { id: t, duration: 6000 });
+      const msg = err.response?.data?.detail || `${engineLabel} failed`;
+      const lower = String(msg).toLowerCase();
+      if (lower.includes("balance")) {
+        toast.error("fal.ai balance exhausted — top up at fal.ai/dashboard/billing, or use Sora 2 instead", { id: t, duration: 6000 });
+      } else if (lower.includes("upgrade") || lower.includes("creator plan")) {
+        toast.error("Seedance is a Premium engine — upgrade your plan, or use the free Sora 2 instead", { id: t, duration: 6000 });
       } else {
         toast.error(msg, { id: t });
       }
@@ -497,25 +501,43 @@ export default function ProjectDetail() {
                     <div className="p-2 text-[11px] text-zinc-400 leading-snug line-clamp-2">{s.voiceover || s.visual_prompt}</div>
                     <div className="px-2 pb-2 flex items-center gap-1 flex-wrap">
                       {s.video_clip_url ? (
-                        <button data-testid={`clear-clip-${i}`} onClick={() => clearSeedance(i)}
-                          disabled={busySeedanceIdx === i}
-                          className="rounded-full surface px-2 py-1 text-[10px] border border-white/10 hover:border-white/30 disabled:opacity-50">
-                          Remove motion
-                        </button>
+                        <>
+                          <span className="label-mono text-[9px] text-fuchsia-300">
+                            {s.video_clip_engine === "sora" ? "SORA 2" : "SEEDANCE"} · {s.video_clip_source?.toUpperCase()}
+                          </span>
+                          <button data-testid={`clear-clip-${i}`} onClick={() => clearSeedance(i)}
+                            disabled={busySeedanceIdx === i}
+                            className="ml-auto rounded-full surface px-2 py-1 text-[10px] border border-white/10 hover:border-white/30 disabled:opacity-50">
+                            Remove motion
+                          </button>
+                        </>
                       ) : (
                         <>
-                          <button data-testid={`animate-scene-${i}`} onClick={() => runSeedance(i, "i2v")}
-                            disabled={busySeedanceIdx !== null || !s.image_url}
-                            title="Animate this still (30 CR)"
-                            className="rounded-full px-2 py-1 text-[10px] flex items-center gap-1 bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/30 hover:border-fuchsia-400 disabled:opacity-50">
-                            {busySeedanceIdx === i ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                            Animate (30 CR)
-                          </button>
-                          <button data-testid={`regen-scene-${i}`} onClick={() => runSeedance(i, "t2v")}
+                          {/* Free tier — Sora 2 T2V */}
+                          <button data-testid={`animate-sora-${i}`} onClick={() => runSeedance(i, "sora", "t2v")}
                             disabled={busySeedanceIdx !== null}
-                            title="Text-to-video from scene prompt (40 CR)"
-                            className="rounded-full px-2 py-1 text-[10px] border border-white/10 text-zinc-400 hover:text-white hover:border-white/30 disabled:opacity-50">
-                            T2V (40 CR)
+                            title="Sora 2 · Free on every plan · 20 CR"
+                            className="rounded-full px-2 py-1 text-[10px] flex items-center gap-1 bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:border-emerald-400 disabled:opacity-50">
+                            {busySeedanceIdx === i ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                            Sora 2 · 20 CR
+                          </button>
+
+                          {/* Premium tier — Seedance I2V */}
+                          <button data-testid={`animate-seedance-${i}`} onClick={() => runSeedance(i, "seedance", "i2v")}
+                            disabled={busySeedanceIdx !== null || !s.image_url}
+                            title={engines?.engines?.find(e => e.id === "seedance")?.unlocked
+                              ? "Seedance Animate · 30 CR"
+                              : "Seedance is a Creator+ plan feature"}
+                            className={`rounded-full px-2 py-1 text-[10px] flex items-center gap-1 border disabled:opacity-50 ${
+                              engines?.engines?.find(e => e.id === "seedance")?.unlocked
+                                ? "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/30 hover:border-fuchsia-400"
+                                : "bg-white/5 text-zinc-500 border-white/10"
+                            }`}>
+                            <Sparkles className="w-3 h-3" />
+                            Seedance
+                            {!engines?.engines?.find(e => e.id === "seedance")?.unlocked && (
+                              <span className="ml-0.5 text-[8px] opacity-70">🔒</span>
+                            )}
                           </button>
                         </>
                       )}
