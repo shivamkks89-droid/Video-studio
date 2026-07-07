@@ -113,6 +113,80 @@ Break into {max(3, min(8, duration // 5))} scenes. Return JSON only."""
     return _safe_json(text)
 
 
+SCORE_SYSTEM = """You are an expert digital marketing performance analyst who has run $50M+ in ad spend across Google Ads, YouTube Ads, Instagram Reels, TikTok, and Meta Ads for the Indian market. Your job is to grade multiple ad script variants side-by-side and predict which will perform best on each channel.
+
+Scoring rubric (0-100 for each metric):
+1. hook_strength   - How likely is the first 3 seconds to stop the scroll?
+2. retention       - Will viewers watch to the end?
+3. cta_strength    - How clear and compelling is the call-to-action?
+4. organic_virality - Shareability on Reels/TikTok/Shorts (relatability, emotion, meme potential).
+5. google_ads_score - Suitability for Google Ads / YouTube Ads specifically. Deduct heavily for:
+     - Policy risks (misleading claims, exaggerated promises, sensational hooks, "guaranteed" language,
+       negative emotion baiting, personal attacks, competitor bashing, before/after claims).
+     - Lack of clear value proposition in first 5 seconds.
+     - No visible product/service in scene descriptions.
+   Reward clear benefit, honest promise, and specific CTA.
+6. ads_policy_risk - Direct risk of Google/Meta Ads rejection (0=safe, 100=very risky).
+
+Overall composite scores (weighted formula, 0-100):
+- organic_composite = 0.30*hook + 0.30*retention + 0.20*cta + 0.20*organic_virality
+- google_ads_composite = 0.20*hook + 0.30*retention + 0.30*cta + 0.20*google_ads_score - 0.5*ads_policy_risk (floor 0, cap 100)
+
+Also produce:
+- best_for: which channel/audience this variant is optimally suited for (one short phrase).
+- top_improvement: single most impactful edit to raise the composite by 10+ points.
+
+Return JSON only. No prose. Schema:
+{
+  "variants": [
+     { "audience": "...", "hook_strength": n, "retention": n, "cta_strength": n,
+       "organic_virality": n, "google_ads_score": n, "ads_policy_risk": n,
+       "organic_composite": n, "google_ads_composite": n,
+       "best_for": "...", "top_improvement": "..." }
+  ],
+  "winner_organic": "<audience label of the highest organic_composite>",
+  "winner_google_ads": "<audience label of the highest google_ads_composite>",
+  "reasoning": "One-sentence explanation of why the winners were picked."
+}"""
+
+
+async def score_variants(variants: List[dict], video_type: str, language: str) -> dict:
+    """Grade a list of script variants and return performance predictions.
+
+    `variants` is a list of `{audience, label, script}` dicts (as produced by
+    the /ai/script/variants endpoint). Skipped variants (with errors) are
+    ignored during scoring.
+    """
+    scorable = [v for v in variants if v.get("script")]
+    if not scorable:
+        return {"variants": [], "winner_organic": None, "winner_google_ads": None,
+                "reasoning": "No variants to score."}
+
+    payload_lines = []
+    for i, v in enumerate(scorable):
+        s = v["script"]
+        payload_lines.append(
+            f"### VARIANT {i+1} — {v.get('label')} (audience key: {v.get('audience')})\n"
+            f"HOOK: {s.get('hook', '')}\n"
+            f"BODY: {s.get('body') or s.get('voiceover_script') or ''}\n"
+            f"CTA: {s.get('cta', '')}"
+        )
+    user_prompt = (
+        f"Video type: {video_type}. Language: {language}. Indian market.\n\n"
+        f"Grade the following {len(scorable)} ad-script variants using the exact rubric. "
+        f"When identifying the winner_organic/winner_google_ads, use the exact `label` string "
+        f"from each variant.\n\n" + "\n\n".join(payload_lines)
+    )
+    text = await _claude_send(SCORE_SYSTEM, user_prompt)
+    parsed = _safe_json(text)
+    if not isinstance(parsed, dict) or "variants" not in parsed:
+        # LLM returned an unexpected shape — degrade gracefully so the caller
+        # still gets *something* useful.
+        return {"variants": [], "winner_organic": None, "winner_google_ads": None,
+                "reasoning": "Scorer returned an unexpected format."}
+    return parsed
+
+
 async def generate_hooks(topic: str, language: str, count: int = 5) -> List[str]:
     text = await _claude_send(
         "You write scroll-stopping video hooks. Respond with a JSON array of strings only.",

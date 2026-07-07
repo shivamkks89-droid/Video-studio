@@ -31,7 +31,7 @@ from auth import (
 )
 from ai_services import (
     AIServiceError, generate_ctas, generate_hooks, generate_scene_image,
-    generate_script, list_voices, suggest_ad_ideas, synthesize_speech,
+    generate_script, list_voices, score_variants, suggest_ad_ideas, synthesize_speech,
 )
 from asset_store import (
     save_image_data_uri as save_image_persistent,
@@ -487,12 +487,47 @@ async def ai_script_variants(body: VariantsReq, request: Request):
         if user_doc:
             user.credits = user_doc.get("credits", user.credits)
 
+    # Auto-score variants (organic + Google Ads suitability) — one extra LLM
+    # call that returns 0-100 scores per metric plus overall winners.
+    scoring = {"variants": [], "winner_organic": None, "winner_google_ads": None,
+               "reasoning": None}
+    try:
+        scoring = await score_variants(variants, body.video_type or "cinematic_ad",
+                                        body.language or "english")
+        score_by_key = {}
+        for row in scoring.get("variants", []):
+            for k in (row.get("audience"), row.get("label")):
+                if k:
+                    score_by_key[k] = row
+        for v in variants:
+            row = score_by_key.get(v.get("label")) or score_by_key.get(v.get("audience"))
+            if row:
+                v["scores"] = row
+        # Normalise winner tokens to the canonical `label` (LLM sometimes returns
+        # the raw audience key like "parents" instead of "Parents (32-55)").
+        label_by_any = {}
+        for v in variants:
+            for k in (v.get("audience"), v.get("label")):
+                if k:
+                    label_by_any[k] = v.get("label")
+        for wk in ("winner_organic", "winner_google_ads"):
+            w = scoring.get(wk)
+            if w and label_by_any.get(w):
+                scoring[wk] = label_by_any[w]
+    except Exception as e:  # noqa: BLE001
+        print(f"[variants] scoring failed: {e}")
+
     return {
         "axis": axis,
         "variants": variants,
         "source_assets": scraped if scraped.get("ok") else None,
         "credits_left": user.credits,
         "warning": None if scraped.get("ok") else "No brand info — variants use the [BRAND] placeholder.",
+        "winners": {
+            "organic": scoring.get("winner_organic"),
+            "google_ads": scoring.get("winner_google_ads"),
+            "reasoning": scoring.get("reasoning"),
+        },
     }
 
 

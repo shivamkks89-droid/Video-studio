@@ -385,27 +385,79 @@ export default function ProjectDetail() {
                 {busyVariants ? `Crafting 3 ${axis} variants…` : `3 ${axis} variants (15 CR)`}
               </button>
             </div>
+            {variants?.winners?.reasoning && (
+              <div data-testid="variants-winners" className="mt-4 surface rounded-lg p-3 border border-[#E2FF3D]/30">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="label-mono text-[#E2FF3D] text-[11px]">AI PERFORMANCE PREDICTOR</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <div className="label-mono text-zinc-500 text-[10px] mb-0.5">🌱 ORGANIC WINNER</div>
+                    <div className="text-emerald-300 font-semibold">{variants.winners.organic || "—"}</div>
+                  </div>
+                  <div>
+                    <div className="label-mono text-zinc-500 text-[10px] mb-0.5">💰 GOOGLE ADS WINNER</div>
+                    <div className="text-sky-300 font-semibold">{variants.winners.google_ads || "—"}</div>
+                  </div>
+                </div>
+                <div className="mt-2 text-[11px] text-zinc-400 italic">{variants.winners.reasoning}</div>
+              </div>
+            )}
             {variants?.variants && (
               <div data-testid="variants-panel" className="mt-4 grid gap-3 md:grid-cols-3">
-                {variants.variants.map((v) => (
-                  <div key={v.audience} data-testid={`variant-${v.audience}`}
-                    className="surface rounded-lg p-3 flex flex-col gap-2 border border-white/10 hover:border-[#E2FF3D]/40 transition-colors">
-                    <div className="label-mono text-[#E2FF3D] text-[11px]">{v.label}</div>
-                    {v.error ? (
-                      <div className="text-xs text-red-400">Failed: {v.error}</div>
-                    ) : (
-                      <>
-                        <div className="text-sm font-medium line-clamp-3">{v.script?.hook}</div>
-                        <div className="text-xs text-zinc-400 line-clamp-4">{v.script?.body}</div>
-                        <div className="text-[11px] text-zinc-500 italic line-clamp-2">CTA: {v.script?.cta}</div>
-                        <button data-testid={`apply-${v.audience}`} onClick={() => applyVariant(v)}
-                          className="mt-auto btn-volt rounded-full px-3 py-1.5 text-xs flex items-center justify-center gap-1">
-                          Use this script
-                        </button>
-                      </>
-                    )}
-                  </div>
-                ))}
+                {variants.variants.map((v) => {
+                  const isOrgWin = variants.winners?.organic === v.label;
+                  const isAdsWin = variants.winners?.google_ads === v.label;
+                  const s = v.scores;
+                  return (
+                    <div key={v.audience} data-testid={`variant-${v.audience}`}
+                      className={`surface rounded-lg p-3 flex flex-col gap-2 border transition-colors ${
+                        isOrgWin || isAdsWin
+                          ? "border-[#E2FF3D] shadow-[0_0_0_1px_rgba(226,255,61,0.15)]"
+                          : "border-white/10 hover:border-[#E2FF3D]/40"
+                      }`}>
+                      <div className="flex items-center justify-between gap-1 flex-wrap">
+                        <div className="label-mono text-[#E2FF3D] text-[11px]">{v.label}</div>
+                        <div className="flex gap-1">
+                          {isOrgWin && <span className="label-mono text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">🌱 ORG</span>}
+                          {isAdsWin && <span className="label-mono text-[9px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300">💰 ADS</span>}
+                        </div>
+                      </div>
+                      {v.error ? (
+                        <div className="text-xs text-red-400">Failed: {v.error}</div>
+                      ) : (
+                        <>
+                          <div className="text-sm font-medium line-clamp-3">{v.script?.hook}</div>
+                          <div className="text-xs text-zinc-400 line-clamp-3">{v.script?.body}</div>
+                          <div className="text-[11px] text-zinc-500 italic line-clamp-2">CTA: {v.script?.cta}</div>
+                          {s && (
+                            <div className="mt-1 space-y-1" data-testid={`scores-${v.audience}`}>
+                              <ScoreBar label="Organic" value={s.organic_composite} color="emerald" testId={`score-org-${v.audience}`} />
+                              <ScoreBar label="Google Ads" value={s.google_ads_composite} color="sky" testId={`score-ads-${v.audience}`} />
+                              <div className="grid grid-cols-3 gap-1 pt-1">
+                                <MiniStat label="Hook" value={s.hook_strength} />
+                                <MiniStat label="Retention" value={s.retention} />
+                                <MiniStat label="CTA" value={s.cta_strength} />
+                              </div>
+                              {s.ads_policy_risk >= 40 && (
+                                <div className="text-[10px] text-amber-400 mt-1">⚠ Ads policy risk {s.ads_policy_risk}/100</div>
+                              )}
+                              {s.top_improvement && (
+                                <div className="text-[10px] text-zinc-500 pt-1 border-t border-white/5 mt-1">
+                                  <span className="text-zinc-400">Tip:</span> {s.top_improvement}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          <button data-testid={`apply-${v.audience}`} onClick={() => applyVariant(v)}
+                            className="mt-auto btn-volt rounded-full px-3 py-1.5 text-xs flex items-center justify-center gap-1">
+                            Use this script
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
             {project.source_assets?.title && (
@@ -643,6 +695,32 @@ function Row({ label, children }) {
     <div className="flex gap-3">
       <div className="label-mono text-zinc-500 w-20 shrink-0 pt-1">{label}</div>
       <div className="text-zinc-200 flex-1">{children}</div>
+    </div>
+  );
+}
+
+function ScoreBar({ label, value, color = "emerald", testId }) {
+  const v = Math.max(0, Math.min(100, Math.round(value ?? 0)));
+  const barColor = color === "sky" ? "bg-sky-400" : color === "emerald" ? "bg-emerald-400" : "bg-[#E2FF3D]";
+  const textColor = color === "sky" ? "text-sky-300" : color === "emerald" ? "text-emerald-300" : "text-[#E2FF3D]";
+  return (
+    <div className="flex items-center gap-2" data-testid={testId}>
+      <div className="label-mono text-[10px] text-zinc-500 w-16 shrink-0">{label}</div>
+      <div className="flex-1 h-1.5 rounded-full bg-white/5 overflow-hidden">
+        <div className={`h-full ${barColor} transition-all`} style={{ width: `${v}%` }} />
+      </div>
+      <div className={`label-mono text-[10px] w-7 text-right ${textColor}`}>{v}</div>
+    </div>
+  );
+}
+
+function MiniStat({ label, value }) {
+  const v = Math.max(0, Math.min(100, Math.round(value ?? 0)));
+  const color = v >= 75 ? "text-emerald-300" : v >= 55 ? "text-[#E2FF3D]" : v >= 35 ? "text-amber-300" : "text-red-300";
+  return (
+    <div className="surface rounded px-1.5 py-1 text-center">
+      <div className={`text-xs font-semibold ${color}`}>{v}</div>
+      <div className="label-mono text-[9px] text-zinc-500 uppercase">{label}</div>
     </div>
   );
 }
