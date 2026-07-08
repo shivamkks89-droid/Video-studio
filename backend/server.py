@@ -1030,6 +1030,11 @@ async def ai_storyboard(body: StoryboardRequest, request: Request):
     succeeded = 0
     real_idx = 0
     icon_used = False
+    # When we have real assets, aggressively feature them so the video actually
+    # showcases the real product — target ~70% of scenes to be REAL when we have
+    # enough screenshots.
+    real_target_count = min(len(real_assets), max(1, int(len(body.scenes) * 0.7)))
+    real_used = 0
     for i, sc in enumerate(body.scenes):
         user = await _charge_credits(user, 3, "storyboard_scene")
         prompt_text = (sc.get("visual_prompt") or sc.get("description") or "").lower()
@@ -1048,13 +1053,22 @@ async def ai_storyboard(body: StoryboardRequest, request: Request):
                 icon_used = True
                 source_tag = "real_icon"
 
-        # 2. Product / UI scene → use a real screenshot
-        if not img and real_assets and (wants_product or (i % 2 == 1 and not wants_logo)):
+        # 2. Product / UI scene → use a real screenshot.
+        # We prioritise real screenshots for any scene that mentions the app / UI /
+        # phone (`wants_product`) OR when we still have quota to hit `real_target_count`
+        # (ensures majority of scenes are actually the real product).
+        need_real = (
+            real_assets
+            and not wants_logo
+            and (wants_product or real_used < real_target_count)
+        )
+        if not img and need_real:
             while real_idx < len(real_assets) and not img:
                 img = await _fetch_as_data_uri(real_assets[real_idx])
                 real_idx += 1
             if img:
                 source_tag = "real"
+                real_used += 1
 
         # 3. Otherwise generate via Nano Banana — but strip any brand text from the prompt
         if not img:
@@ -1072,6 +1086,16 @@ async def ai_storyboard(body: StoryboardRequest, request: Request):
             if img:
                 img = (await save_image_persistent(img)) or img
                 source_tag = "ai"
+
+        # 4. Final fallback — if AI failed AND we still have real assets left, use one
+        # so the scene is never empty.
+        if not img and real_assets and real_idx < len(real_assets):
+            while real_idx < len(real_assets) and not img:
+                img = await _fetch_as_data_uri(real_assets[real_idx])
+                real_idx += 1
+            if img:
+                source_tag = "real"
+                real_used += 1
 
         if not img:
             await _refund(user, 3, "storyboard_scene")

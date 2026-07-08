@@ -131,6 +131,51 @@ async def _scrape_website(url: str) -> dict:
     }
 
 
+async def _search_playstore(query: str) -> Optional[dict]:
+    """Search Play Store for a plain-language app name.
+
+    Returns a `{kind, ok, ...}` dict directly — the search endpoint already
+    returns icon + screenshots for each hit, so a second app_id fetch is only
+    needed for extra metadata (installs, description) when the hit has appId.
+    """
+    def _work():
+        try:
+            from google_play_scraper import search as ps_search  # type: ignore
+            return ps_search(query, lang="en", country="in", n_hits=5) or []
+        except Exception:
+            return []
+    hits = await asyncio.to_thread(_work)
+    if not hits:
+        return None
+    # Prefer the first hit that has real screenshots (search sometimes returns
+    # ad-tagged results with appId=None but full media, which is still perfect
+    # for our storyboard).
+    for h in hits:
+        if h.get("screenshots"):
+            return {
+                "kind": "playstore",
+                "ok": True,
+                "id": h.get("appId"),
+                "title": h.get("title"),
+                "icon": h.get("icon"),
+                "screenshots": (h.get("screenshots") or [])[:8],
+                "score": h.get("score"),
+                "category": h.get("genre"),
+                "developer": h.get("developer"),
+                "description": h.get("description") or h.get("summary") or "",
+                "url": f"https://play.google.com/store/apps/details?id={h.get('appId')}" if h.get("appId") else None,
+                "_matched_by": "playstore_search",
+            }
+    # No screenshots in the direct hits — fall back to fetching the top appId if any.
+    for h in hits:
+        if h.get("appId"):
+            r = await _scrape_playstore(h["appId"])
+            if r.get("ok"):
+                r["_matched_by"] = "playstore_search_fetch"
+                return r
+    return None
+
+
 async def scrape(query: str) -> dict:
     kind = _detect_kind(query)
     if kind == "playstore":
@@ -138,6 +183,11 @@ async def scrape(query: str) -> dict:
         return await _scrape_playstore(app_id)
     if kind == "website":
         return await _scrape_website(query)
+    # Unknown → try a Play Store search for the plain name. This makes brand names
+    # like "CashKaro", "Zomato", "Airtel Xstream" auto-resolve to the real app.
+    r = await _search_playstore(query)
+    if r:
+        return r
     return {"kind": kind, "ok": False, "error": "Could not detect a URL or Play Store ID."}
 
 
