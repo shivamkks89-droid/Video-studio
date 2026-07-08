@@ -1,19 +1,21 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { ArrowRight, Film, Layers, Sparkles, Mic, Image as ImageIcon, Plus, Wand2 } from "lucide-react";
+import { ArrowRight, Film, Layers, Loader2, Sparkles, Mic, Image as ImageIcon, Plus, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { assetUrl } from "../lib/assetUrl";
 
 export default function DashboardHome() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [ideas, setIdeas] = useState([]);
   const [ideaQuery, setIdeaQuery] = useState("");
   const [loadingIdeas, setLoadingIdeas] = useState(false);
   const [scrapedSrc, setScrapedSrc] = useState(null);
+  const [busyIdeaIdx, setBusyIdeaIdx] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -40,6 +42,42 @@ export default function DashboardHome() {
     } finally { setLoadingIdeas(false); }
   };
 
+  const applyIdea = async (idea, i) => {
+    setBusyIdeaIdx(i);
+    const t = toast.loading("Creating project & generating script…");
+    try {
+      // 1) Create the project pre-loaded with the idea's format + title
+      const { data: proj } = await api.post("/projects", {
+        title: idea.title,
+        video_type: idea.video_type || "cinematic_ad",
+        language: "hinglish",
+        aspect_ratio: idea.video_type?.includes("shorts") || idea.video_type?.includes("reel") || idea.video_type?.includes("tiktok") ? "9:16" : "9:16",
+        duration_sec: idea.duration_sec || 20,
+      });
+      // 2) Generate the script using the original ideaQuery as topic (so brand
+      //    scraping fires) and pass the idea's angle + hook as guidance so
+      //    Claude honours the specific creative direction.
+      const extraNotes = [
+        idea.angle ? `Creative angle: ${idea.angle}` : "",
+        idea.hook ? `Open with a hook similar to: "${idea.hook}"` : "",
+      ].filter(Boolean).join("\n");
+      await api.post("/ai/script", {
+        project_id: proj.project_id,
+        topic: ideaQuery || idea.title,
+        video_type: idea.video_type || "cinematic_ad",
+        language: "hinglish",
+        duration_sec: idea.duration_sec || 20,
+        extra_notes: extraNotes,
+        brand_name: scrapedSrc?.title || undefined,
+        brand_logo: scrapedSrc?.icon || undefined,
+      });
+      toast.success("Project ready — script prewritten. Continue in editor.", { id: t });
+      navigate(`/dashboard/projects/${proj.project_id}`);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Could not create project", { id: t });
+    } finally { setBusyIdeaIdx(null); }
+  };
+
   const QUICKS = [
     { to: "/dashboard/new", icon: Plus, t: "New Project", d: "Pick a format and start" },
     { to: "/dashboard/script", icon: Sparkles, t: "AI Script", d: "Hindi · Hinglish · English" },
@@ -59,7 +97,7 @@ export default function DashboardHome() {
               Hi {user?.name?.split(" ")[0]} 👋 Ready to direct?
             </h1>
             <p className="mt-3 text-zinc-400 max-w-xl">
-              Paste a website, Play Store app ID or product idea below and we'll suggest 6 cinematic
+              Paste a website, Play Store app ID or product idea below and we&rsquo;ll suggest 6 cinematic
               ad concepts you can render in one click.
             </p>
             <form onSubmit={onSuggest} className="mt-6 flex gap-2 max-w-2xl">
@@ -118,11 +156,17 @@ export default function DashboardHome() {
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
             {ideas.map((idea, i) => (
-              <div key={i} data-testid={`idea-card-${i}`} className="surface rounded-xl p-5">
+              <div key={i} data-testid={`idea-card-${i}`} className="surface rounded-xl p-5 flex flex-col">
                 <div className="label-mono text-[#E2FF3D] text-[10px] mb-2">{idea.video_type?.replace("_", " ").toUpperCase()} · {idea.duration_sec}s</div>
                 <div className="font-semibold mb-2">{idea.title}</div>
                 <div className="text-sm text-zinc-400 mb-3">{idea.angle}</div>
-                <div className="text-xs text-zinc-500 italic">"{idea.hook}"</div>
+                <div className="text-xs text-zinc-500 italic mb-4">&ldquo;{idea.hook}&rdquo;</div>
+                <button data-testid={`use-idea-${i}`} onClick={() => applyIdea(idea, i)}
+                  disabled={busyIdeaIdx !== null}
+                  className="mt-auto btn-volt rounded-full px-4 py-2 text-sm flex items-center justify-center gap-2 disabled:opacity-60">
+                  {busyIdeaIdx === i ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+                  {busyIdeaIdx === i ? "Creating…" : "Make this video"}
+                </button>
               </div>
             ))}
           </div>
