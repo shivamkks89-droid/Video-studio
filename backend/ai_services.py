@@ -96,10 +96,16 @@ async def generate_script(payload: dict) -> dict:
     video_type = payload.get("video_type", "cinematic_ad")
     language = payload.get("language", "english")
     tone = payload.get("tone", "professional")
-    duration = payload.get("duration_sec", 30)
+    # Enforce a hard 40s ceiling — beyond that Reels/Shorts algorithms deprioritise
+    # and viewer retention drops sharply. Users can still choose 15/20/25/30/40.
+    duration = min(40, max(5, int(payload.get("duration_sec", 30))))
     audience = payload.get("target_audience") or "general audience"
     cta = payload.get("cta") or "Sign up / Visit website"
     notes = payload.get("extra_notes") or ""
+    # Fixed 6-scene structure — matches the storyboard mixer which allocates
+    # exactly 4 real product screenshots + 2 AI-rendered scenes.
+    scene_count = 6
+    per_scene = round(duration / scene_count, 1)
     user_prompt = f"""Write a {duration}-second {video_type.replace('_', ' ')} script.
 Topic: {topic}
 Language: {language}
@@ -108,7 +114,15 @@ Target audience: {audience}
 Desired CTA: {cta}
 Notes: {notes}
 
-Break into {max(3, min(8, duration // 5))} scenes. Return JSON only."""
+STRUCTURE:
+- Break into EXACTLY {scene_count} scenes (no more, no less).
+- Each scene ~{per_scene}s long. Total must sum to ~{duration}s.
+- Scene 1 = hook. Scenes 2-3 = show real product features (assume product screenshots
+  will appear here — write voiceover that names the specific feature being shown).
+- Scenes 4-5 = show more real product/UI screenshots (feature deep-dive or benefit).
+- Scene 6 = strong CTA scene (voiceover ends on the CTA).
+
+Return JSON only."""
     text = await _claude_send(SCRIPT_SYSTEM, user_prompt)
     return _safe_json(text)
 

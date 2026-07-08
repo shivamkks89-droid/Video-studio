@@ -105,8 +105,8 @@ export default function NewProject() {
             <SelectGroup label="FPS" value={fps} setValue={(v)=>setFps(Number(v))} options={FPS.map(v=>({v, label: v+" fps"}))} testidPrefix="fps" />
           </div>
           <div>
-            <div className="label-mono text-zinc-500 mb-2">Duration · {duration}s</div>
-            <input data-testid="duration-slider" type="range" min="10" max="120" step="5" value={duration}
+            <div className="label-mono text-zinc-500 mb-2">Duration · {duration}s <span className="opacity-60">(max 40 recommended for high retention)</span></div>
+            <input data-testid="duration-slider" type="range" min="10" max="40" step="5" value={duration}
               onChange={(e)=>setDuration(Number(e.target.value))}
               className="w-full accent-[#E2FF3D]" />
           </div>

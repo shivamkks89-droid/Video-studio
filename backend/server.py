@@ -1030,10 +1030,20 @@ async def ai_storyboard(body: StoryboardRequest, request: Request):
     succeeded = 0
     real_idx = 0
     icon_used = False
-    # When we have real assets, aggressively feature them so the video actually
-    # showcases the real product — target ~70% of scenes to be REAL when we have
-    # enough screenshots.
-    real_target_count = min(len(real_assets), max(1, int(len(body.scenes) * 0.7)))
+    # ----- Scene mix planning -----
+    # Target: 4 REAL product screenshots + 2 AI-rendered scenes when the script
+    # produces the recommended 6 scenes and we have enough real assets. For any
+    # other scene count we scale proportionally (~66% real, ~33% AI).
+    n_scenes = len(body.scenes)
+    if n_scenes == 6 and len(real_assets) >= 4:
+        real_target_count = 4
+        # Real slots go on scenes with indexes 1..4 (0-based) — 0 & 5 stay AI
+        # so the hook and CTA cards feel cinematic + branded. If a scene at 1..4
+        # is explicitly a LOGO scene we still allow the icon there.
+        real_slots = {1, 2, 3, 4}
+    else:
+        real_target_count = min(len(real_assets), max(1, int(n_scenes * 2 / 3)))
+        real_slots = None  # fall back to heuristic below
     real_used = 0
     for i, sc in enumerate(body.scenes):
         user = await _charge_credits(user, 3, "storyboard_scene")
@@ -1054,14 +1064,21 @@ async def ai_storyboard(body: StoryboardRequest, request: Request):
                 source_tag = "real_icon"
 
         # 2. Product / UI scene → use a real screenshot.
-        # We prioritise real screenshots for any scene that mentions the app / UI /
-        # phone (`wants_product`) OR when we still have quota to hit `real_target_count`
-        # (ensures majority of scenes are actually the real product).
-        need_real = (
-            real_assets
-            and not wants_logo
-            and (wants_product or real_used < real_target_count)
-        )
+        # When we have a fixed slot map (6-scene mix) we honour it strictly; otherwise
+        # we use the heuristic based on keywords + quota.
+        if real_slots is not None:
+            need_real = (
+                real_assets
+                and not wants_logo
+                and i in real_slots
+                and real_used < real_target_count
+            )
+        else:
+            need_real = (
+                real_assets
+                and not wants_logo
+                and (wants_product or real_used < real_target_count)
+            )
         if not img and need_real:
             while real_idx < len(real_assets) and not img:
                 img = await _fetch_as_data_uri(real_assets[real_idx])
