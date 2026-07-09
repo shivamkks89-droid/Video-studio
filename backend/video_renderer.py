@@ -170,7 +170,9 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                 # --- Still image → ken-burns ---
                 p = tmp_path / f"scn_{i:03d}.png"
                 p.write_bytes(item["bytes"])
-                dur = max(1.5, min(6.0, item["duration"]))
+                # Support long-form scenes for 40-60s ads — cap at 12s per still to
+                # keep viewer attention (movement helps). Below 1.5s looks jumpy.
+                dur = max(1.5, min(12.0, item["duration"]))
                 dur_frames = max(45, int(dur * fps))
                 cw, ch = int(w * 1.3), int(h * 1.3)
                 vf = (

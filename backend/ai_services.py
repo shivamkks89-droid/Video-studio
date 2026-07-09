@@ -96,9 +96,8 @@ async def generate_script(payload: dict) -> dict:
     video_type = payload.get("video_type", "cinematic_ad")
     language = payload.get("language", "english")
     tone = payload.get("tone", "professional")
-    # Enforce a hard 40s ceiling — beyond that Reels/Shorts algorithms deprioritise
-    # and viewer retention drops sharply. Users can still choose 15/20/25/30/40.
-    duration = min(40, max(5, int(payload.get("duration_sec", 30))))
+    # Cap at 60s — beyond that Reels/Shorts algorithms deprioritise. Below 5s is not usable.
+    duration = min(60, max(5, int(payload.get("duration_sec", 30))))
     audience = payload.get("target_audience") or "general audience"
     cta = payload.get("cta") or "Sign up / Visit website"
     notes = payload.get("extra_notes") or ""
@@ -114,17 +113,32 @@ Target audience: {audience}
 Desired CTA: {cta}
 Notes: {notes}
 
-STRUCTURE:
+STRUCTURE (STRICT):
 - Break into EXACTLY {scene_count} scenes (no more, no less).
-- Each scene ~{per_scene}s long. Total must sum to ~{duration}s.
-- Scene 1 = hook. Scenes 2-3 = show real product features (assume product screenshots
+- Each scene's `duration` field MUST be a number close to {per_scene} (use decimals if needed).
+- The sum of all six `duration` values MUST equal {duration}.
+- Scene 1 = hook (grab attention in first {per_scene}s).
+- Scenes 2-3 = show real product features (assume product screenshots
   will appear here — write voiceover that names the specific feature being shown).
 - Scenes 4-5 = show more real product/UI screenshots (feature deep-dive or benefit).
 - Scene 6 = strong CTA scene (voiceover ends on the CTA).
 
 Return JSON only."""
     text = await _claude_send(SCRIPT_SYSTEM, user_prompt)
-    return _safe_json(text)
+    parsed = _safe_json(text) or {}
+    # Backend guard: if the LLM ignores per-scene duration, distribute the target
+    # duration evenly. Also ensure the array has exactly `scene_count` entries.
+    scenes = parsed.get("scenes") or []
+    if scenes:
+        total = sum(float(s.get("duration") or 0) for s in scenes)
+        # If durations are missing (sum=0) or way below target, redistribute.
+        if total < duration * 0.8 or total > duration * 1.25:
+            per = round(duration / len(scenes), 2)
+            for s in scenes:
+                s["duration"] = per
+        parsed["scenes"] = scenes
+    parsed["_duration_sec"] = duration
+    return parsed
 
 
 SCORE_SYSTEM = """You are an expert digital marketing performance analyst who has run $50M+ in ad spend across Google Ads, YouTube Ads, Instagram Reels, TikTok, and Meta Ads for the Indian market. Your job is to grade multiple ad script variants side-by-side and predict which will perform best on each channel.
