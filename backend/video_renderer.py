@@ -213,14 +213,47 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                 print("[render] concat fail:", r.stderr.decode()[-300:])
                 return None
 
-            # 4) add audio if available
+            # 4) add audio if available. Auto-tighten voiceover pacing when it
+            # exceeds the total video length (else `-shortest` would cut off the
+            # last CTA scene). We use ffmpeg's atempo filter with a safety cap of
+            # 1.35× so the voice never sounds robotic.
             final = STATIC_DIR / f"{job_id}.mp4"
             if audio_bytes:
                 audio_path = tmp_path / "voice.mp3"
                 audio_path.write_bytes(audio_bytes)
+
+                # Measure both durations quickly.
+                def _probe(path: Path) -> float:
+                    try:
+                        pr = subprocess.run(
+                            [FFMPEG_BIN, "-i", str(path)],
+                            capture_output=True, timeout=15,
+                        )
+                        for line in pr.stderr.decode(errors="ignore").splitlines():
+                            if "Duration:" in line:
+                                # e.g. "  Duration: 00:00:12.34, ..."
+                                h, m, s = line.split("Duration:")[1].split(",")[0].strip().split(":")
+                                return int(h) * 3600 + int(m) * 60 + float(s)
+                    except Exception:
+                        return 0.0
+                    return 0.0
+
+                video_dur = _probe(combined)
+                voice_dur = _probe(audio_path)
+                atempo = 1.0
+                if video_dur > 0 and voice_dur > video_dur * 1.03:
+                    atempo = min(1.35, voice_dur / video_dur)
+                    print(f"[render] auto-tightening voice: {voice_dur:.2f}s > "
+                          f"video {video_dur:.2f}s, atempo={atempo:.2f}x")
+
+                audio_filter_args = []
+                if atempo > 1.001:
+                    audio_filter_args = ["-filter:a", f"atempo={atempo:.3f}"]
+
                 cmd = [
                     FFMPEG_BIN, "-y", "-threads", "1", "-i", str(combined), "-i", str(audio_path),
                     "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
+                    *audio_filter_args,
                     "-shortest", str(final),
                 ]
             else:

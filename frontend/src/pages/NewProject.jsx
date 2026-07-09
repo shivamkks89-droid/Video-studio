@@ -106,6 +106,24 @@ export default function NewProject() {
           </div>
           <div>
             <div className="label-mono text-zinc-500 mb-2">Duration · {duration}s <span className="opacity-60">(15-60s recommended)</span></div>
+            <div className="flex flex-wrap gap-2 mb-3" data-testid="duration-presets">
+              {[
+                { s: 15, hint: "Reel / TikTok" },
+                { s: 30, hint: "Short Ad" },
+                { s: 45, hint: "Story-driven" },
+                { s: 60, hint: "Long-form" },
+              ].map(p => (
+                <button key={p.s} type="button" data-testid={`preset-${p.s}s`}
+                  onClick={() => setDuration(p.s)}
+                  className={`px-3 py-1.5 rounded-full text-xs transition-all ${
+                    duration === p.s
+                      ? "bg-[#E2FF3D] text-black font-semibold"
+                      : "surface border border-white/10 text-zinc-400 hover:border-[#E2FF3D]/40 hover:text-white"
+                  }`}>
+                  {p.s}s <span className="opacity-70 text-[10px] ml-1">{p.hint}</span>
+                </button>
+              ))}
+            </div>
             <input data-testid="duration-slider" type="range" min="10" max="60" step="5" value={duration}
               onChange={(e)=>setDuration(Number(e.target.value))}
               className="w-full accent-[#E2FF3D]" />

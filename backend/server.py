@@ -1029,63 +1029,50 @@ async def ai_storyboard(body: StoryboardRequest, request: Request):
     out: List[dict] = []
     succeeded = 0
     real_idx = 0
-    icon_used = False
     # ----- Scene mix planning -----
     # Target: 4 REAL product screenshots + 2 AI-rendered scenes when the script
-    # produces the recommended 6 scenes and we have enough real assets. For any
-    # other scene count we scale proportionally (~66% real, ~33% AI).
+    # produces the recommended 6 scenes and we have enough real assets. The
+    # logo (real_icon) is deliberately reserved for the CTA slot (scene 6) so
+    # it never steals a product-screenshot slot.
     n_scenes = len(body.scenes)
+    # per_scene_plan[i] ∈ {"logo", "real", "ai"}
+    per_scene_plan: List[str] = []
     if n_scenes == 6 and len(real_assets) >= 4:
-        real_target_count = 4
-        # Real slots go on scenes with indexes 1..4 (0-based) — 0 & 5 stay AI
-        # so the hook and CTA cards feel cinematic + branded. If a scene at 1..4
-        # is explicitly a LOGO scene we still allow the icon there.
-        real_slots = {1, 2, 3, 4}
+        # Slot map: [ai hook, real, real, real, real, logo-or-ai CTA]
+        per_scene_plan = ["ai", "real", "real", "real", "real",
+                          "logo" if real_icon else "ai"]
     else:
-        real_target_count = min(len(real_assets), max(1, int(n_scenes * 2 / 3)))
-        real_slots = None  # fall back to heuristic below
-    real_used = 0
+        # Fallback: proportional ~66% real
+        real_target = min(len(real_assets), max(1, int(n_scenes * 2 / 3)))
+        cta_slot = n_scenes - 1
+        for i in range(n_scenes):
+            if i == cta_slot and real_icon:
+                per_scene_plan.append("logo")
+            elif i == 0:
+                per_scene_plan.append("ai")
+            elif len([p for p in per_scene_plan if p == "real"]) < real_target and real_assets:
+                per_scene_plan.append("real")
+            else:
+                per_scene_plan.append("ai")
     for i, sc in enumerate(body.scenes):
         user = await _charge_credits(user, 3, "storyboard_scene")
-        prompt_text = (sc.get("visual_prompt") or sc.get("description") or "").lower()
-        wants_logo = any(k in prompt_text for k in ["logo", "icon", "brand mark", "wordmark", "app icon"])
-        wants_product = any(k in prompt_text for k in [
-            "app", "screen", "ui", "interface", "feature", "product", "download", "store",
-            "phone", "mobile", "dashboard",
-        ])
         img: Optional[str] = None
         source_tag = None
+        plan = per_scene_plan[i] if i < len(per_scene_plan) else "ai"
 
-        # 1. Logo scene → use the real icon (only once if we have it)
-        if wants_logo and real_icon and not icon_used:
+        # 1. Logo slot → real app icon
+        if plan == "logo" and real_icon:
             img = await _fetch_as_data_uri(real_icon)
             if img:
-                icon_used = True
                 source_tag = "real_icon"
 
-        # 2. Product / UI scene → use a real screenshot.
-        # When we have a fixed slot map (6-scene mix) we honour it strictly; otherwise
-        # we use the heuristic based on keywords + quota.
-        if real_slots is not None:
-            need_real = (
-                real_assets
-                and not wants_logo
-                and i in real_slots
-                and real_used < real_target_count
-            )
-        else:
-            need_real = (
-                real_assets
-                and not wants_logo
-                and (wants_product or real_used < real_target_count)
-            )
-        if not img and need_real:
+        # 2. Real slot → next Play Store screenshot
+        if not img and plan == "real":
             while real_idx < len(real_assets) and not img:
                 img = await _fetch_as_data_uri(real_assets[real_idx])
                 real_idx += 1
             if img:
                 source_tag = "real"
-                real_used += 1
 
         # 3. Otherwise generate via Nano Banana — but strip any brand text from the prompt
         if not img:
@@ -1112,7 +1099,6 @@ async def ai_storyboard(body: StoryboardRequest, request: Request):
                 real_idx += 1
             if img:
                 source_tag = "real"
-                real_used += 1
 
         if not img:
             await _refund(user, 3, "storyboard_scene")
@@ -1127,7 +1113,8 @@ async def ai_storyboard(body: StoryboardRequest, request: Request):
             {"$set": {"scenes": out, "updated_at": utc_now().isoformat(), "thumbnail": thumb}},
         )
     return {"scenes": out, "credits_left": user.credits, "succeeded": succeeded,
-            "real_screenshots_used": real_idx, "real_icon_used": icon_used}
+            "real_screenshots_used": real_idx,
+            "real_icon_used": any(s.get("source") == "real_icon" for s in out)}
 
 
 def _strip_brand_directives(text: str, real_title: Optional[str]) -> str:
