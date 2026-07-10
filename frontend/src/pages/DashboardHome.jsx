@@ -17,6 +17,7 @@ export default function DashboardHome() {
   const [loadingIdeas, setLoadingIdeas] = useState(false);
   const [scrapedSrc, setScrapedSrc] = useState(null);
   const [busyIdeaIdx, setBusyIdeaIdx] = useState(null);
+  const [ideaDurations, setIdeaDurations] = useState({}); // { idx: overrideSec }
 
   useEffect(() => {
     (async () => {
@@ -47,13 +48,15 @@ export default function DashboardHome() {
     setBusyIdeaIdx(i);
     const t = toast.loading("Creating project & generating script…");
     try {
+      // Honour user override if they picked a different duration on the idea card.
+      const chosenDur = ideaDurations[i] ?? (idea.duration_sec || 30);
       // 1) Create the project pre-loaded with the idea's format + title
       const { data: proj } = await api.post("/projects", {
         title: idea.title,
         video_type: idea.video_type || "cinematic_ad",
         language: ideaLanguage,
         aspect_ratio: idea.video_type?.includes("shorts") || idea.video_type?.includes("reel") || idea.video_type?.includes("tiktok") ? "9:16" : "9:16",
-        duration_sec: idea.duration_sec || 20,
+        duration_sec: chosenDur,
       });
       // 2) Generate the script using the original ideaQuery as topic (so brand
       //    scraping fires) and pass the idea's angle + hook as guidance so
@@ -67,7 +70,7 @@ export default function DashboardHome() {
         topic: ideaQuery || idea.title,
         video_type: idea.video_type || "cinematic_ad",
         language: ideaLanguage,
-        duration_sec: idea.duration_sec || 20,
+        duration_sec: chosenDur,
         extra_notes: extraNotes,
         brand_name: scrapedSrc?.title || undefined,
         brand_logo: scrapedSrc?.icon || undefined,
@@ -176,20 +179,40 @@ export default function DashboardHome() {
             )}
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {ideas.map((idea, i) => (
+            {ideas.map((idea, i) => {
+              const currentDur = ideaDurations[i] ?? (idea.duration_sec || 30);
+              return (
               <div key={i} data-testid={`idea-card-${i}`} className="surface rounded-xl p-5 flex flex-col">
-                <div className="label-mono text-[#E2FF3D] text-[10px] mb-2">{idea.video_type?.replace("_", " ").toUpperCase()} · {idea.duration_sec}s</div>
+                <div className="label-mono text-[#E2FF3D] text-[10px] mb-2">{idea.video_type?.replace("_", " ").toUpperCase()} · {currentDur}s</div>
                 <div className="font-semibold mb-2">{idea.title}</div>
                 <div className="text-sm text-zinc-400 mb-3">{idea.angle}</div>
                 <div className="text-xs text-zinc-500 italic mb-4">&ldquo;{idea.hook}&rdquo;</div>
+
+                {/* Duration override chips */}
+                <div className="flex items-center gap-1 mb-3 flex-wrap" data-testid={`idea-dur-${i}`}>
+                  <span className="label-mono text-[9px] text-zinc-500 mr-1">DURATION</span>
+                  {[20, 30, 45, 60].map(d => (
+                    <button key={d} type="button" data-testid={`idea-${i}-dur-${d}`}
+                      onClick={() => setIdeaDurations(prev => ({ ...prev, [i]: d }))}
+                      className={`px-2 py-0.5 rounded-full text-[10px] transition-all ${
+                        currentDur === d
+                          ? "bg-[#E2FF3D] text-black font-semibold"
+                          : "surface border border-white/10 text-zinc-500 hover:text-white hover:border-white/30"
+                      }`}>
+                      {d}s
+                    </button>
+                  ))}
+                </div>
+
                 <button data-testid={`use-idea-${i}`} onClick={() => applyIdea(idea, i)}
                   disabled={busyIdeaIdx !== null}
                   className="mt-auto btn-volt rounded-full px-4 py-2 text-sm flex items-center justify-center gap-2 disabled:opacity-60">
                   {busyIdeaIdx === i ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
-                  {busyIdeaIdx === i ? "Creating…" : "Make this video"}
+                  {busyIdeaIdx === i ? "Creating…" : `Make ${currentDur}s video`}
                 </button>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

@@ -260,12 +260,23 @@ async def suggest_ad_ideas(query: str, language: str = "english") -> List[dict]:
         ("You are an ad strategist. Given a brand, website URL, Play Store app ID, "
          "or product idea, output 6 distinct ad concepts. Every idea's `title`, "
          "`angle`, and `hook` MUST be written in the requested language — do NOT "
-         "translate to English. Respond JSON only as: "
-         '{"ideas":[{"title":"","angle":"","hook":"","video_type":"cinematic_ad|product_ad|ig_reel|yt_short|tiktok|talking_avatar","duration_sec":15}]}'),
+         "translate to English. "
+         "Duration guidelines — pick from 20 / 30 / 45 seconds based on the story's "
+         "natural length. Do NOT default to 15s — 15s is too short to deliver a "
+         "meaningful hook + body + CTA. Prefer 30s for most ideas. Talking-avatar "
+         "and educational concepts should be 45s. Only very simple product highlights "
+         "can be 20s. Never suggest 10s or less. "
+         "Respond JSON only as: "
+         '{"ideas":[{"title":"","angle":"","hook":"","video_type":"cinematic_ad|product_ad|ig_reel|yt_short|tiktok|talking_avatar","duration_sec":30}]}'),
         f"Brand / input: {query}.\n{lang_instruction}",
     )
     data = _safe_json(text)
-    return data.get("ideas", []) if isinstance(data, dict) else []
+    ideas = data.get("ideas", []) if isinstance(data, dict) else []
+    # Guardrail: enforce a minimum 20s even if the LLM went below.
+    for it in ideas:
+        d = int(it.get("duration_sec") or 30)
+        it["duration_sec"] = max(20, min(60, d))
+    return ideas
 
 
 def _safe_json(text: str):
