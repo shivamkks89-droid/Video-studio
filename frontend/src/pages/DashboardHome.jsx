@@ -13,6 +13,7 @@ export default function DashboardHome() {
   const [templates, setTemplates] = useState([]);
   const [ideas, setIdeas] = useState([]);
   const [ideaQuery, setIdeaQuery] = useState("");
+  const [ideaLanguage, setIdeaLanguage] = useState("hinglish");
   const [loadingIdeas, setLoadingIdeas] = useState(false);
   const [scrapedSrc, setScrapedSrc] = useState(null);
   const [busyIdeaIdx, setBusyIdeaIdx] = useState(null);
@@ -32,7 +33,7 @@ export default function DashboardHome() {
     if (!ideaQuery.trim()) return;
     setLoadingIdeas(true);
     try {
-      const { data } = await api.post("/ai/ad-ideas", { query: ideaQuery });
+      const { data } = await api.post("/ai/ad-ideas", { query: ideaQuery, language: ideaLanguage });
       setIdeas(data.ideas || []);
       setScrapedSrc(data.scraped || null);
       if (data.scraped?.title) toast.success(`${(data.ideas || []).length} ideas — using ${data.scraped.title}`);
@@ -50,7 +51,7 @@ export default function DashboardHome() {
       const { data: proj } = await api.post("/projects", {
         title: idea.title,
         video_type: idea.video_type || "cinematic_ad",
-        language: "hinglish",
+        language: ideaLanguage,
         aspect_ratio: idea.video_type?.includes("shorts") || idea.video_type?.includes("reel") || idea.video_type?.includes("tiktok") ? "9:16" : "9:16",
         duration_sec: idea.duration_sec || 20,
       });
@@ -65,7 +66,7 @@ export default function DashboardHome() {
         project_id: proj.project_id,
         topic: ideaQuery || idea.title,
         video_type: idea.video_type || "cinematic_ad",
-        language: "hinglish",
+        language: ideaLanguage,
         duration_sec: idea.duration_sec || 20,
         extra_notes: extraNotes,
         brand_name: scrapedSrc?.title || undefined,
@@ -100,17 +101,37 @@ export default function DashboardHome() {
               Paste a website, Play Store app ID or product idea below and we&rsquo;ll suggest 6 cinematic
               ad concepts you can render in one click.
             </p>
-            <form onSubmit={onSuggest} className="mt-6 flex gap-2 max-w-2xl">
-              <input
-                data-testid="idea-input"
-                value={ideaQuery}
-                onChange={(e) => setIdeaQuery(e.target.value)}
-                placeholder="Paste Play Store ID, website URL, or product idea (we'll pull real brand assets)"
-                className="flex-1 surface rounded-full px-5 py-3 bg-[#141416] outline-none text-sm focus:border-white/30"
-              />
-              <button data-testid="idea-submit" disabled={loadingIdeas} className="btn-volt rounded-full px-5 py-3 flex items-center gap-2 disabled:opacity-60">
-                <Wand2 className="w-4 h-4" /> {loadingIdeas ? "Thinking…" : "Suggest"}
-              </button>
+            <form onSubmit={onSuggest} className="mt-6 flex flex-col gap-3 max-w-2xl">
+              <div className="flex gap-2">
+                <input
+                  data-testid="idea-input"
+                  value={ideaQuery}
+                  onChange={(e) => setIdeaQuery(e.target.value)}
+                  placeholder="Paste Play Store ID, website URL, or product idea (we'll pull real brand assets)"
+                  className="flex-1 surface rounded-full px-5 py-3 bg-[#141416] outline-none text-sm focus:border-white/30"
+                />
+                <button data-testid="idea-submit" disabled={loadingIdeas} className="btn-volt rounded-full px-5 py-3 flex items-center gap-2 disabled:opacity-60">
+                  <Wand2 className="w-4 h-4" /> {loadingIdeas ? "Thinking…" : "Suggest"}
+                </button>
+              </div>
+              <div className="flex items-center gap-2" data-testid="idea-language-tabs">
+                <span className="label-mono text-zinc-500 text-[10px] mr-1">LANGUAGE</span>
+                {[
+                  { k: "hindi", label: "हिन्दी" },
+                  { k: "hinglish", label: "Hinglish" },
+                  { k: "english", label: "English" },
+                ].map(l => (
+                  <button key={l.k} type="button" data-testid={`idea-lang-${l.k}`}
+                    onClick={() => setIdeaLanguage(l.k)}
+                    className={`px-3 py-1 rounded-full text-xs transition-all ${
+                      ideaLanguage === l.k
+                        ? "bg-[#E2FF3D] text-black font-semibold"
+                        : "surface border border-white/10 text-zinc-400 hover:text-white hover:border-white/30"
+                    }`}>
+                    {l.label}
+                  </button>
+                ))}
+              </div>
             </form>
           </div>
         </div>

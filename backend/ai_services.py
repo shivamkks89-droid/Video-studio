@@ -238,11 +238,31 @@ async def generate_ctas(topic: str, language: str, count: int = 5) -> List[str]:
 
 
 async def suggest_ad_ideas(query: str, language: str = "english") -> List[dict]:
+    lang = (language or "english").lower()
+    if lang == "hindi":
+        lang_instruction = (
+            "Language: pure Hindi (Devanagari script). ALL of title, angle, hook "
+            "MUST be in Hindi (Devanagari). No English words except product/brand "
+            "names. Example title: 'तीन बजे की भूख'. Example hook: "
+            "'रात के 3 बजे... क्या खाओगे?'"
+        )
+    elif lang == "hinglish":
+        lang_instruction = (
+            "Language: Hinglish (romanized Hindi + English mix, exactly like how "
+            "young Indians actually chat on WhatsApp). Use Roman script (no "
+            "Devanagari). Example title: 'Bhookh ka scene hai'. Example hook: "
+            "'Yaar, 3AM aur pet phir se khali...'"
+        )
+    else:
+        lang_instruction = "Language: clean English suitable for Indian urban audience."
+
     text = await _claude_send(
         ("You are an ad strategist. Given a brand, website URL, Play Store app ID, "
-         "or product idea, output 6 distinct ad concepts. Respond JSON only as: "
+         "or product idea, output 6 distinct ad concepts. Every idea's `title`, "
+         "`angle`, and `hook` MUST be written in the requested language — do NOT "
+         "translate to English. Respond JSON only as: "
          '{"ideas":[{"title":"","angle":"","hook":"","video_type":"cinematic_ad|product_ad|ig_reel|yt_short|tiktok|talking_avatar","duration_sec":15}]}'),
-        f"Brand / input: {query}. Language: {language}.",
+        f"Brand / input: {query}.\n{lang_instruction}",
     )
     data = _safe_json(text)
     return data.get("ideas", []) if isinstance(data, dict) else []
