@@ -1273,6 +1273,27 @@ async def duplicate_project(project_id: str, request: Request):
     return new_p.model_dump()
 
 
+def _probe_audio_duration(audio_bytes: bytes) -> float:
+    """Return duration in seconds of an in-memory audio buffer using ffmpeg. 0.0 on failure."""
+    import subprocess as _sp
+    import tempfile as _tf
+    from pathlib import Path as _P
+    from video_renderer import FFMPEG_BIN as _FFB
+    try:
+        with _tf.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+            f.write(audio_bytes)
+            tmp = _P(f.name)
+        r = _sp.run([_FFB, "-i", str(tmp)], capture_output=True, timeout=10)
+        tmp.unlink(missing_ok=True)
+        for line in r.stderr.decode(errors="ignore").splitlines():
+            if "Duration:" in line:
+                h, m, s = line.split("Duration:")[1].split(",")[0].strip().split(":")
+                return int(h) * 3600 + int(m) * 60 + float(s)
+    except Exception as e:
+        print(f"[probe] {e}")
+    return 0.0
+
+
 @api.post("/projects/{project_id}/render")
 async def render_project_video(project_id: str, request: Request):
     """Start a background render job. Returns a job_id immediately.
@@ -1285,17 +1306,27 @@ async def render_project_video(project_id: str, request: Request):
     if not scenes or not any(s.get("image_url") for s in scenes):
         raise HTTPException(status_code=400, detail="Generate the storyboard first.")
 
-    # Safety net: for OLD projects (created before the duration fix) or when the
-    # script generator produced tiny per-scene durations, redistribute so total
-    # matches the project's target duration. This ensures video length always
-    # equals what the user asked for.
-    target_dur = int(p.get("duration_sec") or 30)
+    # ----- Duration alignment -----
+    # If a voiceover exists we make the video match the VOICE length (not
+    # project.duration_sec) so subtitles/pacing feel natural. If no voice yet, we
+    # fall back to the project's configured duration. Scene durations are then
+    # distributed evenly to sum to the chosen target.
+    audio_url = p.get("audio_url")
+    voice_dur = 0.0
+    if audio_url:
+        try:
+            audio_bytes = await fetch_asset_bytes(audio_url)
+            if audio_bytes:
+                voice_dur = await asyncio.to_thread(_probe_audio_duration, audio_bytes)
+        except Exception as e:
+            print(f"[render] voice probe failed: {e}")
+    target_dur = float(voice_dur) if voice_dur > 3 else float(int(p.get("duration_sec") or 30))
     total_scene_dur = sum(float(s.get("duration") or 0) for s in scenes)
-    if total_scene_dur < target_dur * 0.75 or total_scene_dur > target_dur * 1.5:
+    # Redistribute when scenes drastically disagree with the target (>25% off).
+    if total_scene_dur < target_dur * 0.85 or total_scene_dur > target_dur * 1.15:
         per = round(target_dur / len(scenes), 2)
         for s in scenes:
             s["duration"] = per
-        # Persist normalisation so future re-renders stay consistent.
         await db.projects.update_one(
             {"project_id": project_id, "user_id": user.user_id},
             {"$set": {"scenes": scenes, "updated_at": utc_now().isoformat()}},
