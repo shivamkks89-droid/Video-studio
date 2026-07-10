@@ -14,7 +14,9 @@ export default function ProjectDetail() {
   const [busyScript, setBusyScript] = useState(false);
   const [busyVariants, setBusyVariants] = useState(false);
   const [busySeedanceIdx, setBusySeedanceIdx] = useState(null);
-  const [engines, setEngines] = useState(null); // { engines: [{id,label,unlocked,cost,modes}], current_plan }
+  const [engines, setEngines] = useState(null);
+  const [busyPreview, setBusyPreview] = useState(false);
+  const [previewCache, setPreviewCache] = useState({}); // { voice_id::lang -> audio_url }
   const [variants, setVariants] = useState(null); // { variants: [{audience, label, script}], source_assets, axis }
   const [axis, setAxis] = useState("gender"); // gender | age | region
   const [metrics, setMetrics] = useState(null);
@@ -179,6 +181,31 @@ export default function ProjectDetail() {
     } finally { setBusySeedanceIdx(null); }
   };
 
+  const previewVoice = async () => {
+    if (!voiceId) return;
+    const lang = (project.language || "english").toLowerCase();
+    const key = `${voiceId}::${lang}`;
+    // Client-side cache hit → play instantly
+    if (previewCache[key]) {
+      const audio = new Audio(assetUrl(previewCache[key]));
+      audio.play().catch(() => {});
+      return;
+    }
+    setBusyPreview(true);
+    try {
+      const { data } = await api.post("/ai/tts/preview", { voice_id: voiceId, language: lang });
+      if (data.audio_url) {
+        setPreviewCache(prev => ({ ...prev, [key]: data.audio_url }));
+        const audio = new Audio(assetUrl(data.audio_url));
+        audio.play().catch(() => {});
+      } else {
+        toast.error(data.error || "Preview unavailable");
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Preview failed");
+    } finally { setBusyPreview(false); }
+  };
+
   const genVoice = async () => {
     // Build the narration text: prefer concatenated per-scene voiceovers so the
     // audio matches what's actually being shown on screen. Fall back to the
@@ -195,13 +222,15 @@ export default function ProjectDetail() {
     if (!text) return toast.error("Generate a script first");
     setBusyVoice(true);
     try {
-      const { data } = await api.post("/ai/tts", { text, voice_id: voiceId });
+      const { data } = await api.post("/ai/tts", { text, voice_id: voiceId, project_id: id });
       if (data.error) {
         toast.error(data.error);
         return;
       }
       await api.put(`/projects/${id}`, { audio_url: data.audio_url, voice_id: voiceId, status: "voicing" });
-      setProject({ ...project, audio_url: data.audio_url, voice_id: voiceId });
+      // Reload full project so voice_stale flag reflects the fresh state.
+      const { data: p } = await api.get(`/projects/${id}`);
+      setProject(p);
       if (data.note) toast.message(data.note);
       else toast.success(`Voiceover ready (${data.provider || "elevenlabs"})`);
     } catch (err) {
@@ -520,17 +549,54 @@ export default function ProjectDetail() {
               <div className="flex items-center gap-2"><Mic className="w-4 h-4 text-[#E2FF3D]" /><div className="font-medium">Voiceover (ElevenLabs)</div></div>
               <span className="label-mono text-zinc-500">~1-3 CR</span>
             </div>
-            <select data-testid="voice-select" value={voiceId} onChange={(e)=>setVoiceId(e.target.value)}
-              className="w-full bg-[#0A0A0B] border border-white/10 rounded-lg px-3 py-2 text-sm outline-none">
-              {filteredVoices.map((v, i) => {
-                const label = `${v.name} — ${v.language} · ${v.style}`;
-                return <option key={`${v.id}-${i}`} value={v.id}>{label}</option>;
-              })}
-            </select>
+
+            {/* Stale voice banner — script changed after last recording */}
+            {project.voice_stale && project.audio_url && (
+              <div data-testid="voice-stale-banner" className="mb-3 flex items-start gap-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs p-2.5">
+                <span className="mt-0.5">⚠</span>
+                <div className="flex-1">
+                  <div className="font-medium">Script updated — voiceover is out of sync</div>
+                  <div className="opacity-80">Re-generate to record the latest lines.</div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <select data-testid="voice-select" value={voiceId} onChange={(e)=>setVoiceId(e.target.value)}
+                className="flex-1 bg-[#0A0A0B] border border-white/10 rounded-lg px-3 py-2 text-sm outline-none">
+                {filteredVoices.map((v, i) => {
+                  const label = `${v.name} — ${v.language} · ${v.style}`;
+                  return <option key={`${v.id}-${i}`} value={v.id}>{label}</option>;
+                })}
+              </select>
+              <button data-testid="voice-preview" onClick={previewVoice} disabled={busyPreview || !voiceId}
+                title="Play a short sample of this voice"
+                className="rounded-full surface px-3 py-2 text-xs border border-white/10 hover:border-[#E2FF3D]/40 disabled:opacity-50">
+                {busyPreview ? <Loader2 className="w-3 h-3 animate-spin" /> : "▶ Preview"}
+              </button>
+            </div>
+
+            {/* Language mismatch warning */}
+            {(() => {
+              const selVoice = voices.find(v => v.id === voiceId);
+              const pl = (project.language || "").toLowerCase();
+              const vl = (selVoice?.language || "").toLowerCase();
+              if (!selVoice || !pl || !vl) return null;
+              const isIndian = (l) => ["hindi", "hinglish", "indian_english"].includes(l);
+              const mismatch = pl !== vl && !(isIndian(pl) && isIndian(vl));
+              if (!mismatch) return null;
+              return (
+                <div data-testid="lang-mismatch-warning" className="mt-2 text-[11px] text-amber-300/90 flex items-start gap-1.5">
+                  <span>ℹ</span>
+                  <span>Script is <b>{pl}</b> but selected voice is <b>{vl}</b>. Consider a matching voice for natural delivery.</span>
+                </div>
+              );
+            })()}
+
             <button data-testid="gen-voice" onClick={genVoice} disabled={busyVoice || !project.script}
               className="mt-3 btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
               {busyVoice ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
-              {busyVoice ? "Synthesising…" : "Generate voiceover"}
+              {busyVoice ? "Synthesising…" : (project.voice_stale && project.audio_url ? "Regenerate voiceover" : "Generate voiceover")}
             </button>
           </div>
 

@@ -125,6 +125,7 @@ class TTSRequest(BaseModel):
     stability: float = 0.55
     similarity_boost: float = 0.75
     style: float = 0.3
+    project_id: Optional[str] = None
 
 
 # ---------- SCENE / IMAGE ----------

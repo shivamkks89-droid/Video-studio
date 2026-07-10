@@ -322,7 +322,9 @@ async def ai_script(body: ScriptRequest, request: Request):
     if brand_label:
         script = _replace_brand_token(script, brand_label)
     if body.project_id:
-        update = {"script": script, "status": "scripting", "updated_at": utc_now().isoformat()}
+        update = {"script": script, "status": "scripting",
+                  "voice_stale": True,  # new script → old voice is stale
+                  "updated_at": utc_now().isoformat()}
         if scraped.get("ok"):
             update["source_assets"] = {
                 "kind": scraped.get("kind"),
@@ -333,7 +335,7 @@ async def ai_script(body: ScriptRequest, request: Request):
             }
         await db.projects.update_one(
             {"project_id": body.project_id, "user_id": user.user_id},
-            {"$set": update},
+            {"$set": update, "$inc": {"script_version": 1}},
         )
     return {"script": script, "credits_left": user.credits,
             "source_assets": scraped if scraped.get("ok") else None,
@@ -550,6 +552,7 @@ async def ai_script_apply(body: ApplyVariantReq, request: Request):
         "target_audience": body.audience_label,
         "variant_axis": body.axis,
         "variant_key": body.audience_key,
+        "voice_stale": True,
         "updated_at": utc_now().isoformat(),
     }
     if body.source_assets and body.source_assets.get("ok"):
@@ -562,7 +565,7 @@ async def ai_script_apply(body: ApplyVariantReq, request: Request):
         }
     res = await db.projects.update_one(
         {"project_id": body.project_id, "user_id": user.user_id},
-        {"$set": update},
+        {"$set": update, "$inc": {"script_version": 1}},
     )
     if not res.matched_count:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -921,6 +924,45 @@ async def ai_ad_ideas(body: IdeaReq, request: Request):
 
 
 # ---------- AI: voice (ElevenLabs + OpenAI fallback) ----------
+class VoicePreviewReq(BaseModel):
+    voice_id: str
+    language: Optional[str] = "english"
+
+
+# In-memory preview cache — same (voice_id, language) always produces the same
+# audio, so cache forever. Prevents burning credits on every dropdown hover.
+_VOICE_PREVIEW_CACHE: dict = {}
+_PREVIEW_SAMPLES = {
+    "hindi": "Namaste! Aapka apna brand ab yahan hai. Chaliye milkar kuch kamaal karte hain.",
+    "hinglish": "Hi guys! Aaj hum ek amazing product ke baare mein baat karenge. Ready ho?",
+    "indian_english": "Hello everyone! Welcome to something special crafted just for you.",
+    "english": "Hello there! This is a quick preview of how I sound. Great to meet you.",
+}
+
+
+@api.post("/ai/tts/preview")
+async def ai_tts_preview(body: VoicePreviewReq, request: Request):
+    """Generate a short audio sample for a voice — cheap, cached, free of credit cost."""
+    _ = await _current(request)
+    lang = (body.language or "english").lower()
+    key = f"{body.voice_id}::{lang}"
+    if key in _VOICE_PREVIEW_CACHE:
+        return {"audio_url": _VOICE_PREVIEW_CACHE[key], "cached": True}
+    sample = _PREVIEW_SAMPLES.get(lang) or _PREVIEW_SAMPLES["english"]
+    result = await synthesize_speech(sample, body.voice_id, 0.55, 0.75, 0.0)
+    if result.get("audio_url"):
+        url = await save_audio_persistent(result["audio_url"]) or result["audio_url"]
+        _VOICE_PREVIEW_CACHE[key] = url
+        return {"audio_url": url, "cached": False}
+    # Fallback to OpenAI TTS
+    fb = await synthesize_openai_tts(sample, style="default")
+    if fb.get("audio_url"):
+        url = await save_audio_persistent(fb["audio_url"]) or fb["audio_url"]
+        _VOICE_PREVIEW_CACHE[key] = url
+        return {"audio_url": url, "cached": False, "provider": "openai"}
+    return {"audio_url": None, "error": result.get("error") or "Preview unavailable"}
+
+
 @api.post("/ai/tts")
 async def ai_tts(body: TTSRequest, request: Request):
     user = await _current(request)
@@ -931,12 +973,29 @@ async def ai_tts(body: TTSRequest, request: Request):
                                      body.similarity_boost, body.style)
     if result.get("audio_url"):
         url = await save_audio_persistent(result["audio_url"]) or result["audio_url"]
+        # Mark project voice as fresh — synced with current script_version.
+        if body.project_id:
+            proj = await db.projects.find_one({"project_id": body.project_id, "user_id": user.user_id},
+                                              {"_id": 0, "script_version": 1})
+            sv = (proj or {}).get("script_version", 0)
+            await db.projects.update_one(
+                {"project_id": body.project_id, "user_id": user.user_id},
+                {"$set": {"voice_stale": False, "voice_script_version": sv}},
+            )
         return {"audio_url": url, "provider": "elevenlabs",
                 "credits_left": user.credits}
     # Fallback: OpenAI TTS via Emergent LLM key
     fb = await synthesize_openai_tts(body.text, style="default")
     if fb.get("audio_url"):
         url = await save_audio_persistent(fb["audio_url"]) or fb["audio_url"]
+        if body.project_id:
+            proj = await db.projects.find_one({"project_id": body.project_id, "user_id": user.user_id},
+                                              {"_id": 0, "script_version": 1})
+            sv = (proj or {}).get("script_version", 0)
+            await db.projects.update_one(
+                {"project_id": body.project_id, "user_id": user.user_id},
+                {"$set": {"voice_stale": False, "voice_script_version": sv}},
+            )
         return {"audio_url": url, "provider": "openai",
                 "voice": fb.get("voice"), "credits_left": user.credits,
                 "note": "ElevenLabs voice unavailable — used OpenAI HD voice."}
@@ -1181,7 +1240,16 @@ async def update_project(project_id: str, request: Request):
     body["updated_at"] = utc_now().isoformat()
     body.pop("project_id", None)
     body.pop("user_id", None)
-    await db.projects.update_one({"project_id": project_id, "user_id": user.user_id}, {"$set": body})
+    # If the caller edited the script, flag the voice as stale so the frontend
+    # nudges the user to re-record it.
+    inc = None
+    if "script" in body:
+        body["voice_stale"] = True
+        inc = {"script_version": 1}
+    ops = {"$set": body}
+    if inc:
+        ops["$inc"] = inc
+    await db.projects.update_one({"project_id": project_id, "user_id": user.user_id}, ops)
     p = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}, {"_id": 0})
     return p
 
