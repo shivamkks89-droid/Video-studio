@@ -1,0 +1,102 @@
+{
+  "version": "1.0.0",
+  "music": [
+    {
+      "id": "ambient_cinematic",
+      "file": "music/ambient_cinematic.mp3",
+      "label": "Ambient Cinematic"
+    },
+    {
+      "id": "upbeat_reel",
+      "file": "music/upbeat_reel.mp3",
+      "label": "Upbeat Reel"
+    },
+    {
+      "id": "chill_vibe",
+      "file": "music/chill_vibe.mp3",
+      "label": "Chill Vibe"
+    }
+  ],
+  "voices": [
+    {
+      "id": "hindi_male_professional",
+      "file": "voices/hindi_male_professional.mp3",
+      "label": "Hindi Male Professional"
+    },
+    {
+      "id": "hindi_female_warm",
+      "file": "voices/hindi_female_warm.mp3",
+      "label": "Hindi Female Warm"
+    },
+    {
+      "id": "hinglish_male_energetic",
+      "file": "voices/hinglish_male_energetic.mp3",
+      "label": "Hinglish Male Energetic"
+    },
+    {
+      "id": "hinglish_female_friendly",
+      "file": "voices/hinglish_female_friendly.mp3",
+      "label": "Hinglish Female Friendly"
+    },
+    {
+      "id": "english_indian_neutral",
+      "file": "voices/english_indian_neutral.mp3",
+      "label": "English Indian Neutral"
+    }
+  ],
+  "templates": [
+    {
+      "id": "cinematic_ad_01",
+      "file": "templates/cinematic_ad_01.jpg",
+      "label": "CINEMATIC AD"
+    },
+    {
+      "id": "cinematic_ad_02",
+      "file": "templates/cinematic_ad_02.jpg",
+      "label": "PRODUCT LAUNCH"
+    },
+    {
+      "id": "reel_01",
+      "file": "templates/reel_01.jpg",
+      "label": "IG REEL"
+    },
+    {
+      "id": "reel_02",
+      "file": "templates/reel_02.jpg",
+      "label": "STORY VIBE"
+    },
+    {
+      "id": "yt_short_01",
+      "file": "templates/yt_short_01.jpg",
+      "label": "YT SHORTS"
+    },
+    {
+      "id": "yt_short_02",
+      "file": "templates/yt_short_02.jpg",
+      "label": "GROWTH TIP"
+    },
+    {
+      "id": "tiktok_01",
+      "file": "templates/tiktok_01.jpg",
+      "label": "TIKTOK POP"
+    },
+    {
+      "id": "business_01",
+      "file": "templates/business_01.jpg",
+      "label": "BUSINESS PITCH"
+    },
+    {
+      "id": "realestate_01",
+      "file": "templates/realestate_01.jpg",
+      "label": "REAL ESTATE"
+    },
+    {
+      "id": "ecom_01",
+      "file": "templates/ecom_01.jpg",
+      "label": "E-COMMERCE"
+    }
+  ],
+  "lottie": {
+    "splash": "lottie/splash-loader.json"
+  }
+}

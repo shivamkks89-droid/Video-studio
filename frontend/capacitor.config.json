@@ -1,0 +1,39 @@
+{
+  "appId": "ai.cinereel.app",
+  "appName": "CineReel",
+  "webDir": "build",
+  "bundledWebRuntime": false,
+  "loggingBehavior": "none",
+  "server": {
+    "androidScheme": "https"
+  },
+  "backgroundColor": "#0A0A0B",
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1400,
+      "launchAutoHide": true,
+      "backgroundColor": "#0A0A0B",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": true,
+      "spinnerColor": "#E2FF3D",
+      "splashFullScreen": true,
+      "splashImmersive": true
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#0A0A0B"
+    }
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false,
+    "buildOptions": {
+      "releaseType": "AAB"
+    }
+  },
+  "ios": {
+    "contentInset": "always",
+    "scrollEnabled": true
+  }
+}

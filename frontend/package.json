@@ -3,6 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@capacitor/android": "^7",
+    "@capacitor/app": "^7",
+    "@capacitor/cli": "^7",
+    "@capacitor/core": "^7",
+    "@capacitor/haptics": "^7",
+    "@capacitor/ios": "^7",
+    "@capacitor/preferences": "^7",
+    "@capacitor/share": "^7",
+    "@capacitor/splash-screen": "^7",
+    "@capacitor/status-bar": "^7",
     "@hookform/resolvers": "5.0.1",
     "@radix-ui/react-accordion": "1.2.8",
     "@radix-ui/react-alert-dialog": "1.1.11",
@@ -63,7 +73,11 @@
   "scripts": {
     "start": "craco start",
     "build": "craco build",
-    "test": "craco test"
+    "test": "craco test",
+    "mobile:build": "REACT_APP_MOBILE=1 REACT_APP_BACKEND_URL=https://video-studio-ai-38.emergent.host craco build",
+    "mobile:sync": "yarn mobile:build && npx cap sync android",
+    "mobile:open": "yarn mobile:sync && npx cap open android",
+    "mobile:aab": "yarn mobile:sync && cd android && ./gradlew bundleRelease"
   },
   "browserslist": {
     "production": [

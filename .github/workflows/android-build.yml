@@ -1,0 +1,89 @@
+name: Build Android AAB
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_notes:
+        description: "Release notes"
+        required: false
+        default: "Automated build"
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: yarn install --frozen-lockfile
+
+      - name: Build web bundle (production API URL)
+        working-directory: frontend
+        env:
+          REACT_APP_BACKEND_URL: https://video-studio-ai-38.emergent.host
+          REACT_APP_MOBILE: "1"
+          CI: "false"
+        run: yarn build
+
+      - name: Sync Capacitor
+        working-directory: frontend
+        run: npx cap sync android
+
+      - name: Decode keystore (if present)
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > frontend/android/app/cinereel.keystore
+            echo "keystore=cinereel.keystore" >> $GITHUB_ENV
+          fi
+
+      - name: Build release AAB
+        working-directory: frontend/android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x ./gradlew
+          if [ -f "app/cinereel.keystore" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
+            ./gradlew bundleRelease \
+              -Pandroid.injected.signing.store.file=cinereel.keystore \
+              -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+              -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+              -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+          else
+            ./gradlew bundleRelease
+          fi
+
+      - name: Show artifact size
+        run: |
+          ls -lh frontend/android/app/build/outputs/bundle/release/ || true
+          find frontend/android/app/build/outputs -name "*.aab" -exec ls -lh {} \;
+
+      - name: Upload AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: cinereel-android-aab
+          path: frontend/android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error

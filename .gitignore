@@ -80,3 +80,12 @@ memory/test_credentials.md
 
 # Mobile development
 android-sdk/
+# Capacitor mobile build outputs
+frontend/android/app/build/
+frontend/android/.gradle/
+frontend/android/build/
+frontend/android/local.properties
+frontend/android/app/release/
+frontend/android/app/*.keystore
+frontend/ios/App/build/
+frontend/ios/App/Pods/
