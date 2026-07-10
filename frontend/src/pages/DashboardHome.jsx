@@ -189,7 +189,7 @@ export default function DashboardHome() {
                 <div className="text-xs text-zinc-500 italic mb-4">&ldquo;{idea.hook}&rdquo;</div>
 
                 {/* Duration override chips */}
-                <div className="flex items-center gap-1 mb-3 flex-wrap" data-testid={`idea-dur-${i}`}>
+                <div className="flex items-center gap-1 mb-1 flex-wrap" data-testid={`idea-dur-${i}`}>
                   <span className="label-mono text-[9px] text-zinc-500 mr-1">DURATION</span>
                   {[20, 30, 45, 60].map(d => (
                     <button key={d} type="button" data-testid={`idea-${i}-dur-${d}`}
@@ -202,6 +202,12 @@ export default function DashboardHome() {
                       {d}s
                     </button>
                   ))}
+                </div>
+                {/* Voice-matching hint */}
+                <div className="mb-3 text-[10px] text-zinc-500 flex items-start gap-1"
+                  data-testid={`voice-match-hint-${i}`}>
+                  <span className="mt-[1px]">🎙</span>
+                  <span>Final video will match voice length <span className="text-[#E2FF3D]/80">(~{currentDur}s)</span></span>
                 </div>
 
                 <button data-testid={`use-idea-${i}`} onClick={() => applyIdea(idea, i)}
