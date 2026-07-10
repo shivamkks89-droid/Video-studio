@@ -44,9 +44,28 @@ export default function ProjectDetail() {
   useEffect(() => {
     load();
     loadMetrics();
-    api.get("/catalog/voices").then(({ data }) => { setVoices(data); setVoiceId(data[0]?.id || ""); });
+    api.get("/catalog/voices").then(({ data }) => setVoices(data));
     api.get("/ai/video-clip/engines").then(({ data }) => setEngines(data)).catch(() => {});
   }, [id]);
+
+  // Auto-pick a language-matched voice once BOTH voices and project are loaded.
+  // For hindi / hinglish projects, prefer a Hindi-tagged voice so the voiceover
+  // sounds native — critical for Indian audience projects.
+  useEffect(() => {
+    if (!voices.length || !project || voiceId) return;
+    const lang = (project.language || "").toLowerCase();
+    const preferOrder = lang.includes("hindi") || lang.includes("hinglish")
+      ? ["hindi", "hinglish", "indian_english", "english"]
+      : lang.includes("indian")
+        ? ["indian_english", "english", "hindi"]
+        : ["english", "indian_english"];
+    let picked = null;
+    for (const p of preferOrder) {
+      picked = voices.find(v => (v.language || "").toLowerCase() === p);
+      if (picked) break;
+    }
+    setVoiceId((project.voice_id) || picked?.id || voices[0]?.id || "");
+  }, [voices, project, voiceId]);
 
   if (!project) return <div className="label-mono text-zinc-500">Loading…</div>;
 
@@ -161,7 +180,18 @@ export default function ProjectDetail() {
   };
 
   const genVoice = async () => {
-    const text = project.script?.voiceover_script || project.script?.body || "";
+    // Build the narration text: prefer concatenated per-scene voiceovers so the
+    // audio matches what's actually being shown on screen. Fall back to the
+    // top-level voiceover_script / body only when scene-level narration missing.
+    const sceneNarration = (project.script?.scenes || [])
+      .map(s => s?.voiceover || "")
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+    const text = sceneNarration
+      || project.script?.voiceover_script
+      || project.script?.body
+      || "";
     if (!text) return toast.error("Generate a script first");
     setBusyVoice(true);
     try {

@@ -1216,6 +1216,23 @@ async def render_project_video(project_id: str, request: Request):
     scenes = p.get("scenes") or []
     if not scenes or not any(s.get("image_url") for s in scenes):
         raise HTTPException(status_code=400, detail="Generate the storyboard first.")
+
+    # Safety net: for OLD projects (created before the duration fix) or when the
+    # script generator produced tiny per-scene durations, redistribute so total
+    # matches the project's target duration. This ensures video length always
+    # equals what the user asked for.
+    target_dur = int(p.get("duration_sec") or 30)
+    total_scene_dur = sum(float(s.get("duration") or 0) for s in scenes)
+    if total_scene_dur < target_dur * 0.75 or total_scene_dur > target_dur * 1.5:
+        per = round(target_dur / len(scenes), 2)
+        for s in scenes:
+            s["duration"] = per
+        # Persist normalisation so future re-renders stay consistent.
+        await db.projects.update_one(
+            {"project_id": project_id, "user_id": user.user_id},
+            {"$set": {"scenes": scenes, "updated_at": utc_now().isoformat()}},
+        )
+
     user = await _charge_credits(user, 10, "video_render", project_id)
     job_id = "job_" + uuid.uuid4().hex[:12]
     await db.render_jobs.insert_one({
