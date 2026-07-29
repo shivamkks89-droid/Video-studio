@@ -89,3 +89,9 @@ frontend/android/app/release/
 frontend/android/app/*.keystore
 frontend/ios/App/build/
 frontend/ios/App/Pods/
+.env
+.env.*
+*.env
+credentials.json
+*.key
+.credentials
