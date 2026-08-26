@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -30,8 +30,9 @@ from auth import (
     hash_password, issue_jwt, send_otp_email, verify_password,
 )
 from ai_services import (
-    AIServiceError, generate_ctas, generate_hooks, generate_scene_image,
-    generate_script, list_voices, score_variants, suggest_ad_ideas, synthesize_speech,
+    AIServiceError, clone_voice, generate_ctas, generate_hooks, generate_scene_image,
+    generate_script, list_voices, list_voices_async, score_variants, suggest_ad_ideas,
+    synthesize_speech,
 )
 from asset_store import (
     save_image_data_uri as save_image_persistent,
@@ -258,8 +259,48 @@ async def get_avatars():
 
 
 @api.get("/catalog/voices")
-async def get_voices(language: Optional[str] = None):
-    return list_voices(language)
+async def get_voices(language: Optional[str] = None, refresh: bool = False):
+    all_voices = await list_voices_async(force=refresh)
+    if not language or language == "all":
+        return all_voices
+    return [v for v in all_voices if v.get("language") == language]
+
+
+@api.post("/voices/clone")
+async def voices_clone_route(request: Request, name: str = Form(...),
+                              description: str = Form(""),
+                              audio: UploadFile = File(...)):
+    """Clone a user's voice via ElevenLabs Voice Lab. Costs 100 credits + requires
+    ElevenLabs paid plan on the server key. Persists the resulting voice to the
+    user's `custom_voices` list."""
+    user = await _current(request)
+    # Voice cloning charges 100 credits.
+    user = await _charge_credits(user, 100, "voice_clone", None)
+    audio_bytes = await audio.read()
+    if len(audio_bytes) < 8_000:
+        await _refund(user, 100, "voice_clone_refund", None)
+        raise HTTPException(status_code=400, detail="Audio sample too short (need at least 10-30 sec of clean speech).")
+    if len(audio_bytes) > 15 * 1024 * 1024:
+        await _refund(user, 100, "voice_clone_refund", None)
+        raise HTTPException(status_code=400, detail="Audio sample too large (max 15 MB).")
+
+    result = await clone_voice(name=name, audio_bytes=audio_bytes, description=description)
+    if result.get("error"):
+        await _refund(user, 100, "voice_clone_refund", None)
+        raise HTTPException(status_code=502, detail=result["error"])
+
+    voice_entry = {
+        "id": result["voice_id"],
+        "name": result["name"],
+        "gender": "custom", "language": "custom",
+        "style": "cloned", "_source": "user_clone",
+        "created_at": utc_now().isoformat(),
+    }
+    await db.users.update_one(
+        {"user_id": user.user_id},
+        {"$push": {"custom_voices": voice_entry}},
+    )
+    return {"ok": True, "voice": voice_entry, "credits_left": user.credits}
 
 
 @api.get("/catalog/assets")

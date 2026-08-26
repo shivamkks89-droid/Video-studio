@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { toast } from "sonner";
-import { Sparkles, Mic, Image as ImageIcon, Download, Share2, Loader2, Film, Video } from "lucide-react";
+import { Sparkles, Mic, Image as ImageIcon, Download, Share2, Loader2, Film, Video, Upload, Play } from "lucide-react";
 import { assetUrl } from "../lib/assetUrl";
 
 export default function ProjectDetail() {
@@ -16,7 +16,13 @@ export default function ProjectDetail() {
   const [busySeedanceIdx, setBusySeedanceIdx] = useState(null);
   const [engines, setEngines] = useState(null);
   const [busyPreview, setBusyPreview] = useState(false);
-  const [previewCache, setPreviewCache] = useState({}); // { voice_id::lang -> audio_url }
+  const [previewCache, setPreviewCache] = useState({});
+  const [hoverPreview, setHoverPreview] = useState(true); // opt-in hover previews
+  const [busyClone, setBusyClone] = useState(false);
+  const [cloneName, setCloneName] = useState("");
+  const [cloneFile, setCloneFile] = useState(null);
+  const [showClone, setShowClone] = useState(false);
+  const hoverTimer = useRef(null);
   const [variants, setVariants] = useState(null); // { variants: [{audience, label, script}], source_assets, axis }
   const [axis, setAxis] = useState("gender"); // gender | age | region
   const [metrics, setMetrics] = useState(null);
@@ -201,11 +207,11 @@ export default function ProjectDetail() {
     } finally { setBusySeedanceIdx(null); }
   };
 
-  const previewVoice = async () => {
-    if (!voiceId) return;
+  const previewVoice = async (voiceIdArg) => {
+    const vid = voiceIdArg || voiceId;
+    if (!vid) return;
     const lang = (project.language || "english").toLowerCase();
-    const key = `${voiceId}::${lang}`;
-    // Client-side cache hit → play instantly
+    const key = `${vid}::${lang}`;
     if (previewCache[key]) {
       const audio = new Audio(assetUrl(previewCache[key]));
       audio.play().catch(() => {});
@@ -213,7 +219,7 @@ export default function ProjectDetail() {
     }
     setBusyPreview(true);
     try {
-      const { data } = await api.post("/ai/tts/preview", { voice_id: voiceId, language: lang });
+      const { data } = await api.post("/ai/tts/preview", { voice_id: vid, language: lang });
       if (data.audio_url) {
         setPreviewCache(prev => ({ ...prev, [key]: data.audio_url }));
         const audio = new Audio(assetUrl(data.audio_url));
@@ -224,6 +230,37 @@ export default function ProjectDetail() {
     } catch (err) {
       toast.error(err.response?.data?.error || "Preview failed");
     } finally { setBusyPreview(false); }
+  };
+
+  // Hover-triggered preview with 400ms delay so casual scrubbing doesn't fire
+  const onVoiceHover = (vid) => {
+    if (!hoverPreview) return;
+    clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => previewVoice(vid), 400);
+  };
+  const onVoiceHoverEnd = () => clearTimeout(hoverTimer.current);
+
+  const cloneVoiceUpload = async (e) => {
+    e.preventDefault();
+    if (!cloneName.trim() || !cloneFile) return toast.error("Name and audio file required");
+    setBusyClone(true);
+    const t = toast.loading("Cloning voice · 30-60s…");
+    try {
+      const fd = new FormData();
+      fd.append("name", cloneName);
+      fd.append("audio", cloneFile);
+      const { data } = await api.post("/voices/clone", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      toast.success(`Voice "${data.voice.name}" cloned — now in your dropdown`, { id: t });
+      // Refresh voice catalog
+      const { data: vs } = await api.get("/catalog/voices?refresh=true");
+      setVoices(vs);
+      setVoiceId(data.voice.id);
+      setShowClone(false); setCloneName(""); setCloneFile(null);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Clone failed", { id: t });
+    } finally { setBusyClone(false); }
   };
 
   const genVoice = async () => {
@@ -581,18 +618,71 @@ export default function ProjectDetail() {
               </div>
             )}
 
+            <div className="flex items-center gap-2 mb-2">
+              <div className="label-mono text-zinc-500 text-[10px] flex-1">SELECT VOICE (hover to preview)</div>
+              <label className="flex items-center gap-1 text-[10px] text-zinc-500 cursor-pointer" data-testid="hover-toggle">
+                <input type="checkbox" checked={hoverPreview} onChange={(e) => setHoverPreview(e.target.checked)}
+                  className="accent-[#E2FF3D] w-3 h-3" />
+                Hover preview
+              </label>
+              <button type="button" onClick={() => setShowClone(!showClone)}
+                data-testid="show-clone" className="text-[10px] label-mono text-[#E2FF3D] hover:underline">
+                {showClone ? "× Cancel" : "+ Clone your voice"}
+              </button>
+            </div>
+
+            {/* Voice cards horizontal scroll */}
+            <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1" data-testid="voice-cards">
+              {filteredVoices.map((v) => {
+                const active = v.id === voiceId;
+                return (
+                  <button key={`${v.id}-${v.name}`} type="button"
+                    data-testid={`voice-card-${v.id}`}
+                    onClick={() => setVoiceId(v.id)}
+                    onMouseEnter={() => onVoiceHover(v.id)}
+                    onMouseLeave={onVoiceHoverEnd}
+                    className={`shrink-0 rounded-lg p-2.5 border transition-all min-w-[120px] text-left ${
+                      active
+                        ? "border-[#E2FF3D] bg-[#E2FF3D]/10"
+                        : "border-white/10 hover:border-[#E2FF3D]/40 surface"
+                    }`}>
+                    <div className={`text-sm font-medium ${active ? "text-[#E2FF3D]" : ""}`}>{v.name}</div>
+                    <div className="label-mono text-[9px] text-zinc-500 mt-0.5 uppercase">{v.language} · {v.gender}</div>
+                    <div className="text-[10px] text-zinc-400 mt-0.5">{v.style}</div>
+                    {active && (
+                      <div className="mt-1.5 flex items-center gap-1 text-[9px] text-[#E2FF3D]">
+                        <Play className="w-2.5 h-2.5" /> SELECTED
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {showClone && (
+              <form onSubmit={cloneVoiceUpload} data-testid="clone-form" className="mt-2 mb-2 surface rounded-lg p-3 border border-[#E2FF3D]/20">
+                <div className="label-mono text-[10px] text-[#E2FF3D] mb-2">CLONE YOUR VOICE · 100 CR</div>
+                <input required data-testid="clone-name" value={cloneName} onChange={(e)=>setCloneName(e.target.value)}
+                  placeholder="Voice name (e.g. My Voice)"
+                  className="w-full bg-[#0A0A0B] border border-white/10 rounded px-2 py-1.5 text-sm mb-2 outline-none" />
+                <input required data-testid="clone-file" type="file" accept="audio/*"
+                  onChange={(e) => setCloneFile(e.target.files?.[0] || null)}
+                  className="w-full text-xs mb-2" />
+                <div className="text-[10px] text-zinc-500 mb-2">Upload 30-60s clean audio sample (MP3/WAV, up to 15 MB). Say a few sentences naturally.</div>
+                <button type="submit" disabled={busyClone}
+                  data-testid="clone-submit"
+                  className="btn-volt rounded-full px-3 py-1.5 text-xs flex items-center gap-1 disabled:opacity-60">
+                  {busyClone ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                  {busyClone ? "Cloning…" : "Clone voice"}
+                </button>
+              </form>
+            )}
+
             <div className="flex items-center gap-2">
-              <select data-testid="voice-select" value={voiceId} onChange={(e)=>setVoiceId(e.target.value)}
-                className="flex-1 bg-[#0A0A0B] border border-white/10 rounded-lg px-3 py-2 text-sm outline-none">
-                {filteredVoices.map((v, i) => {
-                  const label = `${v.name} — ${v.language} · ${v.style}`;
-                  return <option key={`${v.id}-${i}`} value={v.id}>{label}</option>;
-                })}
-              </select>
-              <button data-testid="voice-preview" onClick={previewVoice} disabled={busyPreview || !voiceId}
-                title="Play a short sample of this voice"
-                className="rounded-full surface px-3 py-2 text-xs border border-white/10 hover:border-[#E2FF3D]/40 disabled:opacity-50">
-                {busyPreview ? <Loader2 className="w-3 h-3 animate-spin" /> : "▶ Preview"}
+              <button data-testid="voice-preview" onClick={() => previewVoice()} disabled={busyPreview || !voiceId}
+                className="rounded-full surface px-3 py-1.5 text-xs border border-white/10 hover:border-[#E2FF3D]/40 disabled:opacity-50 flex items-center gap-1">
+                {busyPreview ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
+                Preview selected
               </button>
             </div>
 

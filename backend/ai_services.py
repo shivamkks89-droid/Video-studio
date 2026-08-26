@@ -25,10 +25,20 @@ INDIAN_VOICES = [
     {"id": "XB0fDUnXU5powFXDhCwa", "name": "Charlotte", "gender": "female", "language": "english", "style": "natural"},
     {"id": "pFZP5JQG7iQjIQuC4Bku", "name": "Lily", "gender": "female", "language": "english", "style": "friendly"},
     {"id": "Xb7hH8MSUJpSbSDYk0k2", "name": "Alice", "gender": "female", "language": "english", "style": "professional"},
-    {"id": "JBFqnCBsd6RMkjVDRZzb", "name": "Arjun", "gender": "male", "language": "hindi", "style": "motivational"},
-    {"id": "EXAVITQu4vr4xnSDxMaL", "name": "Priya", "gender": "female", "language": "hindi", "style": "friendly"},
-    {"id": "TX3LPaxmHKxFdv7VOQHJ", "name": "Rohan", "gender": "male", "language": "hinglish", "style": "natural"},
-    {"id": "cgSgspJ2msm6clMCkdW9", "name": "Anaya", "gender": "female", "language": "hinglish", "style": "emotional"},
+    # Hindi lineup — multilingual_v2 model reads Devanagari in any voice
+    {"id": "JBFqnCBsd6RMkjVDRZzb", "name": "Arjun",   "gender": "male",   "language": "hindi", "style": "motivational"},
+    {"id": "EXAVITQu4vr4xnSDxMaL", "name": "Priya",   "gender": "female", "language": "hindi", "style": "friendly"},
+    {"id": "nPczCjzI2devNBz1zQrb", "name": "Karan",   "gender": "male",   "language": "hindi", "style": "professional"},
+    {"id": "pFZP5JQG7iQjIQuC4Bku", "name": "Meera",   "gender": "female", "language": "hindi", "style": "warm"},
+    {"id": "iP95p4xoKVk53GoZ742B", "name": "Devraj",  "gender": "male",   "language": "hindi", "style": "narrator"},
+    {"id": "Xb7hH8MSUJpSbSDYk0k2", "name": "Kaveri",  "gender": "female", "language": "hindi", "style": "calm"},
+    # Hinglish lineup — expanded 2 → 6 for richer variety
+    {"id": "TX3LPaxmHKxFdv7VOQHJ", "name": "Rohan",   "gender": "male",   "language": "hinglish", "style": "natural"},
+    {"id": "cgSgspJ2msm6clMCkdW9", "name": "Anaya",   "gender": "female", "language": "hinglish", "style": "emotional"},
+    {"id": "9BWtsMINqrJLrRacOk9x", "name": "Sanya",   "gender": "female", "language": "hinglish", "style": "energetic"},
+    {"id": "iP95p4xoKVk53GoZ742B", "name": "Aditya",  "gender": "male",   "language": "hinglish", "style": "friendly"},
+    {"id": "XB0fDUnXU5powFXDhCwa", "name": "Ishita",  "gender": "female", "language": "hinglish", "style": "professional"},
+    {"id": "JBFqnCBsd6RMkjVDRZzb", "name": "Vikram",  "gender": "male",   "language": "hinglish", "style": "motivational"},
 ]
 
 
@@ -36,6 +46,92 @@ def list_voices(language: Optional[str] = None) -> List[dict]:
     if not language or language == "all":
         return INDIAN_VOICES
     return [v for v in INDIAN_VOICES if v["language"] == language]
+
+
+# In-memory cache for the merged (static + ElevenLabs live) voice catalog.
+_LIVE_VOICE_CACHE: dict = {"ts": 0, "voices": None}
+
+
+async def list_voices_async(force: bool = False) -> List[dict]:
+    """Return static + live-fetched ElevenLabs voices, tagged & deduped.
+
+    Live-fetched voices are inspected for Hindi / Hinglish / Indian-English
+    accent metadata (from labels + description) and merged into the catalog so
+    users of paid ElevenLabs plans automatically see all their available Indian
+    voices in the dropdown. Cached for 1 hour.
+    """
+    import time as _t
+    if not force and _LIVE_VOICE_CACHE["voices"] and (_t.time() - _LIVE_VOICE_CACHE["ts"] < 3600):
+        return _LIVE_VOICE_CACHE["voices"]
+    merged = list(INDIAN_VOICES)  # start from static
+    if not ELEVEN_KEY:
+        return merged
+    try:
+        from elevenlabs.client import ElevenLabs
+        def _fetch():
+            c = ElevenLabs(api_key=ELEVEN_KEY)
+            res = c.voices.get_all()
+            return getattr(res, "voices", []) or []
+        voices = await asyncio.to_thread(_fetch)
+        seen_ids = {v["id"] for v in merged}
+        for v in voices:
+            vid = getattr(v, "voice_id", None)
+            if not vid or vid in seen_ids:
+                continue
+            name = getattr(v, "name", "") or "Voice"
+            labels = getattr(v, "labels", {}) or {}
+            desc = (getattr(v, "description", "") or "").lower()
+            accent = (labels.get("accent") or "").lower()
+            lang_meta = (labels.get("language") or "").lower()
+            gender = (labels.get("gender") or "").lower() or "male"
+            # Classify by accent / language hints
+            hay = f"{name.lower()} {desc} {accent} {lang_meta}"
+            if "hinglish" in hay:
+                lang = "hinglish"
+            elif "hindi" in hay or "indian" in accent:
+                lang = "hindi"
+            elif "indian" in hay:
+                lang = "indian_english"
+            else:
+                continue  # skip non-Indian voices from live catalog
+            style = (labels.get("use case") or labels.get("description") or "natural").lower()[:20]
+            merged.append({
+                "id": vid, "name": name, "gender": gender,
+                "language": lang, "style": style, "_source": "elevenlabs_live",
+            })
+            seen_ids.add(vid)
+    except Exception as e:
+        print(f"[voices] live fetch failed, using static only: {e}")
+    _LIVE_VOICE_CACHE["voices"] = merged
+    _LIVE_VOICE_CACHE["ts"] = _t.time()
+    return merged
+
+
+async def clone_voice(name: str, audio_bytes: bytes, description: str = "") -> dict:
+    """Clone a voice via ElevenLabs Voice Lab. Returns {voice_id, name} or {error}."""
+    if not ELEVEN_KEY:
+        return {"error": "ELEVENLABS_API_KEY missing"}
+    if not audio_bytes:
+        return {"error": "Audio sample required"}
+    try:
+        import io as _io
+        from elevenlabs.client import ElevenLabs
+        def _call():
+            c = ElevenLabs(api_key=ELEVEN_KEY)
+            # New SDK signature: files=[<file-like>]
+            f = _io.BytesIO(audio_bytes); f.name = "sample.mp3"
+            v = c.voices.ivc.create(name=name, files=[f],
+                                    description=description or f"User-cloned voice: {name}")
+            return v
+        v = await asyncio.to_thread(_call)
+        vid = getattr(v, "voice_id", None) or getattr(v, "id", None)
+        if not vid:
+            return {"error": "Voice clone returned no id"}
+        # Invalidate cache so the new voice appears in the catalog immediately.
+        _LIVE_VOICE_CACHE["ts"] = 0
+        return {"voice_id": vid, "name": name}
+    except Exception as e:
+        return {"error": f"Voice clone failed: {str(e)[:200]}"}
 
 
 # ---------- LLM helpers ----------
