@@ -1,0 +1,24 @@
+{
+  "summary": "Frontend-only retest of the Hinglish voice-selection bug fix (composite voiceKey `${id}::${name}`) on ProjectDetail. Logged in as admin, created two fresh projects (TEST_Hinglish_Voice language=hinglish, TEST_English_Voice language=english) via /dashboard/new and exercised the voice picker. ALL 5 requested scenarios PASS. (1) Hinglish project: card order = Rohan, Anaya, Sanya, Aditya, Ishita, Vikram (all hinglish) then hindi then english; auto-selected card = Rohan (hinglish, volt-yellow + SELECTED); NO lang-mismatch-warning in DOM. (2) Clicking voice-card-Rohan and then voice-card-Sanya moved SELECTED correctly and the warning stayed hidden (0 nodes) — the old duplicate-voice_id bug (Rohan resolving to Liam/english) is gone. (3) Clicking voice-card-Aria on the Hinglish project rendered lang-mismatch-warning with exact text 'Script is hinglish but selected voice is english. Consider a matching voice for natural delivery.' — language reflects the actual selected voice. (4) Hover preview: hovering voice-card-Aria fired exactly 1 POST /api/ai/tts/preview (HTTP 200) and audio played; re-hovering the same card fired 0 additional network calls (client cache keyed `${voiceId}::${projectLanguage}` works). (5) English project: auto-selected Aria (english), no warning; selecting Rohan produced 'Script is english but selected voice is hinglish'. No console errors during the voice flows (only benign 401 on the pre-login /auth/me probe and 404s on empty asset lookups).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_3.json"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ProjectDetail.jsx previewCache/hover key is `${voiceId}::${language}` (id only, no name). Functionally correct today because duplicate catalog entries map to the SAME ElevenLabs voice, but if a duplicate ever gets different settings (stability/style) the cached clip would be wrong. Consider keying by the composite voiceKey.",
+    "The real root cause is data: /api/catalog/voices (ai_services.INDIAN_VOICES) exposes the same voice_id under multiple display names. The composite key masks it in the UI; consider making catalog entries carry a unique slug/key from the backend so every consumer (VoiceStudio, project.voice_id persistence) is safe. Note project.voice_id stored in Mongo is still id-only, so on reload the auto-pick re-derives the name via voices.find(v => v.id === project.voice_id) — which can again resolve to the WRONG display name/language (e.g. saved Rohan reloads as Liam). Recommend persisting voice_name alongside voice_id.",
+    "ProjectDetail.jsx is 951 lines — above the 700-line guideline; splitting the voice picker / storyboard / render panels into components would help."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "not tested this iteration", "frontend": "100% (5/5 requested scenarios pass)" },
+  "seed_data_creation": "Created 2 throw-away projects as admin: TEST_Hinglish_Voice (proj_39e51fb23136) and TEST_English_Voice. No scripts/voiceovers generated (no credits spent beyond 2 TTS previews).",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin@cinereel.ai / admin12345",
+  "context_for_next_testing_agent": "Composite-key voice fix verified end-to-end on the preview URL. Not retested this round: actual 'Generate voiceover' (ElevenLabs paid-tier gate / Cloudflare 5xx body stripping from iteration_2) and backend pytest suite (/app/backend/tests/test_cinereel_backend.py, was 31/31). Known latent gap: project.voice_id persisted without voice_name, so a reloaded project can re-resolve to a duplicate-id voice with the wrong display name/language.",
+  "rca_of_the_issue": "Confirmed fixed. Previously voices.find(v => v.id === voiceId) returned the first catalog entry sharing that ElevenLabs voice_id (Liam/english instead of Rohan/hinglish), so the mismatch banner and voice metadata were wrong. State is now the composite `${id}::${name}` and lookup matches on (id, name); DOM verification shows correct SELECTED card and correct/absent warning in all tested combinations."
+}

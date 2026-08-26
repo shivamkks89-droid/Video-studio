@@ -10,7 +10,20 @@ export default function ProjectDetail() {
   const [project, setProject] = useState(null);
   const [voices, setVoices] = useState([]);
   const [topic, setTopic] = useState("");
-  const [voiceId, setVoiceId] = useState("");
+  // Voice selection uses a composite key `${id}::${name}` because several
+  // catalog entries intentionally share the same ElevenLabs voice_id under
+  // different display names (e.g. Rohan / Liam both use TX3LPax...). A plain
+  // id-based `.find` would always return the FIRST matching entry, causing
+  // language-mismatch warnings and gender/style badges to be wrong.
+  const [voiceKey, setVoiceKeyRaw] = useState("");
+  const voiceIdOf = (k) => (k || "").split("::")[0];
+  const voiceId = voiceIdOf(voiceKey);
+  const setVoiceId = (raw) => {
+    // Accept plain id (legacy) — resolve to first matching card.
+    if (raw && raw.includes("::")) return setVoiceKeyRaw(raw);
+    const v = voices.find(x => x.id === raw);
+    setVoiceKeyRaw(v ? `${v.id}::${v.name}` : raw);
+  };
   const [busyScript, setBusyScript] = useState(false);
   const [busyVariants, setBusyVariants] = useState(false);
   const [busySeedanceIdx, setBusySeedanceIdx] = useState(null);
@@ -60,7 +73,7 @@ export default function ProjectDetail() {
   // Order matters: check `hinglish` BEFORE `hindi` because "hinglish".includes("hindi")
   // is true, which would incorrectly steer Hinglish projects to a Hindi-only voice.
   useEffect(() => {
-    if (!voices.length || !project || voiceId) return;
+    if (!voices.length || !project || voiceKey) return;
     const lang = (project.language || "").toLowerCase();
     let preferOrder;
     if (lang.includes("hinglish")) {
@@ -78,8 +91,10 @@ export default function ProjectDetail() {
       picked = voices.find(v => (v.language || "").toLowerCase() === p);
       if (picked) break;
     }
-    setVoiceId((project.voice_id) || picked?.id || voices[0]?.id || "");
-  }, [voices, project, voiceId]);
+    setVoiceKeyRaw(project.voice_id
+      ? `${project.voice_id}::${(voices.find(v => v.id === project.voice_id) || {}).name || ""}`
+      : (picked ? `${picked.id}::${picked.name}` : (voices[0] ? `${voices[0].id}::${voices[0].name}` : "")));
+  }, [voices, project, voiceKey]);
 
   if (!project) return <div className="label-mono text-zinc-500">Loading…</div>;
 
@@ -634,11 +649,12 @@ export default function ProjectDetail() {
             {/* Voice cards horizontal scroll */}
             <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1" data-testid="voice-cards">
               {filteredVoices.map((v) => {
-                const active = v.id === voiceId;
+                const cardKey = `${v.id}::${v.name}`;
+                const active = cardKey === voiceKey;
                 return (
-                  <button key={`${v.id}-${v.name}`} type="button"
-                    data-testid={`voice-card-${v.id}`}
-                    onClick={() => setVoiceId(v.id)}
+                  <button key={cardKey} type="button"
+                    data-testid={`voice-card-${v.name}`}
+                    onClick={() => setVoiceKeyRaw(cardKey)}
                     onMouseEnter={() => onVoiceHover(v.id)}
                     onMouseLeave={onVoiceHoverEnd}
                     className={`shrink-0 rounded-lg p-2.5 border transition-all min-w-[120px] text-left ${
@@ -688,7 +704,10 @@ export default function ProjectDetail() {
 
             {/* Language mismatch warning */}
             {(() => {
-              const selVoice = voices.find(v => v.id === voiceId);
+              // Match by composite key so duplicate-id catalog entries don't
+              // confuse the language lookup.
+              const [, selName] = (voiceKey || "").split("::");
+              const selVoice = voices.find(v => v.id === voiceId && v.name === selName);
               const pl = (project.language || "").toLowerCase();
               const vl = (selVoice?.language || "").toLowerCase();
               if (!selVoice || !pl || !vl) return null;
