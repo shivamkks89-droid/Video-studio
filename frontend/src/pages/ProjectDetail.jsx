@@ -51,16 +51,22 @@ export default function ProjectDetail() {
   }, [id]);
 
   // Auto-pick a language-matched voice once BOTH voices and project are loaded.
-  // For hindi / hinglish projects, prefer a Hindi-tagged voice so the voiceover
-  // sounds native — critical for Indian audience projects.
+  // Order matters: check `hinglish` BEFORE `hindi` because "hinglish".includes("hindi")
+  // is true, which would incorrectly steer Hinglish projects to a Hindi-only voice.
   useEffect(() => {
     if (!voices.length || !project || voiceId) return;
     const lang = (project.language || "").toLowerCase();
-    const preferOrder = lang.includes("hindi") || lang.includes("hinglish")
-      ? ["hindi", "hinglish", "indian_english", "english"]
-      : lang.includes("indian")
-        ? ["indian_english", "english", "hindi"]
-        : ["english", "indian_english"];
+    let preferOrder;
+    if (lang.includes("hinglish")) {
+      // Hinglish voices are trained on roman-script Hindi — better match than pure Hindi.
+      preferOrder = ["hinglish", "hindi", "indian_english", "english"];
+    } else if (lang.includes("hindi")) {
+      preferOrder = ["hindi", "hinglish", "indian_english", "english"];
+    } else if (lang.includes("indian")) {
+      preferOrder = ["indian_english", "english", "hindi"];
+    } else {
+      preferOrder = ["english", "indian_english"];
+    }
     let picked = null;
     for (const p of preferOrder) {
       picked = voices.find(v => (v.language || "").toLowerCase() === p);
@@ -71,7 +77,21 @@ export default function ProjectDetail() {
 
   if (!project) return <div className="label-mono text-zinc-500">Loading…</div>;
 
-  const filteredVoices = voices.filter(v => v.language === project.language || project.language === "english");
+  // Show voices in a helpful order for the selected project language.
+  // Hinglish/Hindi share a family — show family members first, then rest.
+  const filteredVoices = (() => {
+    const lang = (project.language || "").toLowerCase();
+    let family;
+    if (lang.includes("hinglish")) family = ["hinglish", "hindi", "indian_english"];
+    else if (lang.includes("hindi")) family = ["hindi", "hinglish", "indian_english"];
+    else if (lang.includes("indian")) family = ["indian_english", "english", "hindi"];
+    else family = ["english", "indian_english"];
+    const inFamily = voices.filter(v => family.includes((v.language || "").toLowerCase()));
+    const others = voices.filter(v => !family.includes((v.language || "").toLowerCase()));
+    // Sort inFamily by family order so the most-matched language appears first.
+    inFamily.sort((a, b) => family.indexOf(a.language) - family.indexOf(b.language));
+    return [...inFamily, ...others];
+  })();
 
   const genScript = async () => {
     if (!topic.trim()) return toast.error("Add a topic first");
