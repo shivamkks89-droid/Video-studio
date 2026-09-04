@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Mic, Loader2, Upload, Music, X } from "lucide-react";
+import { Mic, Loader2, Upload, Music, X, UserPlus } from "lucide-react";
 import { api } from "../lib/api";
 import { toast } from "sonner";
 import { assetUrl } from "../lib/assetUrl";
@@ -22,9 +22,13 @@ export default function VoiceStudio() {
   // Upload state
   const [uploadedAudio, setUploadedAudio] = useState(null);
   const [uploadedMeta, setUploadedMeta] = useState(null);
+  const [uploadedFile, setUploadedFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [transcript, setTranscript] = useState(null);
   const [transcribing, setTranscribing] = useState(false);
+  const [cloneName, setCloneName] = useState("My voice");
+  const [cloning, setCloning] = useState(false);
+  const [clonedVoice, setClonedVoice] = useState(null);
   const fileRef = useRef(null);
 
   // Music
@@ -61,6 +65,8 @@ export default function VoiceStudio() {
     if (file.size > 30 * 1024 * 1024) return toast.error("Max 30 MB");
     setUploading(true);
     setTranscript(null);
+    setClonedVoice(null);
+    setUploadedFile(file);
     try {
       const fd = new FormData();
       fd.append("file", file);
@@ -73,6 +79,29 @@ export default function VoiceStudio() {
     } catch (e) {
       toast.error(e.response?.data?.detail || "Upload failed");
     } finally { setUploading(false); }
+  };
+
+  const cloneForAds = async () => {
+    if (!uploadedFile) return toast.error("Upload an audio sample first");
+    if (!cloneName.trim()) return toast.error("Name the cloned voice");
+    setCloning(true);
+    const t = toast.loading("Cloning voice via ElevenLabs Voice Lab…");
+    try {
+      const fd = new FormData();
+      fd.append("name", cloneName.trim());
+      fd.append("description", "Uploaded by user for ad voiceovers");
+      fd.append("audio", uploadedFile);
+      const { data } = await api.post("/voices/clone", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setClonedVoice(data.voice);
+      // Refresh voice list so the new clone appears in AI Voice tab
+      const v = await api.get("/catalog/voices");
+      setVoices(v.data);
+      toast.success(`"${data.voice.name}" cloned! Ab kisi bhi project ki Voice dropdown me milega.`, { id: t });
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Clone failed. Check ElevenLabs key.", { id: t });
+    } finally { setCloning(false); }
   };
 
   const transcribe = async () => {
@@ -194,11 +223,41 @@ export default function VoiceStudio() {
                     </div>
                   )}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <button data-testid="vs-transcribe" onClick={transcribe} disabled={transcribing}
                     className="btn-volt rounded-full px-4 py-2 text-xs flex items-center gap-2 disabled:opacity-60">
                     {transcribing ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : "Transcribe & auto-split scenes"}
                   </button>
+                </div>
+
+                {/* Clone this voice for ads */}
+                <div className="pt-3 border-t border-white/5" data-testid="vs-clone-panel">
+                  <div className="flex items-center gap-2 mb-2">
+                    <UserPlus className="w-4 h-4 text-[#E2FF3D]"/>
+                    <div className="label-mono text-[#E2FF3D] text-xs">CLONE THIS VOICE FOR ADS · 100 CR</div>
+                  </div>
+                  <div className="text-xs text-zinc-400 mb-3">
+                    Is voice ko ElevenLabs Voice Lab pe clone karo. Uske baad kisi bhi project ki Voice dropdown me select karke ad script bolwaao — aapki hi awaaz me!
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <input data-testid="vs-clone-name" value={cloneName}
+                      onChange={(e)=>setCloneName(e.target.value)} placeholder="Voice name (e.g. Shivam voice)"
+                      className="flex-1 min-w-[180px] bg-[#0A0A0B] border border-white/10 rounded-lg px-3 py-2 text-xs outline-none"/>
+                    <button data-testid="vs-clone-btn" onClick={cloneForAds} disabled={cloning || !uploadedFile}
+                      className="btn-volt rounded-full px-4 py-2 text-xs flex items-center gap-2 disabled:opacity-60">
+                      {cloning ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <UserPlus className="w-3.5 h-3.5"/>}
+                      {cloning ? "Cloning…" : "Clone voice"}
+                    </button>
+                  </div>
+                  {clonedVoice && (
+                    <div data-testid="vs-cloned-voice" className="mt-3 bg-[#0A0A0B] border border-[#E2FF3D]/30 rounded p-3">
+                      <div className="text-xs text-[#E2FF3D] mb-1">✓ CLONED: {clonedVoice.name}</div>
+                      <div className="label-mono text-zinc-500 text-[10px] break-all">voice_id: {clonedVoice.id}</div>
+                      <div className="text-xs text-zinc-400 mt-2">
+                        Ab kisi bhi project ke Voice section me jao, dropdown me <b>{clonedVoice.name}</b> aa jayega — usko select karke "Generate voiceover" dabao. Ad script aapki hi awaaz me bolega.
+                      </div>
+                    </div>
+                  )}
                 </div>
                 {transcript && (
                   <div className="pt-3 border-t border-white/5" data-testid="vs-transcript">

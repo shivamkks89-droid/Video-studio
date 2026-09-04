@@ -110,15 +110,20 @@ async def list_voices_async(force: bool = False) -> List[dict]:
 async def clone_voice(name: str, audio_bytes: bytes, description: str = "") -> dict:
     """Clone a voice via ElevenLabs Voice Lab. Returns {voice_id, name} or {error}."""
     if not ELEVEN_KEY:
-        return {"error": "ELEVENLABS_API_KEY missing"}
+        return {"error": "ELEVENLABS_API_KEY missing on server"}
+    if not ELEVEN_KEY.startswith("sk_"):
+        return {"error": ("Invalid ELEVENLABS_API_KEY on server — it must start with 'sk_'. "
+                          "Grab a real API key from https://elevenlabs.io/app/settings/api-keys "
+                          "and paste it into backend .env. Voice cloning also needs a paid "
+                          "ElevenLabs plan (Starter or above).")}
     if not audio_bytes:
         return {"error": "Audio sample required"}
     try:
         import io as _io
+        import json as _json
         from elevenlabs.client import ElevenLabs
         def _call():
             c = ElevenLabs(api_key=ELEVEN_KEY)
-            # New SDK signature: files=[<file-like>]
             f = _io.BytesIO(audio_bytes); f.name = "sample.mp3"
             v = c.voices.ivc.create(name=name, files=[f],
                                     description=description or f"User-cloned voice: {name}")
@@ -127,11 +132,40 @@ async def clone_voice(name: str, audio_bytes: bytes, description: str = "") -> d
         vid = getattr(v, "voice_id", None) or getattr(v, "id", None)
         if not vid:
             return {"error": "Voice clone returned no id"}
-        # Invalidate cache so the new voice appears in the catalog immediately.
         _LIVE_VOICE_CACHE["ts"] = 0
         return {"voice_id": vid, "name": name}
     except Exception as e:
-        return {"error": f"Voice clone failed: {str(e)[:200]}"}
+        # ElevenLabs errors carry JSON in `body`; extract the human message.
+        body = getattr(e, "body", None) or getattr(e, "response", None)
+        msg = ""
+        if body:
+            try:
+                if hasattr(body, "json"):
+                    data = body.json()
+                elif isinstance(body, (bytes, str)):
+                    data = _json.loads(body if isinstance(body, str) else body.decode())
+                else:
+                    data = body
+                detail = (data or {}).get("detail") if isinstance(data, dict) else None
+                if isinstance(detail, dict):
+                    msg = detail.get("message") or detail.get("status") or ""
+                elif isinstance(detail, str):
+                    msg = detail
+            except Exception:
+                pass
+        if not msg:
+            msg = str(e).split("\\n")[0][:180]
+        # Detect the most common paywall failure and give an actionable hint.
+        low = msg.lower()
+        if "voice_add_edit_limit_reached" in low or "cannot add voice" in low or "plan" in low:
+            msg = ("Your ElevenLabs plan does not allow Instant Voice Cloning. "
+                   "Upgrade to Starter ($5/mo) at https://elevenlabs.io/subscription "
+                   "then retry.")
+        elif "invalid_api_key" in low or "unauthorized" in low or "401" in low:
+            msg = ("The ELEVENLABS_API_KEY on the server is invalid. Grab a real "
+                   "sk_... key from https://elevenlabs.io/app/settings/api-keys and "
+                   "paste it into backend .env.")
+        return {"error": f"Voice clone failed: {msg}"}
 
 
 # ---------- LLM helpers ----------
