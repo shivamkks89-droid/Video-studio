@@ -190,7 +190,8 @@ def test_ai_tts(session, auth_headers):
     assert r.status_code in (200, 502), r.text
     if r.status_code == 200:
         url = r.json().get("audio_url")
-        assert isinstance(url, str) and url.startswith("data:")
+        # Media is now persisted to disk and served via short /api/files/... URLs
+        assert isinstance(url, str) and (url.startswith("data:") or url.startswith("/api/files/"))
     else:
         # 502 path: credits must be refunded (no net charge)
         me_after = session.get(f"{API}/auth/me", headers=auth_headers).json()
@@ -208,7 +209,8 @@ def test_ai_scene_image(session, auth_headers):
     if data["image_url"] is None:
         assert "warning" in data
     else:
-        assert data["image_url"].startswith("data:")
+        # Images are persisted to disk and served via short /api/files/images/... URLs
+        assert data["image_url"].startswith("data:") or data["image_url"].startswith("/api/files/")
 
 
 # ----------- Projects -----------

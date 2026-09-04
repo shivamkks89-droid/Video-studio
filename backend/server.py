@@ -31,8 +31,8 @@ from auth import (
 )
 from ai_services import (
     AIServiceError, clone_voice, generate_ctas, generate_hooks, generate_scene_image,
-    generate_script, list_voices, list_voices_async, score_variants, suggest_ad_ideas,
-    synthesize_speech,
+    generate_script, list_voices, list_voices_async, project_language_to_iso,
+    score_variants, suggest_ad_ideas, synthesize_speech,
 )
 from asset_store import (
     save_image_data_uri as save_image_persistent,
@@ -990,7 +990,8 @@ async def ai_tts_preview(body: VoicePreviewReq, request: Request):
     if key in _VOICE_PREVIEW_CACHE:
         return {"audio_url": _VOICE_PREVIEW_CACHE[key], "cached": True}
     sample = _PREVIEW_SAMPLES.get(lang) or _PREVIEW_SAMPLES["english"]
-    result = await synthesize_speech(sample, body.voice_id, 0.55, 0.75, 0.0)
+    result = await synthesize_speech(sample, body.voice_id, 0.55, 0.75, 0.0,
+                                     language_code=project_language_to_iso(lang))
     if result.get("audio_url"):
         url = await save_audio_persistent(result["audio_url"]) or result["audio_url"]
         _VOICE_PREVIEW_CACHE[key] = url
@@ -1009,9 +1010,19 @@ async def ai_tts(body: TTSRequest, request: Request):
     user = await _current(request)
     cost = max(1, len(body.text) // 200)
     user = await _charge_credits(user, cost, "tts_generation")
+    # Look up the project language so we can lock in an accent-appropriate
+    # phoneme set (multilingual v2 model). Without this, English-trained voices
+    # read Hindi text with an English accent.
+    proj_lang = None
+    if body.project_id:
+        proj = await db.projects.find_one({"project_id": body.project_id, "user_id": user.user_id},
+                                           {"_id": 0, "language": 1})
+        proj_lang = (proj or {}).get("language")
+    language_code = project_language_to_iso(proj_lang)
     # Try ElevenLabs first (real human-grade voice if user's plan allows)
     result = await synthesize_speech(body.text, body.voice_id, body.stability,
-                                     body.similarity_boost, body.style)
+                                     body.similarity_boost, body.style,
+                                     language_code=language_code)
     if result.get("audio_url"):
         url = await save_audio_persistent(result["audio_url"]) or result["audio_url"]
         # Mark project voice as fresh — synced with current script_version.
@@ -1025,7 +1036,15 @@ async def ai_tts(body: TTSRequest, request: Request):
             )
         return {"audio_url": url, "provider": "elevenlabs",
                 "credits_left": user.credits}
-    # Fallback: OpenAI TTS via Emergent LLM key
+    # Fallback: OpenAI TTS via Emergent LLM key.
+    # For config errors (invalid/missing ElevenLabs key) we still fall back
+    # so voice generation never dies — but we surface a note so the user
+    # knows to update their key for higher-quality Indian voices.
+    err_msg = (result.get("error") or "")
+    is_config_error = any(
+        k in err_msg.lower()
+        for k in ["invalid elevenlabs_api_key", "elevenlabs_api_key missing"]
+    )
     fb = await synthesize_openai_tts(body.text, style="default")
     if fb.get("audio_url"):
         url = await save_audio_persistent(fb["audio_url"]) or fb["audio_url"]
@@ -1037,9 +1056,12 @@ async def ai_tts(body: TTSRequest, request: Request):
                 {"project_id": body.project_id, "user_id": user.user_id},
                 {"$set": {"voice_stale": False, "voice_script_version": sv}},
             )
+        note = ("ElevenLabs key invalid — used OpenAI HD voice as fallback. "
+                "For authentic Indian accent, set a valid sk_... ElevenLabs key.") if is_config_error \
+            else "ElevenLabs voice unavailable — used OpenAI HD voice."
         return {"audio_url": url, "provider": "openai",
                 "voice": fb.get("voice"), "credits_left": user.credits,
-                "note": "ElevenLabs voice unavailable — used OpenAI HD voice."}
+                "note": note}
     await _refund(user, cost, "tts_generation")
     return {"audio_url": None,
             "error": result.get("error") or fb.get("error") or "Voice service unavailable.",
@@ -1254,6 +1276,7 @@ async def list_projects(request: Request, folder: Optional[str] = None):
         "_id": 0, "project_id": 1, "title": 1, "video_type": 1, "language": 1,
         "aspect_ratio": 1, "resolution": 1, "fps": 1, "duration_sec": 1,
         "status": 1, "thumbnail": 1, "video_url": 1, "folder": 1,
+        "workspace_id": 1, "music_id": 1, "music_url": 1,
         "created_at": 1, "updated_at": 1,
     }
     items = await db.projects.find(q, projection).sort("updated_at", -1).to_list(200)
@@ -1653,6 +1676,11 @@ async def on_shutdown():
 
 # ---------- mount ----------
 app.include_router(api)
+
+# Studio router (Ad Studio, Workspaces, STT, Multi-creative, Campaign, etc.)
+from routes_studio import build_studio_router  # noqa: E402
+studio_router = build_studio_router(db, _current, _charge_credits, _refund)
+app.include_router(studio_router, prefix="/api")
 
 # Serve files: try local disk first, fallback to object storage (persistent across pod restarts).
 from fastapi import Path as FPath

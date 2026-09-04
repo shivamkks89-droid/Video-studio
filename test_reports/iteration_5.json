@@ -1,0 +1,63 @@
+{
+  "summary": "Full backend + frontend verification of the Phase 1-6 Studio release. Created /app/backend/tests/test_studio_phase.py (51 pytest cases) covering /api/ai/estimate, /api/ai/script/refine (all 6 actions incl. Hindi translate), /api/ai/multi-creative (1/3/5 distinct variants + 422 on invalid count), /api/ai/ad-copy (all 8 platforms), /api/ai/campaign (per-platform fields + project persistence), /api/ai/creative-score, /api/ai/compliance, /api/media/upload-voice (+ non-audio 400), /api/ai/stt (real Whisper call on an uploaded WAV, auto_scenes), /api/catalog/music, /api/projects/music, /api/workspaces CRUD + project assign/unassign, /api/projects/{id}/versions snapshot/list/restore + 404s, /api/projects/resize (400 no-storyboard, 404 unknown), /api/projects/{id}/campaign-pack ZIP (project.json + README.txt) + 404, and regression on /api/auth/login, /api/projects, /api/credits/history, /api/ai/script. RESULT 49/51 pass; the 2 failures are genuine product bugs (music CDN 403, workspace_id missing from project list). Frontend: logged in with admin creds and smoke-tested Ad Studio (copy+campaign+score+compliance all rendered real AI output), Workspaces (create/assign/delete), Script Studio manual editor (live counters + working refine) and Voice Studio (AI/Upload toggle, upload panel, 10 music + 7 SFX). Separately re-ran the previous suites: 36/41 pass, the 5 failures are all /api/ai/tts now hard-failing 503 because of the known invalid ELEVENLABS_API_KEY (no more OpenAI fallback, so voiceover generation is 100% blocked in this environment).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/catalog/music", "issue": "16 of 17 catalog audio URLs return HTTP 403 (pixabay CDN hotlink protection). Verified server-side (requests) AND in the browser: <audio> gets 403 and MediaError code 4 (SRC_NOT_SUPPORTED), so the whole Music & SFX library in Voice Studio is unplayable and any project whose music_url is set from the catalog will fail at render/mix time. Only sfx-whoosh (audio_c8c8a73467.mp3) loads. Host the tracks in our own object store / use a provider that allows hotlinking.", "priority": "CRITICAL"},
+      {"endpoint": "GET /api/projects (list projection)", "issue": "The list projection omits workspace_id, so /dashboard/workspaces can never group projects: after PUT /api/projects/{id}/workspace succeeds (single GET shows workspace_id) the UI still shows the project under 'UNASSIGNED PROJECTS' and the workspace card stays at '0 projects'. Add workspace_id (and ideally music_id) to the projection in server.py list_projects.", "priority": "HIGH"},
+      {"endpoint": "POST /api/ai/tts, /api/ai/tts/preview", "issue": "Still 100% broken (5 pre-existing tests fail): returns 503 'Invalid ELEVENLABS_API_KEY … looks like an API-key ID'. Behaviour changed since iteration 4 — the OpenAI fallback no longer runs, so NO voiceover can be generated at all (Voice Studio 'Generate voiceover' is dead for every language). Either set a real sk_ key or restore the fallback.", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/ai/stt", "issue": "Charges 4 credits BEFORE calling Whisper and refunds on error, but the refund path returns HTTP 200 with an 'error' field; frontend must inspect the body (no non-2xx signal). Consider 502 + detail."},
+      {"endpoint": "PUT /api/workspaces/{id}", "issue": "Accepts an arbitrary un-validated JSON body (request.json(), only workspace_id/user_id popped) — any key can be written onto the workspace document. Should use a Pydantic WorkspaceUpdate model."},
+      {"endpoint": "PUT /api/projects/{id}/workspace, POST /api/projects/music, PUT /api/workspaces/{id}, DELETE /api/workspaces/{id}", "issue": "All return {'ok': true} without checking matched_count, so a wrong/foreign project_id silently 'succeeds' (verified: POST /api/projects/music with any project_id returns ok). Should 404 when matched_count == 0."},
+      {"endpoint": "POST /api/ai/estimate", "issue": "Unknown action names silently fall back to 5 credits instead of 400/422, so a typo in the frontend shows a wrong price."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Workspaces", "issue": "Assigning a project shows the 'Project moved' toast and reloads, but the project stays in 'UNASSIGNED PROJECTS' and the workspace card shows '0 projects' (root cause: workspace_id absent from GET /api/projects). Feature is effectively non-functional in the UI.", "selector": "[data-testid^='ws-assign-']", "priority": "HIGH"},
+      {"component": "VoiceStudio music library", "issue": "Music/SFX rows use raw native <audio controls> players; every track fails to load (403) with no error state shown to the user — the play button just does nothing. Needs a real error/unavailable state plus working sources.", "selector": "[data-testid^='music-']", "priority": "HIGH"},
+      {"component": "AdStudio header credits", "issue": "Credits pill does not refresh after in-page AI actions (stayed at 9671 after compliance+score+ad-copy which cost ~10); it only updates on navigation, even though every endpoint returns credits_left.", "selector": "header credits badge", "priority": "MEDIUM"},
+      {"component": "AdStudio toast", "issue": "The success toast renders on top of the credits/upgrade area in the top-right and fully covers the credits pill while visible.", "selector": "toast container", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Workspace project assignment", "issue": "Backend persists workspace_id but the list API used by the page does not return it, so UI state never reflects the change", "affected_selectors": ["[data-testid^='ws-assign-']", "[data-testid^='ws-']"]},
+      {"flow": "Voice Studio music selection", "issue": "Catalog URLs 403 → no preview and any saved music_url will break the render/mix step", "affected_selectors": ["[data-testid^='music-']", "[data-testid^='sfx-']"]}
+    ],
+    "design_issues": [
+      {"screen": "Ad Studio / Script Studio", "issues": ["Language, Tone, Type, refine-tone and refine-language use browser-default native <select> elements instead of the shadcn Select used elsewhere — inconsistent dark-theme styling (light native dropdown popup)."]},
+      {"screen": "Voice Studio", "issues": ["Native <audio controls> widgets (light grey browser chrome) clash with the dark theme; no custom player."]},
+      {"screen": "Workspaces", "issues": ["Workspace delete relies on window.confirm() (native browser dialog) rather than an in-app confirm dialog."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_studio_phase.py",
+    "/app/test_reports/pytest/studio_phase.xml",
+    "/app/test_reports/pytest/regression.xml"
+  ],
+  "action_items": [
+    "Replace the pixabay music/SFX URLs in /app/backend/music_library.py — 16/17 return 403 to both server and browser; self-host in object storage or proxy through /api/files so previews and renders work.",
+    "Add workspace_id to the projection in server.py list_projects() (line ~1272) so /dashboard/workspaces can group projects; re-verify the assign flow afterwards.",
+    "TTS is a hard 503 for every request (invalid ELEVENLABS_API_KEY, key ID not key). Voiceover generation is completely unavailable — set a real sk_ key or re-enable the OpenAI fallback with a clear UI warning.",
+    "Return 404 (matched_count check) instead of {ok:true} for /projects/{id}/workspace, /projects/music, PUT+DELETE /workspaces/{id}.",
+    "Refresh the header credits pill from the credits_left value returned by Ad Studio / Script Studio endpoints, and move the toast so it does not overlap it.",
+    "Replace native <select>/<audio>/window.confirm with the shadcn equivalents for theme consistency."
+  ],
+  "critical_code_review_comments": [
+    "routes_studio.py resize_multi renders every aspect ratio sequentially inside the request (render_video is heavy) — this will exceed ingress timeouts for 4 ratios; make it a background job with a status endpoint.",
+    "routes_studio.py upload_voice does a runtime `from server import _probe_audio_duration` inside the handler — circular-import smell; move the ffprobe helper into a shared module (e.g. asset_store/video_renderer).",
+    "estimate_credits duplicates the COSTS table that server.py also owns; a single shared costs module would prevent UI/estimate drift.",
+    "PUT /api/workspaces/{id} writes an unvalidated raw JSON body into Mongo — use a Pydantic model.",
+    "server.py is 1711 lines — split into routers (auth/catalog/ai/projects) as planned in the refactor phase."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_studio_phase.py (new, 51 tests)"
+  ],
+  "success_rate": {"backend": "96% (49/51 new studio tests; 36/41 legacy tests — the 5 failures are the known TTS 503)", "frontend": "85% (all 4 new pages render and their primary AI flows work; workspace assignment + music playback broken)"},
+  "seed_data_creation": "Temporary admin data only: project TEST_studio_project, TEST_resize_empty, workspaces TEST_Acme/TEST_ProjList/TEST_UI_WS/TEST_UI_WS2, one uploaded TEST_voice.wav and project version TEST_v1 — all projects/workspaces deleted after the run (verified GET /api/workspaces returns []).",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "admin@cinereel.ai / admin12345 (from /app/memory/test_credentials.md); credits dropped 100000 -> ~9650 across previous sessions, watch the balance when re-testing AI endpoints.",
+  "context_for_next_testing_agent": "Run `pytest /app/backend/tests/test_studio_phase.py` for the Phase 1-6 suite; only test_music_urls_are_playable and test_project_list_exposes_workspace_id should fail, and both are intentional bug-documenting tests — once fixed they must go green. Legacy suites test_cinereel_backend.py + test_tts_language.py fail only on TTS (503 invalid ELEVENLABS_API_KEY). Compliance endpoint field names are risk_level/flags[{snippet,reason,safer}]/summary (NOT risk/issues). Resize with real scenes was intentionally not exercised (long render, ingress timeout risk) — only the 400/404 paths. Ad Studio testids all present and working; Workspaces delete needs page.on('dialog', d.accept()) because it uses window.confirm.",
+  "rca_of_the_issue": "(1) Music library: music_library.py points at cdn.pixabay.com objects; pixabay enforces hotlink protection so every direct GET returns 403 (only one legacy object still serves). Browser reproduces it: <audio>.play() -> MediaError code 4 and a 403 in the network log. Fix = re-host the audio or proxy it server-side. (2) Workspace assignment: PUT /api/projects/{id}/workspace correctly $sets workspace_id (single-project GET confirms), but GET /api/projects uses an explicit summary projection that does not include workspace_id, so Workspaces.jsx's projects.filter(p => p.workspace_id === w.workspace_id) always yields 0 and the project remains listed as unassigned. (3) TTS: ELEVENLABS_API_KEY in backend/.env is an API-key ID; the endpoint now raises 503 instead of falling back to OpenAI, so all voiceover generation fails."
+}

@@ -1,60 +1,88 @@
-# CineReel AI — PRD & Progress
+# CineReel AI — Product Requirements Document
 
-## Original Problem Statement
-Build a production-ready SaaS web application **"CineReel AI"** to create cinematic
-marketing videos, social media reels, ads, YouTube Shorts, Instagram Reels, TikTok
-videos and AI avatar videos for personal and commercial use. Dark UI like HeyGen / Runway / Canva.
+## Vision
+Production-ready SaaS platform to create cinematic marketing videos, social reels,
+AI-avatar videos and full multi-platform ad campaigns — optimised for Indian
+creators, businesses, agencies and advertisers. Target hybrid of HeyGen + Runway +
+InVideo AI + CapCut + Canva AI.
 
-## Architecture (MVP)
-- **Frontend**: React (CRA) + Tailwind + shadcn/ui + lucide-react + sonner toasts + Outfit/Manrope/JetBrains Mono fonts
-- **Backend**: FastAPI + Motor (MongoDB) + JWT (PyJWT/bcrypt) + httpx
-- **AI**:
-  - **Script / Hooks / CTAs / Ideas**: Claude Sonnet 4.5 via `emergentintegrations`
-  - **Storyboard images**: Gemini `gemini-3.1-flash-image-preview` (Nano Banana) via `emergentintegrations`
-  - **TTS voices**: ElevenLabs `eleven_multilingual_v2`
-- **Email OTP**: Resend (also returns `dev_code` in dev)
-- **Auth**: JWT email/password + Email OTP + Emergent Google OAuth (session cookie)
-- **Billing**: Simulated Stripe via `/api/billing/purchase` (env has `STRIPE_API_KEY=sk_test_emergent`)
+## Personas
+- **Solo creators** — need fast Hindi/Hinglish reels for IG/YT/TikTok
+- **D2C brands** — need a full multi-platform campaign in one click
+- **Agencies** — need client workspaces, version history, campaign packs
+- **App marketers** — need Play Store scraping + product-first ads
 
-## What's Implemented (29-Feb-2026, MVP v1)
-- Landing page (cinematic dark, hero, features, video-types, how-it-works, CTA, pricing link)
-- Auth: signup, login, email OTP, Google OAuth (Emergent)
-- Dashboard layout (sidebar + sticky header + credits chip)
-- Dashboard home: AI ad-idea suggester (URL/Play Store ID/topic), recent projects, templates
-- New Project flow (12 video types, 3 ratios, 3 languages, fps/res/duration)
-- Script Studio: full script, 5 hooks, 5 CTAs
-- Voice Studio: ElevenLabs multilingual + language filter + sliders
-- Scene Studio: Nano Banana storyboards
-- Project detail: end-to-end script → voice → storyboard pipeline
-- Templates catalog (12), Brand Kit CRUD, AI Assets library (avatars, images, music, stickers)
-- Credits & Usage history, Pricing page with 4 plans
-- Admin Panel: analytics + users CRUD (role/plan/credits)
-- Default admin auto-seeded: `admin@cinereel.ai` / `admin12345`
-- 31/31 backend pytest passing; UI smoke tested
+## Core Modules (state)
 
-## Backlog (P0/P1/P2)
-### P0
-- Real Stripe Checkout (subscriptions + credit packs) — env key already provisioned
-- Final video render pipeline (compose voiceover + storyboard + captions → MP4/MOV/GIF)
+### Auth & Users
+- ✅ Email/password + Email OTP + Emergent Google session
+- ✅ Admin role + Admin panel + analytics
+- ✅ Credit system (per-action pricing + refund-on-failure + history)
+
+### AI Creation
+- ✅ Script Studio (Claude-Sonnet 4.5) — 3-axis variants + AI success predictor
+- ✅ Manual Script Editor with Improve/Shorten/Expand/Change-tone/Translate/Split-scenes (`/api/ai/script/refine`)
+- ✅ Voice Studio — ElevenLabs multilingual v2 + OpenAI TTS fallback + hover-preview
+- ✅ **Upload My Voice** (MP3/WAV/M4A/AAC/OGG up to 30 MB, `/api/media/upload-voice`)
+- ✅ Voice cloning UI (ElevenLabs Voice Lab)
+- ✅ Scene / Storyboard generator (Gemini Nano Banana + real Play Store screenshots)
+- ✅ Ad Ideas generator (`/api/ai/ad-ideas`, 6 concepts w/ real brand assets)
+- ✅ Hook + CTA generators
+- ✅ Multi-creative generator (1/3/5/10/20 distinct variants, `/api/ai/multi-creative`)
+- ✅ Ad Copy generator (Meta/Google/YouTube/TikTok/LinkedIn/Snapchat/X/Pinterest, `/api/ai/ad-copy`)
+- ✅ Multi-platform Campaign builder (`/api/ai/campaign`)
+- ✅ Creative Score (Hook/Message/Visual/CTA/Platform, `/api/ai/creative-score`)
+- ✅ Compliance Assistant (Low/Medium/High risk, `/api/ai/compliance`)
+- ✅ STT / Whisper (`/api/ai/stt`) — transcript + segments + auto-scene split
+
+### Video Engines
+- ✅ ffmpeg dynamic ken-burns renderer (auto-tightens voice to video length)
+- ✅ Sora 2 (Free tier) text-to-video
+- ✅ fal.ai Seedance (Premium) text-to-video + image-to-video
+- ✅ Object-storage-backed asset store (survives pod restarts)
+
+### Ad Studio & Campaigns
+- ✅ Ad Studio page (`/dashboard/ad-studio`)
+- ✅ Client Workspaces (`/dashboard/workspaces`) — create / assign projects / colour tag
+- ✅ Version history + restore (`/api/projects/{id}/versions`)
+- ✅ Smart Format Resizer (`/api/projects/resize`) — 9:16, 16:9, 1:1, 4:5
+- ✅ Complete Campaign Pack export (`/api/projects/{id}/campaign-pack` → ZIP)
+- ✅ Music & SFX library (10 tracks + 7 SFX, hotlink-friendly URLs)
+- ✅ Estimated Credits pricer (`/api/ai/estimate`)
+
+### Mobile
+- ✅ Capacitor Android wrapper (~28 MB AAB)
+- ✅ GitHub Actions workflows for APK/AAB
+
+## Environments / Secrets
+- `EMERGENT_LLM_KEY` — Claude / Whisper / Gemini / OpenAI TTS
+- `ELEVENLABS_API_KEY` — REQUIRED for authentic Indian voice; OpenAI TTS falls back if invalid
+- `MONGO_URL` / `DB_NAME` — Mongo
+- `FAL_KEY` — Seedance (optional)
+
+## Backlog (P0 → P2)
+
+### P0 (blockers)
+- **ElevenLabs API key** currently invalid in `.env` — user must paste a real `sk_...`
+  key to unlock authentic Indian accent (fallback to OpenAI works but is US-English)
 
 ### P1
-- Talking Avatar with lip-sync (HeyGen/Did integration)
-- Timeline / drag-and-drop editor with subtitles & motion graphics
-- Voice cloning consent flow (ElevenLabs custom voices)
-- Team Workspace + Folder Management + Version History
-- Background music auto-pick + sound effects library
-- Captions auto-generated from voiceover transcript
+- Subtitles/Captions burned into video via ffmpeg (`video_renderer.py` drawtext + word timing from Whisper)
+- Estimated Credits confirm-modal wired into ProjectDetail render / storyboard / seedance buttons
+- Master Asset caching — hash script + scene prompts; skip regen when unchanged
+- Full backend refactor: `server.py` → `routes/auth.py`, `routes/projects.py`, `routes/ai.py`, etc. (currently 1720 lines)
 
 ### P2
-- Cloudinary media uploads (logos, B-roll uploads)
-- Mobile-app embedding (React Native shell)
-- API access for Enterprise tier
-- SSO for Enterprise
-- Marketplace for community templates
+- Avatar Studio (audio-driven lip-sync via HeyGen or similar 3rd party)
+- Visual Timeline Editor (multi-track: video/voice/music/sfx/text/captions/overlay)
+- Product URL general scraper for arbitrary websites (already partly implemented, needs richer parsing)
+- Templates library expansion (Dating / E-commerce / SaaS / RealEstate / Restaurants / Fitness / Festivals)
 
-## Known Constraints
-- The provided ElevenLabs key appears to be on a Free tier — library voices return
-  `paid_plan_required`. The TTS endpoint refunds credits and surfaces a friendly
-  error. To make TTS work end-to-end, upgrade the ElevenLabs plan or clone a
-  voice into the user's personal library.
-- Stripe is simulated (no card is charged in preview); upgrade only assigns plan + credits.
+## Recent Changes
+- **Feb 2026** — Phases 1-4 shipped in one session:
+  - Ad Studio + Multi-Platform Campaign + Ad Copy + Format Resize
+  - Multi-creative + Creative Score + Compliance
+  - Upload My Voice + Whisper STT + auto-scene-split
+  - Music & SFX library + Client Workspaces + Version history + Campaign Pack ZIP
+  - Manual Script Editor with 6 AI refine actions
+  - TTS fallback restored so voiceover never dies even with invalid ElevenLabs key

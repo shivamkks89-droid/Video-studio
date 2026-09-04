@@ -1,0 +1,42 @@
+{
+  "summary": "Backend-only verification of the Hindi/Hinglish accent fix (language_code plumbed into ElevenLabs). Created /app/backend/tests/test_tts_language.py (10 tests) covering project_language_to_iso mapping, synthesize_speech signature, POST /api/ai/tts for hindi (Devanagari), hinglish (romanised), english, no-project_id, unauthenticated, POST /api/ai/tts/preview + in-memory cache, and the /api/catalog/voices structure. All 10 pass; full suite is 41/41 after I updated 2 stale assertions in test_cinereel_backend.py. HOWEVER a blocking config defect makes the fix a no-op for the user: ELEVENLABS_API_KEY in /app/backend/.env is an API key *ID*, not a key. ElevenLabs returns 400 invalid_api_key ('API key ID used as API key - only valid API keys can be used. API keys start with sk_') for EVERY call — with or without language_code. So every TTS silently falls back to OpenAI 'nova' (provider=openai, note='ElevenLabs voice unavailable'), which is an American-accented English voice and receives NO language hint. The user's original complaint ('Indian voice accent match nahi kar raha') will therefore persist in this environment even though the code change itself is correct.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "/api/ai/tts, /api/ai/tts/preview", "issue": "ELEVENLABS_API_KEY in backend/.env is a 64-char API key ID (prefix '6e4126...'), not a real key (must start with 'sk_'). Direct SDK probe returns 400 {'code':'invalid_api_key','status':'api_key_id_used_as_api_key'} for hi, en AND no language_code. Consequence: the new language_code accent fix never reaches ElevenLabs; 100% of voiceovers are produced by the OpenAI 'nova' fallback (verified provider=openai for hindi/hinglish/english projects), so the reported Indian-accent mismatch is NOT actually fixed for the end user.", "priority": "CRITICAL"},
+      {"endpoint": "ai_services.synthesize_openai_tts (fallback path)", "issue": "The OpenAI TTS fallback gets no language/accent information at all — synthesize_openai_tts(text, style='default') is called with a fixed 'nova' voice. Since the fallback is the only working provider right now, Hindi/Hinglish scripts are read with an American accent. Either pass the project language through and pick an accent-appropriate OpenAI voice, or surface a clear UI error instead of silently degrading accent quality.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "ai_services.synthesize_speech", "issue": "The old-SDK retry guard `if language_code and ('language_code' in msg or 'unexpected' in msg.lower())` is too broad — ElevenLabs error bodies/headers are long strings, so any error text containing the word 'unexpected' triggers a second full TTS request (double latency/quota). Prefer catching TypeError only, or inspecting the SDK signature once at import."},
+      {"endpoint": "/api/ai/tts", "issue": "Verified the endpoint does NOT set project.audio_url (only voice_stale/voice_script_version); the frontend PUTs audio_url afterwards. Works today, but a failed/aborted client PUT leaves a paid-for voiceover unpersisted — consider persisting audio_url server-side when project_id is supplied."},
+      {"endpoint": "/api/ai/tts/preview", "issue": "_VOICE_PREVIEW_CACHE is an unbounded in-memory dict keyed voice_id::language and is lost on every reload (hot reload observed during this session), so previews are re-billed after each restart. Fine for now, worth a TTL/Mongo cache later."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_tts_language.py",
+    "/app/backend/tests/test_cinereel_backend.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/tts_lang.xml"
+  ],
+  "action_items": [
+    "Replace ELEVENLABS_API_KEY in /app/backend/.env with a real ElevenLabs key (starts with 'sk_'); the current value is a key ID and every TTS call 400s with invalid_api_key. Until this is done the accent fix has zero user-visible effect.",
+    "Make the OpenAI TTS fallback language-aware (pass project language / choose an Indian-sounding voice) OR show an explicit 'accent may not match — ElevenLabs unavailable' warning in the response/UI, because the fallback is currently the only path that runs.",
+    "Tighten the old-SDK retry heuristic in synthesize_speech (catch TypeError instead of substring-matching 'unexpected' in the API error body) to avoid duplicate paid calls."
+  ],
+  "critical_code_review_comments": [
+    "ai_services.synthesize_speech: the recursive retry-without-language_code triggers on any error message containing 'unexpected' — ElevenLabs' verbose error strings can match, doubling requests.",
+    "The ElevenLabs failure is swallowed into a generic OpenAI fallback with only a 'note' field; no log/metric distinguishes 'plan issue' from 'invalid key', which is why the invalid key went unnoticed. Log the ElevenLabs error code once per process at WARNING level.",
+    "project_language_to_iso only maps hindi/hinglish/english/indian; any other catalog language (if added) silently returns None and reverts to English phonemes — add an explicit mapping table."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_tts_language.py (new)",
+    "/app/backend/tests/test_cinereel_backend.py (2 stale assertions: audio_url/image_url are now short /api/files/... URLs, not data: URIs)"
+  ],
+  "success_rate": {"backend": "100% (41/41 pytest) — but ElevenLabs path is unreachable, all TTS served by OpenAI fallback", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "Temporary admin projects TEST_TTS_hindi / TEST_TTS_hinglish / TEST_TTS_english and TEST_PROBE_* — all deleted after the run.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "admin@cinereel.ai / admin12345 (from /app/memory/test_credentials.md)",
+  "context_for_next_testing_agent": "Suite now has /app/backend/tests/test_tts_language.py. Its TTS assertions accept provider 'elevenlabs' OR 'openai', so they pass while ElevenLabs is broken — once a valid sk_ key is set, re-run and assert provider=='elevenlabs' plus listen-check accent. Backend err.log shows only benign JWT InsecureKeyLengthWarning and LiteLLM info lines, no language_code tracebacks. Old 402 paid_plan_required entries in backend.out.log are from a previous session (June dates).",
+  "rca_of_the_issue": "Code fix is correct: synthesize_speech(language_code=...) forwards language_code to client.text_to_speech.convert and the endpoints resolve it via project_language_to_iso (hindi/hinglish->'hi', english/indian->'en'); mapping and signature unit-verified. But a direct SDK probe with the configured credential returns HTTP 400 authentication_error/invalid_api_key: 'API key ID used as API key'. Therefore ElevenLabs never synthesises anything and /api/ai/tts always returns provider=openai (nova), an English-accented voice with no language hint — the accent complaint is unresolved for the user until a valid sk_ ElevenLabs key is configured and/or the fallback is made accent-aware."
+}

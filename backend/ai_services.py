@@ -437,27 +437,44 @@ async def generate_scene_image(prompt: str, aspect_ratio: str = "9:16") -> Optio
 
 # ---------- ElevenLabs TTS ----------
 async def synthesize_speech(text: str, voice_id: str, stability: float = 0.55,
-                            similarity_boost: float = 0.75, style: float = 0.3) -> dict:
-    """Returns {audio_url} on success or {error} on failure (so the route can refund credits)."""
+                            similarity_boost: float = 0.75, style: float = 0.3,
+                            language_code: Optional[str] = None) -> dict:
+    """Returns {audio_url} on success or {error} on failure (so the route can refund credits).
+
+    `language_code` (ISO-639-1: "hi", "en", etc.) tells ElevenLabs' multilingual v2
+    model to use the correct phoneme set for that language. Without it, English-
+    trained voices reading Hindi/Hinglish text sound English-accented — with it,
+    the same voice produces authentic Indian phonemes.
+    """
     if not ELEVEN_KEY:
         return {"error": "ELEVENLABS_API_KEY missing"}
+    # Real ElevenLabs API keys start with `sk_`. If the env value looks like an
+    # API-key-ID (raw hex from the dashboard), fail loudly so users know to update
+    # instead of silently falling back to OpenAI (which sounds American-English).
+    if not ELEVEN_KEY.startswith("sk_"):
+        return {"error": ("Invalid ELEVENLABS_API_KEY on server — the value looks like "
+                          "an API-key ID, not a key. Real keys start with 'sk_'. "
+                          "Go to elevenlabs.io → Profile → API Keys → 'Copy Key' "
+                          "(not the ID). Then update the backend .env and redeploy.")}
     try:
         from elevenlabs.client import ElevenLabs
-        from elevenlabs.core.api_error import ApiError  # type: ignore
 
         def _call():
             client = ElevenLabs(api_key=ELEVEN_KEY)
-            audio_iter = client.text_to_speech.convert(
-                text=text,
-                voice_id=voice_id,
-                model_id="eleven_multilingual_v2",
-                voice_settings={
+            kwargs = {
+                "text": text,
+                "voice_id": voice_id,
+                "model_id": "eleven_multilingual_v2",
+                "voice_settings": {
                     "stability": stability,
                     "similarity_boost": similarity_boost,
                     "style": style,
                     "use_speaker_boost": True,
                 },
-            )
+            }
+            if language_code:
+                kwargs["language_code"] = language_code
+            audio_iter = client.text_to_speech.convert(**kwargs)
             buf = b""
             for chunk in audio_iter:
                 if chunk:
@@ -467,8 +484,214 @@ async def synthesize_speech(text: str, voice_id: str, stability: float = 0.55,
         if not audio:
             return {"error": "Empty audio"}
         return {"audio_url": "data:audio/mpeg;base64," + base64.b64encode(audio).decode()}
-    except Exception as e:  # ApiError or generic
+    except Exception as e:
         msg = str(e)
+        # If the API rejected `language_code` (older SDK), retry once without it.
+        if language_code and ("language_code" in msg or "unexpected" in msg.lower()):
+            return await synthesize_speech(text, voice_id, stability, similarity_boost, style, None)
         if "paid_plan_required" in msg or "Free users cannot use library voices" in msg:
             return {"error": "Your ElevenLabs plan does not allow this voice. Please upgrade ElevenLabs or clone a voice into your library."}
         return {"error": f"Voice service error: {msg[:160]}"}
+
+
+def project_language_to_iso(lang: Optional[str]) -> Optional[str]:
+    """Map project language field → ElevenLabs ISO-639-1 code for accent locking."""
+    if not lang:
+        return None
+    lang = lang.lower()
+    if "hindi" in lang or "hinglish" in lang:
+        return "hi"
+    if "indian" in lang or "english" in lang:
+        return "en"
+    return None
+
+
+# ---------- SCRIPT REFINEMENT (manual editor helpers) ----------
+REFINE_SYSTEM = """You edit ad scripts for CineReel. Respond ONLY with the transformed script as PLAIN TEXT (no JSON, no markdown, no commentary). Preserve the writer's original intent unless the action explicitly requires a rewrite."""
+
+
+async def refine_script(text: str, action: str, language: str = "english",
+                         tone: Optional[str] = None, target_duration_sec: Optional[int] = None,
+                         target_language: Optional[str] = None) -> str:
+    action_prompts = {
+        "improve": (
+            f"Improve the ad script below in {language}. Punch up the hook, tighten the "
+            f"body, and end on a stronger CTA. Keep roughly the same length."
+        ),
+        "shorten": (
+            f"Shorten the ad script below in {language} to about "
+            f"{int((target_duration_sec or 20) * 2.5)} words while keeping the strongest hook + CTA."
+        ),
+        "expand": (
+            f"Expand the ad script below in {language} to about "
+            f"{int((target_duration_sec or 60) * 2.5)} words. Add sensory detail and a mid-story hook."
+        ),
+        "change_tone": (
+            f"Rewrite the ad script below in {language} but with a {tone or 'friendly'} tone. "
+            f"Keep the product/benefit but change the emotional register."
+        ),
+        "translate": (
+            f"Translate the ad script below into {target_language or 'hinglish'}. "
+            f"Use natural, idiomatic phrasing — no literal word-by-word translation."
+        ),
+        "split_scenes": (
+            f"Split the ad script below into 6 numbered scenes, each with the spoken voiceover "
+            f"and a one-line visual direction. Output as: 'Scene 1 - VO: ...  Visual: ...' etc."
+        ),
+    }
+    prompt = action_prompts.get(action, action_prompts["improve"])
+    user_text = f"{prompt}\n\n---\n{text.strip()}\n---"
+    out = await _claude_send(REFINE_SYSTEM, user_text)
+    return (out or "").strip().strip("`")
+
+
+# ---------- MULTI-CREATIVE ----------
+MULTI_CREATIVE_SYSTEM = """You are a creative director generating multiple ad variations for a single product. Each variation MUST have a genuinely different angle, hook and opening. Do NOT rephrase the same idea. Respond with JSON only, schema:
+{"variants": [
+  {"label": "short creative label", "angle": "problem_solution|emotional|ugc|product_demo|storytelling|curiosity|educational|direct_response|before_after|lifestyle|luxury",
+   "hook": "3-5 second scroll-stopping hook", "body": "1-2 sentence body", "cta": "call to action", "opening_visual": "short visual direction for the opening shot"}
+]}
+CRITICAL: Never invent a brand name. If no brand info given, use [BRAND]."""
+
+
+async def generate_multi_creatives(topic: str, count: int, language: str = "english",
+                                    tone: str = "professional", brand_name: Optional[str] = None,
+                                    context: str = "") -> List[dict]:
+    brand_line = f"Brand: {brand_name}" if brand_name else "No brand info — use [BRAND] placeholder."
+    ctx_line = f"\nContext:\n{context}" if context else ""
+    user = (
+        f"Topic: {topic}\nLanguage: {language}\nTone: {tone}\n{brand_line}{ctx_line}\n\n"
+        f"Generate EXACTLY {count} DISTINCT ad variations. Each MUST use a different `angle` from the enum. "
+        f"Return JSON only."
+    )
+    text = await _claude_send(MULTI_CREATIVE_SYSTEM, user)
+    data = _safe_json(text)
+    if isinstance(data, dict) and isinstance(data.get("variants"), list):
+        return data["variants"][:count]
+    return []
+
+
+# ---------- AD COPY (platform-specific text) ----------
+AD_COPY_SYSTEM = """You are a performance marketing copywriter. Generate platform-specific ad copy in the requested language. Respond with JSON only. Every field MUST be in the requested language.
+
+Schema:
+{"platforms": {
+  "meta": {"primary_text": "", "headline": "", "description": "", "cta": ""},
+  "google": {"headline_1": "", "headline_2": "", "headline_3": "", "description_1": "", "description_2": "", "cta": ""},
+  "youtube": {"video_hook": "", "script_intro": "", "cta_text": "", "companion_headline": ""},
+  "tiktok": {"caption": "", "hook": "", "cta": ""},
+  "linkedin": {"intro_text": "", "headline": "", "cta": ""},
+  "snapchat": {"headline": "", "cta": ""},
+  "x": {"tweet": "", "cta": ""},
+  "pinterest": {"title": "", "description": ""}
+}}
+
+Only include the platforms in the user's request. Never fabricate stats or testimonials."""
+
+
+async def generate_ad_copy(topic: str, hook: Optional[str], body: Optional[str], cta: Optional[str],
+                            platforms: List[str], language: str = "english",
+                            tone: str = "professional", length: str = "medium",
+                            brand_name: Optional[str] = None) -> dict:
+    brand_line = f"Brand: {brand_name}" if brand_name else "No brand info — use [BRAND] placeholder."
+    ctx = "\n".join([
+        f"Topic: {topic}", brand_line,
+        f"Existing hook: {hook}" if hook else "",
+        f"Body: {body}" if body else "",
+        f"CTA: {cta}" if cta else "",
+        f"Language: {language}", f"Tone: {tone}", f"Length preference: {length}",
+        f"Platforms needed: {', '.join(platforms)}",
+    ])
+    text = await _claude_send(AD_COPY_SYSTEM, ctx + "\n\nReturn JSON only.")
+    data = _safe_json(text)
+    if isinstance(data, dict) and "platforms" in data:
+        return data["platforms"]
+    return {}
+
+
+# ---------- MULTI-PLATFORM CAMPAIGN ----------
+CAMPAIGN_SYSTEM = """You generate a full multi-platform ad campaign from a single product concept. Each platform gets its own tailored: hook, script, cta, aspect_ratio, duration_sec, on_screen_text, and copy. Do NOT simply duplicate the same ad — each platform's version must reflect that platform's native format.
+
+Return JSON only:
+{"campaign": [
+  {"platform": "instagram_reel", "aspect_ratio": "9:16", "duration_sec": 20, "hook": "", "script": "", "cta": "", "on_screen_text": "", "caption": ""},
+  ...
+]}
+
+Aspect ratio guidance:
+- instagram_reel, tiktok, youtube_short, snapchat: 9:16, 15-30s
+- facebook_ad: 1:1 or 4:5, 15-30s
+- youtube_ad: 16:9, 30-60s
+- linkedin_ad: 1:1 or 16:9, 30s
+- x: 16:9, 15-30s
+
+Never invent stats or testimonials. Use [BRAND] if no brand is given."""
+
+
+async def generate_campaign(topic: str, platforms: List[str], hook: Optional[str],
+                             body: Optional[str], cta: Optional[str], language: str = "english",
+                             brand_name: Optional[str] = None) -> List[dict]:
+    brand_line = f"Brand: {brand_name}" if brand_name else "No brand — use [BRAND]."
+    user = "\n".join([
+        f"Topic: {topic}", brand_line, f"Language: {language}",
+        f"Existing hook: {hook}" if hook else "",
+        f"Body: {body}" if body else "",
+        f"CTA: {cta}" if cta else "",
+        f"Platforms: {', '.join(platforms)}",
+        "Return JSON only.",
+    ])
+    text = await _claude_send(CAMPAIGN_SYSTEM, user)
+    data = _safe_json(text)
+    if isinstance(data, dict) and isinstance(data.get("campaign"), list):
+        return data["campaign"]
+    return []
+
+
+# ---------- CREATIVE SCORE ----------
+CREATIVE_SCORE_SYSTEM = """You are an ad performance analyst. Score a single ad creative on multiple axes (0-100) and suggest ONE high-impact fix per axis. Respond JSON only:
+
+{"scores": {
+  "hook": {"value": n, "note": "why"},
+  "message": {"value": n, "note": "why"},
+  "visual": {"value": n, "note": "why"},
+  "cta": {"value": n, "note": "why"},
+  "platform_fit": {"value": n, "note": "why"}
+},
+ "overall": n,
+ "suggestions": [
+   {"axis": "hook|message|visual|cta|platform_fit", "fix": "specific one-line rewrite the user can apply without regenerating the whole video"}
+ ]}"""
+
+
+async def score_creative(hook: str, body: Optional[str], cta: Optional[str], platform: str,
+                          language: str) -> dict:
+    user = (
+        f"Platform: {platform}. Language: {language}.\nHOOK: {hook}\n"
+        f"BODY: {body or ''}\nCTA: {cta or ''}\n\nScore the creative and suggest fixes. Return JSON only."
+    )
+    text = await _claude_send(CREATIVE_SCORE_SYSTEM, user)
+    data = _safe_json(text)
+    if isinstance(data, dict) and "scores" in data:
+        return data
+    return {"scores": {}, "overall": 0, "suggestions": []}
+
+
+# ---------- COMPLIANCE ----------
+COMPLIANCE_SYSTEM = """You are an ad-policy reviewer for Meta, Google, TikTok, and LinkedIn ads. Read the given ad copy and flag any risky wording. Never guarantee approval. Respond JSON only:
+
+{"risk_level": "low|medium|high",
+ "flags": [
+   {"snippet": "the exact risky phrase", "reason": "which policy area", "safer": "safer rewrite"}
+ ],
+ "summary": "one-sentence overall assessment"}
+
+Policy areas to check: misleading claims, unsupported statistics, guaranteed results, fake testimonials, sensational hook, sensitive personal attributes, before/after health claims, financial guarantees, negative body image."""
+
+
+async def check_compliance(text: str, platform: str, language: str) -> dict:
+    user = f"Platform: {platform}. Language: {language}.\n\nAD COPY:\n{text}\n\nReturn JSON only."
+    out = await _claude_send(COMPLIANCE_SYSTEM, user)
+    data = _safe_json(out)
+    if isinstance(data, dict) and "risk_level" in data:
+        return data
+    return {"risk_level": "low", "flags": [], "summary": "No issues detected."}

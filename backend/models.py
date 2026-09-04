@@ -195,3 +195,108 @@ class AdminUserUpdate(BaseModel):
     credits: Optional[int] = None
     plan: Optional[str] = None
     role: Optional[str] = None
+
+
+# ---------- WORKSPACES / CLIENT FOLDERS ----------
+class Workspace(BaseModel):
+    workspace_id: str = Field(default_factory=lambda: new_id("ws"))
+    user_id: str
+    name: str
+    client_name: Optional[str] = None
+    color: str = "#E2FF3D"
+    brand_kit_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class WorkspaceCreate(BaseModel):
+    name: str
+    client_name: Optional[str] = None
+    color: str = "#E2FF3D"
+    brand_kit_id: Optional[str] = None
+
+
+# ---------- SCRIPT REFINE ----------
+class ScriptRefineRequest(BaseModel):
+    script_text: str
+    action: Literal["improve", "shorten", "expand", "change_tone", "translate", "split_scenes"]
+    language: str = "english"
+    tone: Optional[str] = None
+    target_duration_sec: Optional[int] = None
+    target_language: Optional[str] = None
+    scene_count: int = 6
+
+
+# ---------- AD COPY / CAMPAIGN ----------
+class AdCopyRequest(BaseModel):
+    topic: str
+    brand_name: Optional[str] = None
+    hook: Optional[str] = None
+    body: Optional[str] = None
+    cta: Optional[str] = None
+    platforms: List[str] = ["meta", "google", "youtube", "tiktok", "linkedin"]
+    language: str = "english"
+    tone: str = "professional"
+    length: Literal["short", "medium", "long"] = "medium"
+
+
+class MultiCreativeRequest(BaseModel):
+    project_id: Optional[str] = None
+    topic: str
+    language: str = "english"
+    video_type: str = "cinematic_ad"
+    count: Literal[1, 3, 5, 10, 20] = 5
+    tone: str = "professional"
+    duration_sec: int = 30
+    brand_name: Optional[str] = None
+
+
+class CampaignRequest(BaseModel):
+    project_id: Optional[str] = None
+    topic: str
+    hook: Optional[str] = None
+    body: Optional[str] = None
+    cta: Optional[str] = None
+    language: str = "english"
+    platforms: List[str] = ["instagram_reel", "facebook_ad", "youtube_short", "youtube_ad",
+                             "tiktok", "linkedin_ad", "snapchat", "x"]
+
+
+class CreativeScoreRequest(BaseModel):
+    hook: str
+    body: Optional[str] = None
+    cta: Optional[str] = None
+    platform: str = "meta"
+    language: str = "english"
+
+
+class ComplianceRequest(BaseModel):
+    text: str
+    platform: str = "meta"
+    language: str = "english"
+
+
+class MultiPlatformResizeRequest(BaseModel):
+    project_id: str
+    aspect_ratios: List[str] = ["9:16", "16:9", "1:1", "4:5"]
+
+
+class CreditsEstimateRequest(BaseModel):
+    action: str  # script | variants | tts | scene_image | storyboard | render | multi_creative | ad_copy | campaign | video_clip
+    count: int = 1
+    duration_sec: int = 30
+
+
+# ---------- MEDIA / STT ----------
+class STTRequest(BaseModel):
+    audio_url: str  # must be a /api/files/audio/... path served by our backend
+    language: str = "auto"
+
+
+# ---------- PROJECT VERSION SNAPSHOT ----------
+class ProjectVersion(BaseModel):
+    version_id: str = Field(default_factory=lambda: new_id("ver"))
+    project_id: str
+    user_id: str
+    label: str = "Snapshot"
+    snapshot: dict  # {script, scenes, audio_url, thumbnail, duration_sec}
+    created_at: datetime = Field(default_factory=utc_now)

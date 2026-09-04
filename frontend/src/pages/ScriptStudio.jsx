@@ -1,11 +1,19 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Sparkles, Loader2, Copy, Film } from "lucide-react";
+import { Sparkles, Loader2, Copy, Film, Edit3, Wand2, Scissors, Type, Languages, Layers } from "lucide-react";
 import { api } from "../lib/api";
 import { toast } from "sonner";
 
 const LANGS = ["english", "hindi", "hinglish"];
-const TONES = ["professional", "motivational", "friendly", "emotional", "storytelling"];
+const TONES = ["professional", "motivational", "friendly", "emotional", "storytelling", "luxury", "ugc"];
+const REFINE_ACTIONS = [
+  { id: "improve", label: "Improve", icon: Wand2 },
+  { id: "shorten", label: "Shorten", icon: Scissors },
+  { id: "expand", label: "Expand", icon: Layers },
+  { id: "change_tone", label: "Change tone", icon: Type },
+  { id: "translate", label: "Translate", icon: Languages },
+  { id: "split_scenes", label: "Split scenes", icon: Edit3 },
+];
 
 export default function ScriptStudio() {
   const navigate = useNavigate();
@@ -22,6 +30,57 @@ export default function ScriptStudio() {
   const [busyH, setBusyH] = useState(false);
   const [busyC, setBusyC] = useState(false);
   const [busyProj, setBusyProj] = useState(false);
+
+  // Manual editor state
+  const [manualText, setManualText] = useState("");
+  const [refining, setRefining] = useState(null); // action id when in-flight
+  const [refineMeta, setRefineMeta] = useState({ tone: "friendly", target_language: "hinglish" });
+  const wordCount = manualText.trim() ? manualText.trim().split(/\s+/).length : 0;
+  const charCount = manualText.length;
+  const estDurationSec = Math.max(1, Math.round(wordCount / 2.5));
+  const sceneCount = Math.max(1, Math.round(estDurationSec / 5));
+
+  const runRefine = async (action) => {
+    if (!manualText.trim()) return toast.error("Paste or type a script first");
+    setRefining(action);
+    try {
+      const { data } = await api.post("/ai/script/refine", {
+        script_text: manualText, action, language,
+        tone: refineMeta.tone,
+        target_duration_sec: action === "shorten" ? Math.max(15, duration - 10) : action === "expand" ? duration + 20 : undefined,
+        target_language: action === "translate" ? refineMeta.target_language : undefined,
+      });
+      setManualText(data.text);
+      toast.success(`Script ${action.replace("_", " ")}ed`);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Refine failed");
+    } finally { setRefining(null); }
+  };
+
+  const createFromManual = async () => {
+    if (!manualText.trim()) return toast.error("Empty script");
+    setBusyProj(true);
+    try {
+      const words = manualText.trim().split(/\s+/);
+      const title = words.slice(0, 8).join(" ") || "Manual script";
+      const scriptObj = {
+        hook: words.slice(0, 12).join(" "),
+        body: manualText,
+        cta: cta || "",
+        voiceover_script: manualText,
+        scenes: [], captions: [], music_mood: "cinematic",
+      };
+      const aspect = ["yt_short","ig_reel","tiktok","app_promo","talking_avatar"].includes(videoType) ? "9:16"
+        : videoType === "product_ad" ? "1:1" : "16:9";
+      const { data } = await api.post("/projects/from-script", {
+        title, video_type: videoType, language, aspect_ratio: aspect,
+        duration_sec: Math.max(15, estDurationSec), script: scriptObj,
+      });
+      toast.success("Project created from manual script");
+      navigate(`/dashboard/projects/${data.project_id}`);
+    } catch (e) { toast.error("Failed to create project"); }
+    finally { setBusyProj(false); }
+  };
 
   const createVideoProject = async () => {
     if (!script) return;
@@ -75,13 +134,57 @@ export default function ScriptStudio() {
   const copy = (t) => { navigator.clipboard.writeText(t); toast.success("Copied"); };
 
   return (
-    <div data-testid="script-studio" className="grid lg:grid-cols-12 gap-6">
-      <div className="lg:col-span-5 space-y-4">
-        <div>
-          <div className="label-mono text-zinc-500 mb-2">/ SCRIPT STUDIO</div>
-          <h1 className="text-3xl font-semibold tracking-tight">Write the spine of your reel.</h1>
+    <div data-testid="script-studio" className="space-y-6">
+      <div>
+        <div className="label-mono text-zinc-500 mb-2">/ SCRIPT STUDIO</div>
+        <h1 className="text-3xl font-semibold tracking-tight">Write the spine of your reel.</h1>
+        <p className="text-zinc-400 text-sm mt-2">Generate scripts with AI, or paste your own & refine.</p>
+      </div>
+
+      {/* MANUAL EDITOR */}
+      <div className="surface rounded-xl p-5" data-testid="ss-manual-editor">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div className="label-mono text-[#E2FF3D]">/ MANUAL SCRIPT EDITOR</div>
+          <div className="flex items-center gap-4 label-mono text-zinc-500 text-[10px]">
+            <span data-testid="ss-word-count">{wordCount} WORDS</span>
+            <span data-testid="ss-char-count">{charCount} CHARS</span>
+            <span data-testid="ss-est-duration">~{estDurationSec}s VOICE</span>
+            <span data-testid="ss-scene-count">{sceneCount} SCENES</span>
+          </div>
         </div>
+        <textarea data-testid="ss-manual-text" value={manualText} onChange={(e)=>setManualText(e.target.value)} rows={6}
+          className="w-full bg-[#0A0A0B] border border-white/10 rounded-lg px-3 py-3 text-sm outline-none focus:border-white/30 resize-y"
+          placeholder="Paste your own script here — Hindi, Hinglish or English. Or start typing…" />
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {REFINE_ACTIONS.map((a) => (
+            <button key={a.id} data-testid={`ss-refine-${a.id}`} onClick={()=>runRefine(a.id)} disabled={refining===a.id}
+              className="rounded-full surface px-3 py-1.5 text-xs flex items-center gap-1.5 disabled:opacity-60 hover:border-[#E2FF3D]">
+              {refining===a.id ? <Loader2 className="w-3 h-3 animate-spin"/> : <a.icon className="w-3 h-3"/>}
+              {a.label}
+            </button>
+          ))}
+          <select data-testid="ss-refine-tone" value={refineMeta.tone}
+            onChange={(e)=>setRefineMeta((p)=>({...p, tone: e.target.value}))}
+            className="bg-[#0A0A0B] border border-white/10 rounded-lg px-2 py-1 text-xs">
+            {TONES.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <select data-testid="ss-refine-lang" value={refineMeta.target_language}
+            onChange={(e)=>setRefineMeta((p)=>({...p, target_language: e.target.value}))}
+            className="bg-[#0A0A0B] border border-white/10 rounded-lg px-2 py-1 text-xs">
+            {LANGS.map((l) => <option key={l} value={l}>Translate → {l}</option>)}
+          </select>
+          <button data-testid="ss-manual-create" onClick={createFromManual} disabled={busyProj}
+            className="ml-auto btn-volt rounded-full px-4 py-1.5 text-xs flex items-center gap-1.5 disabled:opacity-60">
+            {busyProj ? <Loader2 className="w-3 h-3 animate-spin"/> : <Film className="w-3 h-3"/>}
+            Turn into video project
+          </button>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-12 gap-6">
+      <div className="lg:col-span-5 space-y-4">
         <div className="surface rounded-xl p-5 space-y-4">
+          <div className="label-mono text-[#E2FF3D]">/ AI SCRIPT GENERATOR</div>
           <Field label="Topic / Product / URL">
             <textarea data-testid="ss-topic" value={topic} onChange={(e)=>setTopic(e.target.value)} rows={3}
               className="w-full bg-[#0A0A0B] border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-white/30 resize-none"
@@ -187,6 +290,7 @@ export default function ScriptStudio() {
             )}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

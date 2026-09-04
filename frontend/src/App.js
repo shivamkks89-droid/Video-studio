@@ -22,6 +22,8 @@ import Pricing from "./pages/Pricing";
 import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
 import SharePage from "./pages/SharePage";
+import AdStudio from "./pages/AdStudio";
+import Workspaces from "./pages/Workspaces";
 
 function AppRouter() {
   const location = useLocation();
@@ -47,6 +49,8 @@ function AppRouter() {
         <Route path="script" element={<ScriptStudio />} />
         <Route path="voice" element={<VoiceStudio />} />
         <Route path="scene" element={<SceneStudio />} />
+        <Route path="ad-studio" element={<AdStudio />} />
+        <Route path="workspaces" element={<Workspaces />} />
         <Route path="templates" element={<Templates />} />
         <Route path="brand-kit" element={<BrandKit />} />
         <Route path="assets" element={<Assets />} />
