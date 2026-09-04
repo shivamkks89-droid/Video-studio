@@ -197,6 +197,44 @@ async def generate_script(payload: dict) -> dict:
     audience = payload.get("target_audience") or "general audience"
     cta = payload.get("cta") or "Sign up / Visit website"
     notes = payload.get("extra_notes") or ""
+
+    # Gender / age tuning — produces natively-appealing hooks for girls-only ads etc.
+    gender_hint = ""
+    g = (payload.get("target_gender") or "").lower().strip()
+    if g in ("women", "girls", "female"):
+        gender_hint = (
+            "\nGENDER FOCUS: This ad is aimed at WOMEN & GIRLS. The hook, imagery, "
+            "and language MUST speak *directly* to a female viewer. Use pronouns "
+            "(she / her / tu / aap) that address a woman. Reference relatable female "
+            "life-moments (self-care time, gym-guilt, morning routine, kitchen breaks, "
+            "friend circles, glow-ups) rather than generic gym-bro / hustle-culture tropes. "
+            "Emotionally resonate with empowerment, self-love, confidence, community. "
+            "NEVER use body-shaming or before/after weight claims."
+        )
+    elif g in ("men", "boys", "male"):
+        gender_hint = (
+            "\nGENDER FOCUS: This ad is aimed at MEN. Speak directly to him. "
+            "Anchor to male-specific moments (early-morning gym, hustle, career wins, "
+            "sports, gaming). Avoid stereotypes; keep it aspirational not toxic."
+        )
+    elif g in ("kids", "children"):
+        gender_hint = (
+            "\nAGE FOCUS: This ad is aimed at CHILDREN. Keep vocabulary simple, energetic, "
+            "colourful, cartoon-friendly. No fear-based hooks. Parents will co-view."
+        )
+    elif g in ("teens", "gen_z"):
+        gender_hint = (
+            "\nGENERATION FOCUS: Gen-Z / teens. Use fast punchy hooks, meme-native slang "
+            "(without being cringy), TikTok pacing. Reference culture: study stress, "
+            "reels binges, friend group vibes, glow-ups."
+        )
+
+    age = (payload.get("target_age") or "").strip()
+    if age:
+        gender_hint += (
+            f"\nAGE RANGE: The specific target age is {age}. Reference life-stage "
+            f"specific pain points and desires accurate for this age band."
+        )
     # Fixed 6-scene structure — matches the storyboard mixer which allocates
     # exactly 4 real product screenshots + 2 AI-rendered scenes.
     scene_count = 6
@@ -205,7 +243,7 @@ async def generate_script(payload: dict) -> dict:
 Topic: {topic}
 Language: {language}
 Tone: {tone}
-Target audience: {audience}
+Target audience: {audience}{gender_hint}
 Desired CTA: {cta}
 Notes: {notes}
 

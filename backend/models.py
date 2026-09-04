@@ -99,6 +99,8 @@ class ScriptRequest(BaseModel):
     tone: str = "professional"  # professional, motivational, friendly, emotional, storytelling
     duration_sec: int = 30
     target_audience: Optional[str] = None
+    target_gender: Optional[str] = None  # women | men | girls | boys | kids | teens | all
+    target_age: Optional[str] = None     # e.g. "18-24", "25-34", "35-45", "45+"
     cta: Optional[str] = None
     extra_notes: Optional[str] = None
     brand_name: Optional[str] = None

@@ -23,6 +23,8 @@ export default function ScriptStudio() {
   const [duration, setDuration] = useState(30);
   const [videoType, setVideoType] = useState("cinematic_ad");
   const [cta, setCta] = useState("");
+  const [targetGender, setTargetGender] = useState("all");
+  const [targetAge, setTargetAge] = useState("");
   const [script, setScript] = useState(null);
   const [hooks, setHooks] = useState([]);
   const [ctas, setCtas] = useState([]);
@@ -105,6 +107,8 @@ export default function ScriptStudio() {
     try {
       const { data } = await api.post("/ai/script", {
         topic, language, tone, duration_sec: duration, video_type: videoType, cta,
+        target_gender: targetGender === "all" ? undefined : targetGender,
+        target_age: targetAge || undefined,
       });
       setScript(data.script);
       toast.success("Script ready");
@@ -207,6 +211,36 @@ export default function ScriptStudio() {
               className="w-full bg-[#0A0A0B] border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-white/30"
               placeholder="Download now · Visit website" />
           </Field>
+          <div>
+            <div className="label-mono text-zinc-500 mb-2">TARGET GENDER</div>
+            <div className="flex gap-2 flex-wrap" data-testid="ss-gender">
+              {[
+                { id: "women", label: "Women / Girls" },
+                { id: "men", label: "Men / Boys" },
+                { id: "teens", label: "Gen-Z / Teens" },
+                { id: "kids", label: "Kids" },
+                { id: "all", label: "All" },
+              ].map((g) => (
+                <button key={g.id} type="button" data-testid={`ss-gender-${g.id}`}
+                  onClick={()=>setTargetGender(g.id)}
+                  className={`rounded-full px-3 py-1.5 text-xs transition ${
+                    targetGender === g.id ? "bg-[#E2FF3D] text-black font-semibold" : "surface"
+                  }`}>{g.label}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="label-mono text-zinc-500 mb-2">TARGET AGE (optional)</div>
+            <div className="flex gap-2 flex-wrap" data-testid="ss-age">
+              {["", "13-17", "18-24", "25-34", "35-45", "45+"].map((a) => (
+                <button key={a || "any"} type="button" data-testid={`ss-age-${a || "any"}`}
+                  onClick={()=>setTargetAge(a)}
+                  className={`rounded-full px-3 py-1.5 text-xs transition ${
+                    targetAge === a ? "bg-[#E2FF3D] text-black font-semibold" : "surface"
+                  }`}>{a || "Any"}</button>
+              ))}
+            </div>
+          </div>
           <div className="flex gap-2 pt-2">
             <button data-testid="ss-generate" onClick={run} disabled={busy} className="btn-volt rounded-full px-4 py-2.5 text-sm flex items-center gap-2 disabled:opacity-60 flex-1 justify-center">
               {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
