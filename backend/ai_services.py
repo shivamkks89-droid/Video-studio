@@ -203,19 +203,39 @@ async def generate_script(payload: dict) -> dict:
     g = (payload.get("target_gender") or "").lower().strip()
     if g in ("women", "girls", "female"):
         gender_hint = (
-            "\nGENDER FOCUS: This ad is aimed at WOMEN & GIRLS. The hook, imagery, "
-            "and language MUST speak *directly* to a female viewer. Use pronouns "
-            "(she / her / tu / aap) that address a woman. Reference relatable female "
-            "life-moments (self-care time, gym-guilt, morning routine, kitchen breaks, "
-            "friend circles, glow-ups) rather than generic gym-bro / hustle-culture tropes. "
-            "Emotionally resonate with empowerment, self-love, confidence, community. "
-            "NEVER use body-shaming or before/after weight claims."
+            "\n\n============ GENDER FOCUS: WOMEN / GIRLS ONLY ============\n"
+            "THE ENTIRE SCRIPT MUST FEEL LIKE IT WAS WRITTEN BY A WOMAN FOR A WOMAN.\n"
+            "\n"
+            "HARD RULES (violating any of these = broken output):\n"
+            "1. NEVER use these male-only Hindi/Hinglish words anywhere in the script: "
+            "'bhai', 'bhaiya', 'dost' (unless clearly gender-neutral), 'yaar bhai', "
+            "'dude', 'bro', 'guys', 'mard', 'ladka'.\n"
+            "2. ALWAYS use feminine second-person address: 'ladki', 'girl', 'queen', "
+            "'behen' (if casual), 'baby', 'friend', 'tu' (feminine), 'tumhari'.\n"
+            "3. If using verbs with gendered inflection in Hindi/Hinglish, use FEMININE forms: "
+            "'kar rahi ho' (not 'kar rahe ho'), 'thak gayi', 'pareshan hoke', "
+            "'kar chuki ho', 'ready ho'.\n"
+            "4. Reference female-native life-moments: skincare, gym-guilt as a woman, "
+            "morning routine, self-care Sunday, glow-up, karva-chauth, wedding-season, "
+            "kitchen breaks, saas-bahu chats, working-mom stress, dating fatigue, "
+            "friend-circle, mummy-ki-baatein, mehendi/haldi, gym-with-mom, "
+            "period cramps (if health-adjacent), pinterest boards.\n"
+            "5. Emotional register: empowerment, self-love, sisterhood, confidence, "
+            "'you deserve this', 'main hoon apni fav' vibe.\n"
+            "6. NEVER body-shame or use before/after weight-loss claims.\n"
+            "7. Hook must PASS the 'read out loud to a 22-year-old girl' test — "
+            "would she nod and say 'yes exactly' or roll her eyes?\n"
+            "===========================================================\n"
         )
     elif g in ("men", "boys", "male"):
         gender_hint = (
-            "\nGENDER FOCUS: This ad is aimed at MEN. Speak directly to him. "
-            "Anchor to male-specific moments (early-morning gym, hustle, career wins, "
-            "sports, gaming). Avoid stereotypes; keep it aspirational not toxic."
+            "\n\n============ GENDER FOCUS: MEN / BOYS ONLY ============\n"
+            "Speak directly to him. Use 'bhai', 'yaar', 'dude', 'dost'. "
+            "Verbs in masculine form ('kar rahe ho', 'thak gaya'). "
+            "Anchor to male-specific moments: early-morning gym, hustle, career wins, "
+            "sports, cricket, gaming, weekend rides, salary day, first-car dreams. "
+            "Avoid toxic masculinity — aspirational, not brotoxic.\n"
+            "========================================================\n"
         )
     elif g in ("kids", "children"):
         gender_hint = (

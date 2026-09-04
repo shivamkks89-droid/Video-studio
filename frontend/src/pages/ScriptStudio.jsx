@@ -292,28 +292,12 @@ export default function ScriptStudio() {
           <div className="space-y-5">
             <div className="flex items-center justify-between gap-3 flex-wrap pb-3 border-b border-white/5">
               <div className="label-mono text-[#E2FF3D]">SCRIPT READY</div>
-              <div className="flex gap-2">
-                <button data-testid="ss-copy-full"
-                  onClick={()=>{
-                    const full = [
-                      `HOOK: ${script.hook || ""}`,
-                      `BODY: ${script.body || ""}`,
-                      `CTA: ${script.cta || ""}`,
-                      "",
-                      `VOICEOVER:\n${script.voiceover_script || ""}`,
-                    ].join("\n");
-                    copy(full);
-                  }}
-                  className="surface rounded-full px-3 py-2 text-xs flex items-center gap-1.5 hover:border-[#E2FF3D]">
-                  <Copy className="w-3.5 h-3.5"/> Copy full script
-                </button>
-                <button data-testid="ss-create-video"
-                  onClick={createVideoProject} disabled={busyProj}
-                  className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
-                  {busyProj ? <Loader2 className="w-4 h-4 animate-spin" /> : <Film className="w-4 h-4" />}
-                  {busyProj ? "Creating…" : "Make Video from this Script →"}
-                </button>
-              </div>
+              <button data-testid="ss-create-video"
+                onClick={createVideoProject} disabled={busyProj}
+                className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
+                {busyProj ? <Loader2 className="w-4 h-4 animate-spin" /> : <Film className="w-4 h-4" />}
+                {busyProj ? "Creating…" : "Make Video from this Script →"}
+              </button>
             </div>
             <Row label="HOOK" copyable={script.hook}>{script.hook}</Row>
             <Row label="BODY" copyable={script.body}>{script.body}</Row>

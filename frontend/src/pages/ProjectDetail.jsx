@@ -635,24 +635,6 @@ export default function ProjectDetail() {
             )}
             {project.script?.hook && (
               <div className="mt-4 space-y-2 text-sm" data-testid="pd-script-out">
-                <div className="flex justify-end mb-1">
-                  <button data-testid="pd-copy-full" onClick={()=>{
-                    const s = project.script || {};
-                    const full = [
-                      `HOOK: ${s.hook || ""}`,
-                      `BODY: ${s.body || ""}`,
-                      `CTA: ${s.cta || ""}`,
-                      s.captions?.length ? `CAPTIONS: ${s.captions.join(" · ")}` : "",
-                      "",
-                      `VOICEOVER:\n${s.voiceover_script || s.body || ""}`,
-                    ].filter(Boolean).join("\n");
-                    navigator.clipboard.writeText(full);
-                    toast.success("Full script copied");
-                  }}
-                    className="surface rounded-full px-3 py-1 text-[11px] flex items-center gap-1.5 hover:border-[#E2FF3D]">
-                    <Copy className="w-3 h-3" /> Copy full script
-                  </button>
-                </div>
                 <Row label="HOOK" copyable={project.script.hook}>{project.script.hook}</Row>
                 <Row label="BODY" copyable={project.script.body}>{project.script.body}</Row>
                 <Row label="CTA" copyable={project.script.cta}>{project.script.cta}</Row>
