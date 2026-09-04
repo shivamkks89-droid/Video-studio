@@ -23,6 +23,7 @@ class User(BaseModel):
     role: Literal["user", "admin"] = "user"
     credits: int = 100
     plan: Literal["free", "creator", "studio", "enterprise"] = "free"
+    unlimited_credits: bool = False
     created_at: datetime = Field(default_factory=utc_now)
 
 
@@ -34,6 +35,7 @@ class UserPublic(BaseModel):
     role: str = "user"
     credits: int = 0
     plan: str = "free"
+    unlimited_credits: bool = False
 
 
 class SignupRequest(BaseModel):

@@ -74,7 +74,8 @@ def _doc(model: BaseModel) -> dict:
 
 def _public(u: User) -> UserPublic:
     return UserPublic(user_id=u.user_id, email=u.email, name=u.name,
-                      picture=u.picture, role=u.role, credits=u.credits, plan=u.plan)
+                      picture=u.picture, role=u.role, credits=u.credits, plan=u.plan,
+                      unlimited_credits=getattr(u, "unlimited_credits", False))
 
 
 async def _current(request: Request) -> User:
@@ -82,6 +83,9 @@ async def _current(request: Request) -> User:
 
 
 async def _charge_credits(user: User, amount: int, reason: str, project_id: Optional[str] = None) -> User:
+    # Unlimited-credit users (VIP / super-admin) bypass all credit deduction.
+    if getattr(user, "unlimited_credits", False):
+        return user
     if user.credits < amount:
         raise HTTPException(status_code=402, detail="Insufficient credits. Please upgrade your plan.")
     new_credits = user.credits - amount
