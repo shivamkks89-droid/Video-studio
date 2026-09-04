@@ -258,18 +258,34 @@ export default function ScriptStudio() {
           <div className="space-y-5">
             <div className="flex items-center justify-between gap-3 flex-wrap pb-3 border-b border-white/5">
               <div className="label-mono text-[#E2FF3D]">SCRIPT READY</div>
-              <button data-testid="ss-create-video"
-                onClick={createVideoProject} disabled={busyProj}
-                className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
-                {busyProj ? <Loader2 className="w-4 h-4 animate-spin" /> : <Film className="w-4 h-4" />}
-                {busyProj ? "Creating…" : "Make Video from this Script →"}
-              </button>
+              <div className="flex gap-2">
+                <button data-testid="ss-copy-full"
+                  onClick={()=>{
+                    const full = [
+                      `HOOK: ${script.hook || ""}`,
+                      `BODY: ${script.body || ""}`,
+                      `CTA: ${script.cta || ""}`,
+                      "",
+                      `VOICEOVER:\n${script.voiceover_script || ""}`,
+                    ].join("\n");
+                    copy(full);
+                  }}
+                  className="surface rounded-full px-3 py-2 text-xs flex items-center gap-1.5 hover:border-[#E2FF3D]">
+                  <Copy className="w-3.5 h-3.5"/> Copy full script
+                </button>
+                <button data-testid="ss-create-video"
+                  onClick={createVideoProject} disabled={busyProj}
+                  className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
+                  {busyProj ? <Loader2 className="w-4 h-4 animate-spin" /> : <Film className="w-4 h-4" />}
+                  {busyProj ? "Creating…" : "Make Video from this Script →"}
+                </button>
+              </div>
             </div>
-            <Row label="HOOK">{script.hook}</Row>
-            <Row label="BODY">{script.body}</Row>
-            <Row label="CTA">{script.cta}</Row>
-            <Row label="VOICEOVER">{script.voiceover_script}</Row>
-            {script.captions && <Row label="CAPTIONS">{script.captions.join(" · ")}</Row>}
+            <Row label="HOOK" copyable={script.hook}>{script.hook}</Row>
+            <Row label="BODY" copyable={script.body}>{script.body}</Row>
+            <Row label="CTA" copyable={script.cta}>{script.cta}</Row>
+            <Row label="VOICEOVER" copyable={script.voiceover_script}>{script.voiceover_script}</Row>
+            {script.captions && <Row label="CAPTIONS" copyable={script.captions.join(" · ")}>{script.captions.join(" · ")}</Row>}
             {script.music_mood && <Row label="MUSIC">{script.music_mood}</Row>}
             {script.scenes?.length > 0 && (
               <div>
@@ -314,10 +330,24 @@ function Select({ label, value, setValue, options, testid }) {
     </Field>
   );
 }
-function Row({ label, children }) {
+function Row({ label, children, copyable }) {
+  const doCopy = () => {
+    if (!copyable) return;
+    navigator.clipboard.writeText(String(copyable));
+    if (typeof window !== "undefined") {
+      // Prevent hard dep — use toast if imported by parent
+      try { require("sonner").toast.success("Copied"); } catch (_) {}
+    }
+  };
   return (
     <div>
-      <div className="label-mono text-zinc-500 mb-1">{label}</div>
+      <div className="flex items-center justify-between mb-1">
+        <div className="label-mono text-zinc-500">{label}</div>
+        {copyable && (
+          <button data-testid={`ss-copy-${label.toLowerCase()}`} onClick={doCopy}
+            className="text-zinc-500 hover:text-white transition"><Copy className="w-3.5 h-3.5"/></button>
+        )}
+      </div>
       <div className="text-zinc-200 leading-relaxed">{children}</div>
     </div>
   );

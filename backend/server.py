@@ -1470,6 +1470,39 @@ class QuickProjectFromScript(BaseModel):
 @api.post("/projects/from-script")
 async def create_project_from_script(body: QuickProjectFromScript, request: Request):
     user = await _current(request)
+    # If the script has no scenes yet (typical for a manual paste), auto-split
+    # the voiceover into ~5-second scenes so the user can go straight to
+    # storyboard generation → render without an extra step.
+    script_dict = body.script or {}
+    if isinstance(script_dict, dict) and not script_dict.get("scenes"):
+        vo = (script_dict.get("voiceover_script") or script_dict.get("body") or "").strip()
+        if vo:
+            # Split by sentence-ish boundaries so each scene reads naturally.
+            import re
+            parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", vo) if p.strip()]
+            if not parts:
+                parts = [vo]
+            # Group into chunks of ~2 sentences per scene (max 8 scenes).
+            target_scenes = max(3, min(8, len(parts)))
+            per = max(1, len(parts) // target_scenes)
+            grouped = [" ".join(parts[i:i + per]) for i in range(0, len(parts), per)]
+            grouped = grouped[:target_scenes]
+            total = max(15, int(body.duration_sec or 30))
+            each = round(total / max(1, len(grouped)), 2)
+            scenes = []
+            for i, chunk in enumerate(grouped):
+                scenes.append({
+                    "index": i + 1,
+                    "duration": each,
+                    "voiceover": chunk,
+                    "visual_prompt": f"cinematic shot related to: {chunk[:90]}",
+                    "camera": "cinematic close-up" if i == 0 else "medium shot",
+                    "lighting": "natural cinematic lighting",
+                    "motion": "slow push-in" if i == 0 else "static",
+                    "on_screen_text": chunk[:60],
+                })
+            script_dict["scenes"] = scenes
+            body.script = script_dict
     p = Project(
         user_id=user.user_id,
         title=body.title,
