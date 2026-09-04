@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { toast } from "sonner";
-import { Sparkles, Mic, Image as ImageIcon, Download, Share2, Loader2, Film, Video, Upload, Play } from "lucide-react";
+import { Sparkles, Mic, Image as ImageIcon, Download, Share2, Loader2, Film, Video, Upload, Play, Copy } from "lucide-react";
 import { assetUrl } from "../lib/assetUrl";
 
 export default function ProjectDetail() {
@@ -46,6 +46,8 @@ export default function ProjectDetail() {
   const [brandName, setBrandName] = useState("");
   const [brandUrl, setBrandUrl] = useState("");
   const [brandLogo, setBrandLogo] = useState("");
+  const [targetGender, setTargetGender] = useState("all"); // women, men, teens, kids, all
+  const [targetAge, setTargetAge] = useState(""); // "", "13-17", "18-24", ...
 
   const BACKEND = process.env.REACT_APP_BACKEND_URL;
   const videoSrc = project?.video_url ? `${BACKEND}${project.video_url}` : null;
@@ -124,6 +126,8 @@ export default function ProjectDetail() {
         brand_name: brandName || undefined,
         brand_url: brandUrl || undefined,
         brand_logo: brandLogo || undefined,
+        target_gender: targetGender === "all" ? undefined : targetGender,
+        target_age: targetAge || undefined,
       });
       if (data.warning) toast.message(data.warning);
       else if (data.source_assets?.title) toast.success(`Script ready — using ${data.source_assets.title}`);
@@ -492,7 +496,33 @@ export default function ProjectDetail() {
                 </div>
               </div>
             )}
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="pd-audience">
+              <div className="w-full mb-1 flex flex-wrap items-center gap-2">
+                <span className="label-mono text-zinc-500 text-[10px]">GENDER</span>
+                {[
+                  { id: "women", label: "Women / Girls" },
+                  { id: "men", label: "Men / Boys" },
+                  { id: "teens", label: "Gen-Z" },
+                  { id: "kids", label: "Kids" },
+                  { id: "all", label: "All" },
+                ].map((g) => (
+                  <button key={g.id} type="button" data-testid={`pd-gender-${g.id}`}
+                    onClick={()=>setTargetGender(g.id)}
+                    className={`rounded-full px-2.5 py-1 text-[11px] transition ${
+                      targetGender === g.id ? "bg-[#E2FF3D] text-black font-semibold" : "surface"
+                    }`}>{g.label}</button>
+                ))}
+              </div>
+              <div className="w-full mb-1 flex flex-wrap items-center gap-2">
+                <span className="label-mono text-zinc-500 text-[10px]">AGE</span>
+                {["", "13-17", "18-24", "25-34", "35-45", "45+"].map((a) => (
+                  <button key={a || "any"} type="button" data-testid={`pd-age-${a || "any"}`}
+                    onClick={()=>setTargetAge(a)}
+                    className={`rounded-full px-2.5 py-1 text-[11px] transition ${
+                      targetAge === a ? "bg-[#E2FF3D] text-black font-semibold" : "surface"
+                    }`}>{a || "Any"}</button>
+                ))}
+              </div>
               <button data-testid="gen-script" onClick={genScript} disabled={busyScript || busyVariants} className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
                 {busyScript ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                 {busyScript ? "Writing…" : "Generate script"}
@@ -604,12 +634,30 @@ export default function ProjectDetail() {
               </div>
             )}
             {project.script?.hook && (
-              <div className="mt-4 space-y-2 text-sm">
-                <Row label="HOOK">{project.script.hook}</Row>
-                <Row label="BODY">{project.script.body}</Row>
-                <Row label="CTA">{project.script.cta}</Row>
+              <div className="mt-4 space-y-2 text-sm" data-testid="pd-script-out">
+                <div className="flex justify-end mb-1">
+                  <button data-testid="pd-copy-full" onClick={()=>{
+                    const s = project.script || {};
+                    const full = [
+                      `HOOK: ${s.hook || ""}`,
+                      `BODY: ${s.body || ""}`,
+                      `CTA: ${s.cta || ""}`,
+                      s.captions?.length ? `CAPTIONS: ${s.captions.join(" · ")}` : "",
+                      "",
+                      `VOICEOVER:\n${s.voiceover_script || s.body || ""}`,
+                    ].filter(Boolean).join("\n");
+                    navigator.clipboard.writeText(full);
+                    toast.success("Full script copied");
+                  }}
+                    className="surface rounded-full px-3 py-1 text-[11px] flex items-center gap-1.5 hover:border-[#E2FF3D]">
+                    <Copy className="w-3 h-3" /> Copy full script
+                  </button>
+                </div>
+                <Row label="HOOK" copyable={project.script.hook}>{project.script.hook}</Row>
+                <Row label="BODY" copyable={project.script.body}>{project.script.body}</Row>
+                <Row label="CTA" copyable={project.script.cta}>{project.script.cta}</Row>
                 {project.script.captions && (
-                  <Row label="CAPTIONS">{project.script.captions.join(" · ")}</Row>
+                  <Row label="CAPTIONS" copyable={project.script.captions.join(" · ")}>{project.script.captions.join(" · ")}</Row>
                 )}
               </div>
             )}
@@ -915,11 +963,22 @@ export default function ProjectDetail() {
   );
 }
 
-function Row({ label, children }) {
+function Row({ label, children, copyable }) {
+  const doCopy = () => {
+    if (!copyable) return;
+    navigator.clipboard.writeText(String(copyable));
+    toast.success("Copied");
+  };
   return (
-    <div className="flex gap-3">
+    <div className="flex gap-3 group">
       <div className="label-mono text-zinc-500 w-20 shrink-0 pt-1">{label}</div>
       <div className="text-zinc-200 flex-1">{children}</div>
+      {copyable && (
+        <button data-testid={`pd-copy-${label.toLowerCase()}`} onClick={doCopy}
+          className="text-zinc-500 hover:text-white opacity-0 group-hover:opacity-100 md:opacity-60 transition self-start pt-1">
+          <Copy className="w-3.5 h-3.5" />
+        </button>
+      )}
     </div>
   );
 }
