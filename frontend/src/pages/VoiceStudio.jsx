@@ -29,6 +29,11 @@ export default function VoiceStudio() {
   const [cloneName, setCloneName] = useState("My voice");
   const [cloning, setCloning] = useState(false);
   const [clonedVoice, setClonedVoice] = useState(null);
+  const [trimReady, setTrimReady] = useState(null);
+  const [trimStart, setTrimStart] = useState(0);
+  const [trimEnd, setTrimEnd] = useState(0);
+  const [projects, setProjects] = useState([]);
+  const [attachProjectId, setAttachProjectId] = useState("");
   const fileRef = useRef(null);
 
   // Music
@@ -40,6 +45,7 @@ export default function VoiceStudio() {
       setVoices(data); setVoiceId(data[0]?.id);
     });
     api.get("/catalog/music").then(({ data }) => setMusic(data));
+    api.get("/projects").then(({ data }) => setProjects(data || []));
   }, []);
 
   const filtered = voices.filter(v => lang === "all" || v.language === lang);
@@ -67,6 +73,15 @@ export default function VoiceStudio() {
     setTranscript(null);
     setClonedVoice(null);
     setUploadedFile(file);
+    setTrimReady(null);
+    // Decode for the trim slider (non-blocking; if it fails we still upload raw)
+    try {
+      const { prepareAudioForTrim } = await import("../lib/audioTrim");
+      const ready = await prepareAudioForTrim(file);
+      setTrimReady(ready);
+      setTrimStart(0);
+      setTrimEnd(ready.duration);
+    } catch (_) {}
     try {
       const fd = new FormData();
       fd.append("file", file);
@@ -87,18 +102,33 @@ export default function VoiceStudio() {
     setCloning(true);
     const t = toast.loading("Cloning voice via ElevenLabs Voice Lab…");
     try {
+      // Trim silence client-side before upload if user moved sliders
+      let audioBlob = uploadedFile;
+      if (trimReady && (trimStart > 0 || trimEnd < trimReady.duration)) {
+        const wav = await trimReady.trim(trimStart, trimEnd);
+        audioBlob = new File([wav], "trimmed.wav", { type: "audio/wav" });
+      }
       const fd = new FormData();
       fd.append("name", cloneName.trim());
       fd.append("description", "Uploaded by user for ad voiceovers");
-      fd.append("audio", uploadedFile);
+      fd.append("audio", audioBlob);
       const { data } = await api.post("/voices/clone", fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       setClonedVoice(data.voice);
-      // Refresh voice list so the new clone appears in AI Voice tab
-      const v = await api.get("/catalog/voices");
+      const v = await api.get("/catalog/voices?refresh=true");
       setVoices(v.data);
-      toast.success(`"${data.voice.name}" cloned! Ab kisi bhi project ki Voice dropdown me milega.`, { id: t });
+      // Auto-attach to selected project (if any)
+      if (attachProjectId) {
+        try {
+          await api.put(`/projects/${attachProjectId}`, { voice_id: data.voice.id });
+          toast.success(`"${data.voice.name}" cloned & attached to project!`, { id: t });
+        } catch (_) {
+          toast.success(`"${data.voice.name}" cloned! (Attach failed — pick from project dropdown)`, { id: t });
+        }
+      } else {
+        toast.success(`"${data.voice.name}" cloned! Ab kisi bhi project ki Voice dropdown me milega.`, { id: t });
+      }
     } catch (e) {
       toast.error(e.response?.data?.detail || "Clone failed. Check ElevenLabs key.", { id: t });
     } finally { setCloning(false); }
@@ -239,10 +269,46 @@ export default function VoiceStudio() {
                   <div className="text-xs text-zinc-400 mb-3">
                     Is voice ko ElevenLabs Voice Lab pe clone karo. Uske baad kisi bhi project ki Voice dropdown me select karke ad script bolwaao — aapki hi awaaz me!
                   </div>
+
+                  {trimReady && (
+                    <div className="mb-3 bg-[#0A0A0B] rounded p-2 border border-white/5" data-testid="vs-trim">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="label-mono text-[10px] text-[#E2FF3D]">TRIM SILENCE (before cloning)</div>
+                        <div className="label-mono text-[10px] text-zinc-400">
+                          {trimStart.toFixed(1)}s → {trimEnd.toFixed(1)}s
+                          <span className="text-zinc-600"> · {(trimEnd - trimStart).toFixed(1)}s used</span>
+                        </div>
+                      </div>
+                      <label className="block">
+                        <span className="text-[10px] text-zinc-500">Start</span>
+                        <input type="range" min="0" step="0.1" max={trimReady.duration}
+                          value={trimStart} data-testid="vs-trim-start"
+                          onChange={(e)=>setTrimStart(Math.min(parseFloat(e.target.value), trimEnd - 0.5))}
+                          className="w-full accent-[#E2FF3D]" />
+                      </label>
+                      <label className="block">
+                        <span className="text-[10px] text-zinc-500">End</span>
+                        <input type="range" min="0" step="0.1" max={trimReady.duration}
+                          value={trimEnd} data-testid="vs-trim-end"
+                          onChange={(e)=>setTrimEnd(Math.max(parseFloat(e.target.value), trimStart + 0.5))}
+                          className="w-full accent-[#E2FF3D]" />
+                      </label>
+                      <div className="text-[10px] text-zinc-500 mt-1">
+                        Tip: keep 10-30s of clean speech. Cut off breaths, "umm"s, background silence for a better clone.
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap gap-2">
                     <input data-testid="vs-clone-name" value={cloneName}
                       onChange={(e)=>setCloneName(e.target.value)} placeholder="Voice name (e.g. Shivam voice)"
                       className="flex-1 min-w-[180px] bg-[#0A0A0B] border border-white/10 rounded-lg px-3 py-2 text-xs outline-none"/>
+                    <select data-testid="vs-clone-attach" value={attachProjectId}
+                      onChange={(e)=>setAttachProjectId(e.target.value)}
+                      className="min-w-[160px] bg-[#0A0A0B] border border-white/10 rounded-lg px-2 py-2 text-xs outline-none">
+                      <option value="">Attach to project… (optional)</option>
+                      {projects.map((p) => <option key={p.project_id} value={p.project_id}>{p.title}</option>)}
+                    </select>
                     <button data-testid="vs-clone-btn" onClick={cloneForAds} disabled={cloning || !uploadedFile}
                       className="btn-volt rounded-full px-4 py-2 text-xs flex items-center gap-2 disabled:opacity-60">
                       {cloning ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <UserPlus className="w-3.5 h-3.5"/>}
@@ -254,7 +320,9 @@ export default function VoiceStudio() {
                       <div className="text-xs text-[#E2FF3D] mb-1">✓ CLONED: {clonedVoice.name}</div>
                       <div className="label-mono text-zinc-500 text-[10px] break-all">voice_id: {clonedVoice.id}</div>
                       <div className="text-xs text-zinc-400 mt-2">
-                        Ab kisi bhi project ke Voice section me jao, dropdown me <b>{clonedVoice.name}</b> aa jayega — usko select karke "Generate voiceover" dabao. Ad script aapki hi awaaz me bolega.
+                        {attachProjectId
+                          ? <>Attached to project! Ab wahaan "Generate voiceover" dabaao — ad aapki awaaz me bolega.</>
+                          : <>Ab kisi bhi project ke Voice section me jao, dropdown me <b>{clonedVoice.name}</b> select karo, aur "Generate voiceover" dabao.</>}
                       </div>
                     </div>
                   )}

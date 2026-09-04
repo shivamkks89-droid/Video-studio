@@ -35,6 +35,9 @@ export default function ProjectDetail() {
   const [cloneName, setCloneName] = useState("");
   const [cloneFile, setCloneFile] = useState(null);
   const [showClone, setShowClone] = useState(false);
+  const [cloneTrimReady, setCloneTrimReady] = useState(null); // {duration, trim(s,e)}
+  const [cloneTrimStart, setCloneTrimStart] = useState(0);
+  const [cloneTrimEnd, setCloneTrimEnd] = useState(0);
   const hoverTimer = useRef(null);
   const [variants, setVariants] = useState(null); // { variants: [{audience, label, script}], source_assets, axis }
   const [axis, setAxis] = useState("gender"); // gender | age | region
@@ -265,21 +268,50 @@ export default function ProjectDetail() {
     setBusyClone(true);
     const t = toast.loading("Cloning voice · 30-60s…");
     try {
+      // Trim silence client-side before upload → cleaner clone
+      let audioBlob = cloneFile;
+      if (cloneTrimReady && (cloneTrimStart > 0 || cloneTrimEnd < cloneTrimReady.duration)) {
+        audioBlob = await cloneTrimReady.trim(cloneTrimStart, cloneTrimEnd);
+        audioBlob = new File([audioBlob], "trimmed.wav", { type: "audio/wav" });
+      }
       const fd = new FormData();
       fd.append("name", cloneName);
-      fd.append("audio", cloneFile);
+      fd.append("audio", audioBlob);
       const { data } = await api.post("/voices/clone", fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      toast.success(`Voice "${data.voice.name}" cloned — now in your dropdown`, { id: t });
+      toast.success(`Voice "${data.voice.name}" cloned + selected!`, { id: t });
       // Refresh voice catalog
       const { data: vs } = await api.get("/catalog/voices?refresh=true");
       setVoices(vs);
       setVoiceId(data.voice.id);
+      // PERSIST on the project so refresh keeps the selection
+      try {
+        await api.put(`/projects/${id}`, { voice_id: data.voice.id });
+        setProject((p) => (p ? { ...p, voice_id: data.voice.id } : p));
+      } catch (persistErr) {
+        // Non-fatal: user can hit Generate voiceover which will pick voiceId state
+      }
       setShowClone(false); setCloneName(""); setCloneFile(null);
+      setCloneTrimReady(null); setCloneTrimStart(0); setCloneTrimEnd(0);
     } catch (err) {
       toast.error(err.response?.data?.detail || "Clone failed", { id: t });
     } finally { setBusyClone(false); }
+  };
+
+  const onCloneFilePicked = async (file) => {
+    setCloneFile(file);
+    setCloneTrimReady(null);
+    if (!file) return;
+    try {
+      const { prepareAudioForTrim } = await import("../lib/audioTrim");
+      const ready = await prepareAudioForTrim(file);
+      setCloneTrimReady(ready);
+      setCloneTrimStart(0);
+      setCloneTrimEnd(ready.duration);
+    } catch (e) {
+      // Trim optional — if decode fails, we still let user upload raw
+    }
   };
 
   const genVoice = async () => {
@@ -712,8 +744,36 @@ export default function ProjectDetail() {
                   placeholder="Voice name (e.g. My Voice)"
                   className="w-full bg-[#0A0A0B] border border-white/10 rounded px-2 py-1.5 text-sm mb-2 outline-none" />
                 <input required data-testid="clone-file" type="file" accept="audio/*"
-                  onChange={(e) => setCloneFile(e.target.files?.[0] || null)}
+                  onChange={(e) => onCloneFilePicked(e.target.files?.[0] || null)}
                   className="w-full text-xs mb-2" />
+                {cloneTrimReady && (
+                  <div className="mb-2 bg-[#0A0A0B] rounded p-2 border border-white/5" data-testid="clone-trim">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="label-mono text-[10px] text-[#E2FF3D]">TRIM SILENCE</div>
+                      <div className="label-mono text-[10px] text-zinc-400">
+                        {cloneTrimStart.toFixed(1)}s → {cloneTrimEnd.toFixed(1)}s
+                        <span className="text-zinc-600"> · {(cloneTrimEnd - cloneTrimStart).toFixed(1)}s used</span>
+                      </div>
+                    </div>
+                    <label className="block">
+                      <span className="text-[10px] text-zinc-500">Start</span>
+                      <input type="range" min="0" step="0.1" max={cloneTrimReady.duration}
+                        value={cloneTrimStart} data-testid="clone-trim-start"
+                        onChange={(e)=>setCloneTrimStart(Math.min(parseFloat(e.target.value), cloneTrimEnd - 0.5))}
+                        className="w-full accent-[#E2FF3D]" />
+                    </label>
+                    <label className="block">
+                      <span className="text-[10px] text-zinc-500">End</span>
+                      <input type="range" min="0" step="0.1" max={cloneTrimReady.duration}
+                        value={cloneTrimEnd} data-testid="clone-trim-end"
+                        onChange={(e)=>setCloneTrimEnd(Math.max(parseFloat(e.target.value), cloneTrimStart + 0.5))}
+                        className="w-full accent-[#E2FF3D]" />
+                    </label>
+                    <div className="text-[10px] text-zinc-500 mt-1">
+                      Tip: keep 10-30 sec of clean speech. Cut off breaths, "umm"s, and background silence.
+                    </div>
+                  </div>
+                )}
                 <div className="text-[10px] text-zinc-500 mb-2">Upload 30-60s clean audio sample (MP3/WAV, up to 15 MB). Say a few sentences naturally.</div>
                 <button type="submit" disabled={busyClone}
                   data-testid="clone-submit"
