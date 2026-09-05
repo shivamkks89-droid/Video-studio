@@ -787,3 +787,163 @@ async def check_compliance(text: str, platform: str, language: str) -> dict:
     if isinstance(data, dict) and "risk_level" in data:
         return data
     return {"risk_level": "low", "flags": [], "summary": "No issues detected."}
+
+
+# ---------- UNIVERSAL VOICE-QUALITY SYSTEM ----------
+
+PRONUNCIATION_SYSTEM = """You are an ad-voiceover linguist for Indian creators. Scan the given
+script and flag any words that a TTS engine would likely mispronounce or a human presenter
+would stumble on. Return JSON only:
+
+{"issues": [
+  {"word": "the exact substring in the script (case-preserving)",
+   "reason": "brand_name | acronym | number | currency | url | technical | hindi_transliteration | uncommon | long_sentence",
+   "suggested": "the recommended pronunciation the user should paste into the pronunciation dictionary",
+   "example": "phonetic hint like 'Heart-Link' or 'A-I'"}
+],
+ "summary": "one-sentence assessment"
+}
+
+Rules:
+- Flag brand/app/product names even if you don't recognise them — TTS ALWAYS gets these wrong.
+- Flag every acronym of >=2 uppercase letters (AI, API, SaaS, UX, ROI, KYC, UPI, IPL).
+- Flag numbers written as digits ("15" → "fifteen") if they'd sound wrong.
+- Flag common Hinglish traps ("Bahaana", "Behen", "Kundli") that Whisper/ElevenLabs mangles.
+- Flag sentences >30 words that will sound rushed.
+- Keep the list short & high-signal — don't flag every common word.
+- If nothing is problematic return {"issues": [], "summary": "Script reads cleanly."}"""
+
+
+async def check_pronunciation(text: str, language: str, known_names: list) -> dict:
+    names_line = f"Known names to always flag: {', '.join(known_names)}" if known_names else ""
+    prompt = f"Script language: {language}\n{names_line}\n\nSCRIPT:\n{text}\n\nReturn JSON only."
+    out = await _claude_send(PRONUNCIATION_SYSTEM, prompt)
+    data = _safe_json(out)
+    if isinstance(data, dict) and "issues" in data:
+        return data
+    return {"issues": [], "summary": "Script reads cleanly."}
+
+
+FEEDBACK_SYSTEM = """You are the AI Feedback Analyser for CineReel — a video-ad platform.
+
+A user just gave you feedback about a rendered video. Read the tags + free-text and figure
+out which of these LAYERS need to change. Never suggest regenerating the whole project.
+
+LAYERS: script · voice · accent · pronunciation · avatar · scene · b_roll · caption ·
+music · sfx · cta · timeline · format
+
+Return JSON only:
+{"understood": "one-sentence English summary of what the user is unhappy with",
+ "affected_layers": ["voice","accent",...],
+ "actions": [
+   {"layer": "accent", "field": "accent", "value": "indian_english",
+    "why": "user said too American"},
+   {"layer": "voice", "field": "speed", "value": 0.9,
+    "why": "user said too fast"}
+ ],
+ "regenerate_only": ["voice"]
+}
+
+Value hints:
+- accent: indian_english | american_english | british_english | australian_english | neutral_english
+- voice.speed: 0.7..1.2 (1.0 default)
+- voice.stability: 0.4..0.8
+- voice.style: 0.0..0.6
+- voice_preset: natural | professional | friendly | energetic | emotional | cinematic | ugc | corporate | storytelling | advertisement | news
+- caption.position: top | middle | bottom
+- music.volume: 0.0..0.5
+- pronunciation: [{"word":"...", "suggested":"..."}]
+
+CRITICAL:
+- If the user says "Indian accent thoda natural karo", set accent=indian_english AND voice_preset=natural.
+- If the user says "too fast" → speed=0.85.
+- If the user says "American tone hatao" → accent=indian_english.
+- Never regenerate layers the user did not complain about."""
+
+
+async def analyse_feedback(tags: list, free_text: str, context: str, project_summary: dict) -> dict:
+    tag_line = "Tags: " + (", ".join(tags) if tags else "none")
+    free_line = f"Free-text: {free_text or 'none'}"
+    ctx_line = f"Feedback context: {context}"
+    proj_line = (
+        f"Project meta: language={project_summary.get('language')}, "
+        f"accent={project_summary.get('accent')}, "
+        f"voice_id={project_summary.get('voice_id')}, "
+        f"video_type={project_summary.get('video_type')}"
+    )
+    prompt = "\n".join([tag_line, free_line, ctx_line, proj_line, "Return JSON only."])
+    out = await _claude_send(FEEDBACK_SYSTEM, prompt)
+    data = _safe_json(out)
+    if isinstance(data, dict) and "actions" in data:
+        return data
+    return {"understood": "Could not parse feedback", "affected_layers": [], "actions": [], "regenerate_only": []}
+
+
+COMMERCIAL_SYSTEM = """You are the "Commercial Quality Gate" for a video ad platform.
+
+Given a project's metadata (script, scenes, ad copy, audio_url present or not), produce a
+checklist that verifies the ad is ready for export.
+
+Return JSON only:
+{"checks": [
+  {"id": "script_hook", "label": "Hook exists and is under 3 lines", "status": "pass|warn|fail", "note": ""},
+  {"id": "cta_present", ...},
+  ...
+ ],
+ "overall": "ready_for_export | needs_review | blocked",
+ "blockers": ["list of check ids that are FAIL"]
+}
+
+Checks MUST include (add only when relevant):
+1) script_hook — first line is a punchy hook
+2) cta_present — CTA exists and is action-oriented
+3) voice_ready — voiceover audio has been generated
+4) scenes_ready — all scenes have image_url set (or storyboard present)
+5) captions_or_no_captions — captions field exists OR intentionally absent
+6) safe_claims — no guaranteed-results / medical / financial promise language
+7) fake_testimonials — no invented testimonials or stats
+8) brand_visibility — brand name appears at least once (if brand set)
+9) platform_fit — script duration_sec is a good fit for aspect_ratio/format
+10) audio_video_sync — has both audio_url AND (video_url OR scenes)
+
+Blocker (fail) severity: things that will break the ad — no voice, no scenes.
+Warn: things the user should double-check but can ship without."""
+
+
+async def commercial_check(project: dict) -> dict:
+    trimmed = {
+        "title": project.get("title"),
+        "video_type": project.get("video_type"),
+        "language": project.get("language"),
+        "accent": project.get("accent"),
+        "aspect_ratio": project.get("aspect_ratio"),
+        "duration_sec": project.get("duration_sec"),
+        "script": project.get("script"),
+        "has_audio": bool(project.get("audio_url")),
+        "has_video": bool(project.get("video_url")),
+        "scenes_count": len(project.get("scenes") or []),
+        "scenes_with_image": sum(1 for s in (project.get("scenes") or []) if s.get("image_url")),
+        "brand_name": project.get("brand_name"),
+    }
+    import json as _json
+    out = await _claude_send(COMMERCIAL_SYSTEM, f"Project:\n{_json.dumps(trimmed, indent=2)}\n\nReturn JSON only.")
+    data = _safe_json(out)
+    if isinstance(data, dict) and "checks" in data:
+        return data
+    return {"checks": [], "overall": "needs_review", "blockers": []}
+
+
+def apply_pronunciation(text: str, pronunciation: dict) -> str:
+    """Replace known words with their preferred pronunciation phrasing before TTS.
+    Keeps replacements case-insensitive but preserves surrounding punctuation."""
+    if not text or not pronunciation:
+        return text
+    import re
+    out = text
+    # Sort by length desc so longer keys are replaced first (HeartLink before Heart)
+    for word, phon in sorted(pronunciation.items(), key=lambda kv: -len(kv[0])):
+        if not word or not phon or word == phon:
+            continue
+        pattern = r"\b" + re.escape(word) + r"\b"
+        out = re.sub(pattern, phon, out, flags=re.IGNORECASE)
+    return out

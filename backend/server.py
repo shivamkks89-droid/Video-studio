@@ -1022,17 +1022,22 @@ async def ai_tts(body: TTSRequest, request: Request):
     user = await _current(request)
     cost = max(1, len(body.text) // 200)
     user = await _charge_credits(user, cost, "tts_generation")
-    # Look up the project language so we can lock in an accent-appropriate
-    # phoneme set (multilingual v2 model). Without this, English-trained voices
-    # read Hindi text with an English accent.
+    # Look up the project language + pronunciation dict for accent-locked TTS.
     proj_lang = None
+    pron_dict: dict = {}
     if body.project_id:
-        proj = await db.projects.find_one({"project_id": body.project_id, "user_id": user.user_id},
-                                           {"_id": 0, "language": 1})
+        proj = await db.projects.find_one(
+            {"project_id": body.project_id, "user_id": user.user_id},
+            {"_id": 0, "language": 1, "pronunciation": 1},
+        )
         proj_lang = (proj or {}).get("language")
+        pron_dict = (proj or {}).get("pronunciation") or {}
+    # Apply the pronunciation dictionary to the raw text (HeartLink → Heart Link, AI → A I)
+    from ai_services import apply_pronunciation
+    speak_text = apply_pronunciation(body.text, pron_dict)
     language_code = project_language_to_iso(proj_lang)
     # Try ElevenLabs first (real human-grade voice if user's plan allows)
-    result = await synthesize_speech(body.text, body.voice_id, body.stability,
+    result = await synthesize_speech(speak_text, body.voice_id, body.stability,
                                      body.similarity_boost, body.style,
                                      language_code=language_code)
     if result.get("audio_url"):
@@ -1057,7 +1062,7 @@ async def ai_tts(body: TTSRequest, request: Request):
         k in err_msg.lower()
         for k in ["invalid elevenlabs_api_key", "elevenlabs_api_key missing"]
     )
-    fb = await synthesize_openai_tts(body.text, style="default")
+    fb = await synthesize_openai_tts(speak_text, style="default")
     if fb.get("audio_url"):
         url = await save_audio_persistent(fb["audio_url"]) or fb["audio_url"]
         if body.project_id:

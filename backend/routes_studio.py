@@ -24,10 +24,12 @@ from models import (
     CreditsEstimateRequest, MultiCreativeRequest, MultiPlatformResizeRequest,
     ProjectVersion, STTRequest, ScriptRefineRequest, Workspace, WorkspaceCreate,
     Project, new_id, utc_now, CreditTransaction,
+    PronunciationCheckRequest, FeedbackRequest, CommercialCheckRequest,
 )
 from ai_services import (
     check_compliance, generate_ad_copy, generate_campaign, generate_multi_creatives,
-    refine_script, score_creative,
+    refine_script, score_creative, check_pronunciation, analyse_feedback,
+    commercial_check as commercial_qa,
 )
 from stt_service import transcribe_audio
 from music_library import MUSIC_TRACKS, SFX_LIBRARY
@@ -172,6 +174,68 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
             out = await check_compliance(body.text, body.platform, body.language)
         except Exception as e:
             await refund(user, COSTS["compliance"], "compliance_error")
+            raise HTTPException(status_code=500, detail=str(e)[:160])
+        return {**out, "credits_left": user.credits}
+
+    # ---------- UNIVERSAL VOICE-QUALITY: PRONUNCIATION CHECK ----------
+    @router.post("/ai/pronunciation-check")
+    async def pronunciation_check(body: PronunciationCheckRequest, request: Request):
+        user = await current_user_dep(request)
+        if not body.text.strip():
+            raise HTTPException(status_code=400, detail="Empty text")
+        user = await charge_credits(user, 3, "pronunciation_check")
+        try:
+            out = await check_pronunciation(body.text, body.language, body.known_names)
+        except Exception as e:
+            await refund(user, 3, "pronunciation_check_error")
+            raise HTTPException(status_code=500, detail=str(e)[:160])
+        return {**out, "credits_left": user.credits}
+
+    # ---------- UNIVERSAL VOICE-QUALITY: FEEDBACK + AUTO-FIX ----------
+    @router.post("/ai/feedback")
+    async def feedback(body: FeedbackRequest, request: Request):
+        user = await current_user_dep(request)
+        proj = await db.projects.find_one(
+            {"project_id": body.project_id, "user_id": user.user_id}, {"_id": 0},
+        )
+        if not proj:
+            raise HTTPException(status_code=404, detail="Project not found")
+        user = await charge_credits(user, 4, "feedback_analyse")
+        try:
+            plan = await analyse_feedback(
+                tags=body.tags, free_text=body.free_text, context=body.context,
+                project_summary=proj,
+            )
+        except Exception as e:
+            await refund(user, 4, "feedback_analyse_error")
+            raise HTTPException(status_code=500, detail=str(e)[:160])
+        # Persist feedback for analytics + append to project
+        record = {
+            "project_id": body.project_id,
+            "user_id": user.user_id,
+            "tags": body.tags, "free_text": body.free_text,
+            "context": body.context, "plan": plan,
+            "created_at": utc_now().isoformat(),
+        }
+        await db.feedback.insert_one(dict(record))
+        # Build an "apply patch" the frontend can send to /projects/{id} PUT
+        patch = _build_apply_patch(plan, proj)
+        return {**plan, "apply_patch": patch, "credits_left": user.credits}
+
+    # ---------- UNIVERSAL VOICE-QUALITY: COMMERCIAL CHECK ----------
+    @router.post("/ai/commercial-check")
+    async def commercial_check_ep(body: CommercialCheckRequest, request: Request):
+        user = await current_user_dep(request)
+        proj = await db.projects.find_one(
+            {"project_id": body.project_id, "user_id": user.user_id}, {"_id": 0},
+        )
+        if not proj:
+            raise HTTPException(status_code=404, detail="Project not found")
+        user = await charge_credits(user, 3, "commercial_check")
+        try:
+            out = await commercial_qa(proj)
+        except Exception as e:
+            await refund(user, 3, "commercial_check_error")
             raise HTTPException(status_code=500, detail=str(e)[:160])
         return {**out, "credits_left": user.credits}
 
@@ -397,6 +461,44 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
 
 
 # ---------- helpers ----------
+def _build_apply_patch(plan: dict, project: dict) -> dict:
+    """Convert an AI-feedback plan into a MongoDB update patch the frontend
+    can PUT to /projects/{id} to apply the one-click fix."""
+    patch = {}
+    for action in plan.get("actions") or []:
+        layer = action.get("layer")
+        field = action.get("field")
+        value = action.get("value")
+        if not layer or field is None:
+            continue
+        if layer == "accent" and field == "accent":
+            patch["accent"] = value
+            patch["accent_locked"] = True
+        elif layer == "voice":
+            if field == "preset":
+                patch["voice_preset"] = value
+            elif field in ("speed", "stability", "style", "similarity_boost"):
+                patch.setdefault("voice_tuning", {})[field] = value
+        elif layer == "pronunciation" and field == "dictionary":
+            existing = project.get("pronunciation") or {}
+            if isinstance(value, list):
+                for it in value:
+                    if isinstance(it, dict):
+                        w = (it.get("word") or "").strip()
+                        s = (it.get("suggested") or "").strip()
+                        if w and s: existing[w] = s
+            elif isinstance(value, dict):
+                existing.update(value)
+            patch["pronunciation"] = existing
+        elif layer == "caption" and field == "position":
+            patch["caption_position"] = value
+        elif layer == "music" and field == "volume":
+            patch["music_volume"] = value
+        elif layer == "cta" and field == "text":
+            patch.setdefault("script", dict(project.get("script") or {}))["cta"] = value
+    return patch
+
+
 def _segments_to_scenes(segments: list, total_duration: float) -> list:
     """Group Whisper segments into ~5s scene chunks so the timeline builder
     can create scenes automatically from any uploaded voiceover."""

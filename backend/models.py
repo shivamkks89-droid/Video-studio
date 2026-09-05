@@ -64,7 +64,11 @@ class Project(BaseModel):
     user_id: str
     title: str
     video_type: str  # cinematic_ad, product_ad, talking_avatar, yt_short, ig_reel, etc.
-    language: str = "english"  # english, hindi, hinglish
+    language: str = "english"  # english, hindi, hinglish, bengali, marathi, gujarati, ...
+    accent: Optional[str] = None  # indian_english, american_english, british_english, ...
+    accent_locked: bool = False   # 🔒 lock accent across every regeneration
+    voice_preset: Optional[str] = None  # natural, professional, ugc, cinematic, ...
+    pronunciation: dict = Field(default_factory=dict)  # {"HeartLink": "Heart Link", "AI": "A I"}
     aspect_ratio: str = "9:16"  # 9:16, 16:9, 1:1
     resolution: str = "1080p"
     fps: int = 30
@@ -304,3 +308,30 @@ class ProjectVersion(BaseModel):
     label: str = "Snapshot"
     snapshot: dict  # {script, scenes, audio_url, thumbnail, duration_sec}
     created_at: datetime = Field(default_factory=utc_now)
+
+
+# ---------- UNIVERSAL VOICE-QUALITY SYSTEM ----------
+class PronunciationCheckRequest(BaseModel):
+    text: str
+    language: str = "english"
+    known_names: List[str] = []  # brand / product / people names user has defined
+
+
+class FeedbackRequest(BaseModel):
+    project_id: str
+    tags: List[str] = []       # e.g. ["accent_wrong","too_fast","hook_weak"]
+    free_text: Optional[str] = None
+    context: Literal["voice", "video", "ad", "general"] = "general"
+
+
+class CommercialCheckRequest(BaseModel):
+    project_id: str
+
+
+class VoiceTuning(BaseModel):
+    """Optional voice-tuning inputs that can be attached to a TTS request."""
+    stability: float = 0.55
+    similarity_boost: float = 0.75
+    style: float = 0.30
+    speed: float = 1.0  # 0.7..1.2
+    accent_lock: bool = False

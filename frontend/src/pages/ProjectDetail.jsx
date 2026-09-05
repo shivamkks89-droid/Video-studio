@@ -53,6 +53,20 @@ export default function ProjectDetail() {
   const [targetAge, setTargetAge] = useState(""); // "", "13-17", "18-24", ...
   const autoRegenTriedRef = useRef(false);
 
+  // ---- Universal Voice Quality System ----
+  const [pronCheck, setPronCheck] = useState(null); // {issues, summary}
+  const [busyPron, setBusyPron] = useState(false);
+  const [newPronWord, setNewPronWord] = useState("");
+  const [newPronSaid, setNewPronSaid] = useState("");
+  const [fbOpen, setFbOpen] = useState(false);
+  const [fbTags, setFbTags] = useState([]);
+  const [fbText, setFbText] = useState("");
+  const [fbContext, setFbContext] = useState("voice");
+  const [fbBusy, setFbBusy] = useState(false);
+  const [fbResult, setFbResult] = useState(null);
+  const [qa, setQa] = useState(null); // {checks, overall, blockers}
+  const [busyQa, setBusyQa] = useState(false);
+
   const BACKEND = process.env.REACT_APP_BACKEND_URL;
   const videoSrc = project?.video_url ? `${BACKEND}${project.video_url}` : null;
   const audioSrc = project?.audio_url ? assetUrl(project.audio_url) : null;
@@ -388,6 +402,103 @@ export default function ProjectDetail() {
   };
 
   const missingCount = (project?.scenes || []).filter(s => !s?.image_url).length;
+
+  // ---- Universal Voice Quality Handlers ----
+  const scriptText = () => {
+    const s = project?.script || {};
+    return [s.hook, s.body, s.cta, s.voiceover_script].filter(Boolean).join(" ").trim();
+  };
+
+  const runPronCheck = async () => {
+    if (!scriptText()) return toast.error("Generate or paste a script first");
+    setBusyPron(true);
+    try {
+      const brand = project?.brand_name ? [project.brand_name] : [];
+      const { data } = await api.post("/ai/pronunciation-check", {
+        text: scriptText(), language: project.language, known_names: brand,
+      });
+      setPronCheck(data);
+      toast.success(`${data.issues?.length || 0} pronunciation issues found`);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Check failed");
+    } finally { setBusyPron(false); }
+  };
+
+  const acceptPron = async (issue) => {
+    const next = { ...(project.pronunciation || {}), [issue.word]: issue.suggested };
+    try {
+      await api.put(`/projects/${id}`, { pronunciation: next });
+      setProject((p) => ({ ...p, pronunciation: next }));
+      toast.success(`"${issue.word}" pronunciation saved`);
+    } catch (e) { toast.error("Save failed"); }
+  };
+
+  const addPronCustom = async () => {
+    if (!newPronWord.trim() || !newPronSaid.trim()) return;
+    const next = { ...(project.pronunciation || {}), [newPronWord.trim()]: newPronSaid.trim() };
+    try {
+      await api.put(`/projects/${id}`, { pronunciation: next });
+      setProject((p) => ({ ...p, pronunciation: next }));
+      setNewPronWord(""); setNewPronSaid("");
+      toast.success("Custom pronunciation added");
+    } catch (e) { toast.error("Save failed"); }
+  };
+
+  const removePron = async (word) => {
+    const next = { ...(project.pronunciation || {}) };
+    delete next[word];
+    try {
+      await api.put(`/projects/${id}`, { pronunciation: next });
+      setProject((p) => ({ ...p, pronunciation: next }));
+    } catch (e) { toast.error("Save failed"); }
+  };
+
+  const setAccentLock = async (locked, accent) => {
+    const patch = { accent_locked: locked };
+    if (accent) patch.accent = accent;
+    try {
+      await api.put(`/projects/${id}`, patch);
+      setProject((p) => ({ ...p, ...patch }));
+      toast.success(locked ? "Accent locked" : "Accent unlocked");
+    } catch (e) { toast.error("Save failed"); }
+  };
+
+  const submitFeedback = async () => {
+    if (!fbTags.length && !fbText.trim()) return toast.error("Pick a tag or describe the issue");
+    setFbBusy(true);
+    try {
+      const { data } = await api.post("/ai/feedback", {
+        project_id: id, tags: fbTags, free_text: fbText, context: fbContext,
+      });
+      setFbResult(data);
+      toast.success(`Understood — ${data.affected_layers?.length || 0} layer(s) will change`);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Feedback failed");
+    } finally { setFbBusy(false); }
+  };
+
+  const applyFeedbackFix = async () => {
+    if (!fbResult?.apply_patch) return;
+    try {
+      const { data: updated } = await api.put(`/projects/${id}`, fbResult.apply_patch);
+      setProject(updated);
+      toast.success("Applied! Only affected layers will regenerate.");
+      // If voice tuning changed, auto-regen voice
+      if (fbResult.regenerate_only?.includes("voice") && project.audio_url) {
+        setTimeout(() => { genVoice().catch(() => {}); }, 600);
+      }
+      setFbOpen(false); setFbTags([]); setFbText(""); setFbResult(null);
+    } catch (e) { toast.error("Apply failed"); }
+  };
+
+  const runQa = async () => {
+    setBusyQa(true);
+    try {
+      const { data } = await api.post("/ai/commercial-check", { project_id: id });
+      setQa(data);
+    } catch (e) { toast.error("QA failed"); }
+    finally { setBusyQa(false); }
+  };
 
   const renderVideo = async () => {
     if (!project.scenes?.length) return toast.error("Generate the storyboard first");
@@ -837,6 +948,174 @@ export default function ProjectDetail() {
               {busyVoice ? "Synthesising…" : (project.voice_stale && project.audio_url ? "Regenerate voiceover" : "Generate voiceover")}
             </button>
           </div>
+
+          {/* UNIVERSAL VOICE QUALITY */}
+          <div className="surface rounded-xl p-5" data-testid="voice-quality">
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-[#E2FF3D]" />
+                <div className="font-medium">Voice Quality System</div>
+              </div>
+              <span className="label-mono text-zinc-500">ACCENT · PRONUNCIATION · FEEDBACK</span>
+            </div>
+
+            {/* Accent Lock */}
+            <div className="flex items-center justify-between bg-[#0A0A0B] rounded-lg p-3 mb-3" data-testid="accent-lock">
+              <div>
+                <div className="text-sm font-medium">🔒 Accent Lock</div>
+                <div className="label-mono text-zinc-500 text-[10px]">
+                  {project.accent_locked ? `LOCKED · ${project.accent || project.language}` : "Free — every scene may drift"}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <select data-testid="accent-select" value={project.accent || ""}
+                  onChange={(e) => setAccentLock(project.accent_locked, e.target.value)}
+                  className="bg-[#141416] text-xs rounded px-2 py-1 border border-white/10">
+                  <option value="">Accent…</option>
+                  <option value="indian_english">Indian English</option>
+                  <option value="american_english">American English</option>
+                  <option value="british_english">British English</option>
+                  <option value="australian_english">Australian English</option>
+                  <option value="neutral_english">Neutral English</option>
+                </select>
+                <button data-testid="accent-lock-btn" onClick={() => setAccentLock(!project.accent_locked)}
+                  className={`rounded-full px-3 py-1 text-xs ${project.accent_locked ? "bg-[#E2FF3D] text-black font-semibold" : "surface"}`}>
+                  {project.accent_locked ? "Locked" : "Lock"}
+                </button>
+              </div>
+            </div>
+
+            {/* Pronunciation Editor */}
+            <div className="mb-3" data-testid="pron-editor">
+              <div className="flex items-center justify-between mb-2">
+                <div className="label-mono text-zinc-500 text-[11px]">PRONUNCIATION</div>
+                <button data-testid="pron-check-btn" onClick={runPronCheck} disabled={busyPron || !project.script}
+                  className="rounded-full surface px-3 py-1 text-[11px] disabled:opacity-60">
+                  {busyPron ? "Scanning…" : "🔍 AI-scan script"}
+                </button>
+              </div>
+
+              {pronCheck?.issues?.length > 0 && (
+                <div className="space-y-1.5 mb-2 max-h-48 overflow-y-auto scroll-thin pr-1">
+                  {pronCheck.issues.map((issue, i) => {
+                    const already = (project.pronunciation || {})[issue.word];
+                    return (
+                      <div key={i} className="bg-[#0A0A0B] rounded p-2 text-xs flex items-center gap-2 border border-white/5">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium truncate"><span className="text-[#E2FF3D]">{issue.word}</span> → <span>{issue.suggested}</span></div>
+                          <div className="text-[10px] text-zinc-500">{issue.reason} · {issue.example}</div>
+                        </div>
+                        <button data-testid={`pron-accept-${i}`} onClick={() => acceptPron(issue)}
+                          className={`rounded-full px-2 py-1 text-[10px] ${already ? "bg-white/5 text-zinc-500" : "btn-volt"}`}>
+                          {already ? "Saved" : "Accept"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Manual add */}
+              <div className="flex gap-2 mb-2" data-testid="pron-add">
+                <input value={newPronWord} onChange={(e) => setNewPronWord(e.target.value)} placeholder="Word (HeartLink)"
+                  className="flex-1 bg-[#0A0A0B] border border-white/10 rounded px-2 py-1 text-xs outline-none"/>
+                <input value={newPronSaid} onChange={(e) => setNewPronSaid(e.target.value)} placeholder="Said as (Heart Link)"
+                  className="flex-1 bg-[#0A0A0B] border border-white/10 rounded px-2 py-1 text-xs outline-none"/>
+                <button data-testid="pron-add-btn" onClick={addPronCustom} className="rounded surface px-3 py-1 text-xs">Add</button>
+              </div>
+
+              {/* Saved dictionary */}
+              {Object.keys(project.pronunciation || {}).length > 0 && (
+                <div className="flex flex-wrap gap-1.5" data-testid="pron-dict">
+                  {Object.entries(project.pronunciation).map(([w, s]) => (
+                    <span key={w} className="bg-[#141416] rounded-full px-2 py-1 text-[10px] flex items-center gap-1.5 border border-white/5">
+                      {w} → {s}
+                      <button onClick={() => removePron(w)} className="text-zinc-500 hover:text-red-400">×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Feedback + QA */}
+            <div className="flex gap-2 flex-wrap">
+              <button data-testid="feedback-btn" onClick={() => setFbOpen(true)}
+                className="rounded-full surface px-3 py-1.5 text-xs">💬 Give Feedback</button>
+              <button data-testid="commercial-btn" onClick={runQa} disabled={busyQa}
+                className="rounded-full surface px-3 py-1.5 text-xs">
+                {busyQa ? "Checking…" : "✓ Commercial Quality Check"}
+              </button>
+            </div>
+
+            {qa && (
+              <div className="mt-3 bg-[#0A0A0B] rounded p-3" data-testid="qa-result">
+                <div className={`text-xs font-semibold mb-2 uppercase ${
+                  qa.overall === "ready_for_export" ? "text-green-400" :
+                  qa.overall === "blocked" ? "text-red-400" : "text-yellow-400"
+                }`}>{qa.overall === "ready_for_export" ? "✓ Ready for export" : qa.overall.replace("_", " ")}</div>
+                <div className="space-y-1 max-h-56 overflow-y-auto scroll-thin pr-1">
+                  {qa.checks.map((c, i) => (
+                    <div key={i} className="text-[11px] flex items-start gap-2">
+                      <span className={c.status === "pass" ? "text-green-400" : c.status === "warn" ? "text-yellow-400" : "text-red-400"}>
+                        {c.status === "pass" ? "✓" : c.status === "warn" ? "⚠" : "✗"}
+                      </span>
+                      <span className="text-zinc-300"><b>{c.label}</b> {c.note && <span className="text-zinc-500">— {c.note}</span>}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* FEEDBACK MODAL */}
+          {fbOpen && (
+            <div className="fixed inset-0 z-40 bg-black/70 grid place-items-center p-4" data-testid="feedback-modal">
+              <div className="w-full max-w-md bg-[#0F0F11] border border-white/10 rounded-xl p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="font-semibold">Give Feedback</div>
+                  <button onClick={() => { setFbOpen(false); setFbResult(null); }} className="text-zinc-500 hover:text-white">×</button>
+                </div>
+                <div className="flex gap-2 mb-3">
+                  {["voice","video","ad"].map((c) => (
+                    <button key={c} onClick={() => setFbContext(c)}
+                      className={`rounded-full px-3 py-1 text-xs capitalize ${fbContext===c ? "bg-[#E2FF3D] text-black" : "surface"}`}>{c}</button>
+                  ))}
+                </div>
+                <div className="label-mono text-zinc-500 text-[10px] mb-1">TAGS</div>
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {(fbContext === "voice" ? ["accent_wrong","too_american","too_british","too_robotic","pronunciation_wrong","too_fast","too_slow","voice_not_natural","emotion_wrong"] :
+                    fbContext === "video" ? ["scene_mismatch","product_hidden","avatar_unnatural","b_roll_irrelevant","camera_wrong","lighting_wrong","text_too_large","captions_wrong","cta_weak"] :
+                    ["hook_weak","cta_weak","message_unclear","too_slow","not_engaging","platform_mismatch"]).map((t) => (
+                    <button key={t} data-testid={`fb-tag-${t}`}
+                      onClick={() => setFbTags((p) => p.includes(t) ? p.filter((x) => x!==t) : [...p, t])}
+                      className={`rounded-full px-2 py-1 text-[10px] transition ${fbTags.includes(t) ? "bg-[#E2FF3D] text-black" : "surface"}`}>
+                      {t.replaceAll("_", " ")}
+                    </button>
+                  ))}
+                </div>
+                <textarea data-testid="fb-text" value={fbText} onChange={(e) => setFbText(e.target.value)} rows={3}
+                  placeholder="Describe the problem in your own words…"
+                  className="w-full bg-[#0A0A0B] border border-white/10 rounded-lg px-3 py-2 text-sm outline-none resize-none mb-3"/>
+                {!fbResult ? (
+                  <button data-testid="fb-submit" onClick={submitFeedback} disabled={fbBusy}
+                    className="btn-volt rounded-full px-4 py-2 text-sm w-full disabled:opacity-60">
+                    {fbBusy ? "Analysing…" : "Analyse feedback"}
+                  </button>
+                ) : (
+                  <div>
+                    <div className="text-xs text-zinc-400 mb-2">{fbResult.understood}</div>
+                    <div className="bg-[#141416] rounded p-2 mb-3 max-h-40 overflow-y-auto text-[11px] space-y-1">
+                      {(fbResult.actions || []).map((a, i) => (
+                        <div key={i}>· <b className="text-[#E2FF3D]">{a.layer}</b>.{a.field} = <span className="text-zinc-300">{JSON.stringify(a.value)}</span></div>
+                      ))}
+                    </div>
+                    <button data-testid="fb-apply" onClick={applyFeedbackFix}
+                      className="btn-volt rounded-full px-4 py-2 text-sm w-full">Apply fix + regenerate affected layers</button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* SCENES */}
           <div className="surface rounded-xl p-5">
