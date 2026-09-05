@@ -1073,12 +1073,16 @@ async def ai_tts(body: TTSRequest, request: Request):
                 {"project_id": body.project_id, "user_id": user.user_id},
                 {"$set": {"voice_stale": False, "voice_script_version": sv}},
             )
-        note = ("ElevenLabs key invalid — used OpenAI HD voice as fallback. "
-                "For authentic Indian accent, set a valid sk_... ElevenLabs key.") if is_config_error \
+        note = ("ElevenLabs Free plan blocks premade library voices via API — used OpenAI HD as fallback. "
+                "Upgrade to Starter plan ($5/mo) at elevenlabs.io/subscription for authentic Indian voices.") if is_config_error \
             else "ElevenLabs voice unavailable — used OpenAI HD voice."
+        # Detect plan-limit error separately so the note is accurate
+        if "plan does not allow" in err_msg.lower() or "paid_plan_required" in err_msg.lower():
+            note = ("ElevenLabs Free plan doesn't allow API access to premade voices — used OpenAI HD fallback. "
+                    "Upgrade to Starter ($5/mo) at elevenlabs.io/subscription to unlock all Indian voices.")
         return {"audio_url": url, "provider": "openai",
                 "voice": fb.get("voice"), "credits_left": user.credits,
-                "note": note}
+                "note": note, "elevenlabs_reason": err_msg[:200]}
     await _refund(user, cost, "tts_generation")
     return {"audio_url": None,
             "error": result.get("error") or fb.get("error") or "Voice service unavailable.",

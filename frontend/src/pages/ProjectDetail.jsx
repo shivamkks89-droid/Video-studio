@@ -371,8 +371,9 @@ export default function ProjectDetail() {
       await api.put(`/projects/${id}`, { audio_url: data.audio_url, voice_id: voiceId, status: "voicing" });
       // Reload full project so voice_stale flag reflects the fresh state.
       const { data: p } = await api.get(`/projects/${id}`);
-      setProject(p);
-      if (data.note) toast.message(data.note);
+      // Persist the last-provider so we can show a permanent info banner.
+      setProject({ ...p, last_voice_provider: data.provider, last_voice_note: data.note || "" });
+      if (data.note) toast.message(data.note, { duration: 8000 });
       else toast.success(`Voiceover ready (${data.provider || "elevenlabs"})`);
     } catch (err) {
       toast.error(err.response?.data?.detail || err.response?.data?.error || "Voice gen failed");
@@ -947,6 +948,19 @@ export default function ProjectDetail() {
               {busyVoice ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
               {busyVoice ? "Synthesising…" : (project.voice_stale && project.audio_url ? "Regenerate voiceover" : "Generate voiceover")}
             </button>
+
+            {project.last_voice_provider === "openai" && (
+              <div className="mt-3 bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-xs" data-testid="tts-fallback-banner">
+                <div className="font-semibold text-amber-300 mb-1">ℹ️ Using OpenAI voice (US-English) — API key SAHI hai</div>
+                <div className="text-amber-100/80 leading-relaxed">
+                  {project.last_voice_note || "ElevenLabs Free plan blocks premade voices via API — OpenAI HD fallback active."}
+                </div>
+                <a href="https://elevenlabs.io/subscription" target="_blank" rel="noreferrer"
+                  className="mt-2 inline-block text-[#E2FF3D] underline text-[11px]">
+                  Upgrade to $5 Starter plan → unlock all Indian voices
+                </a>
+              </div>
+            )}
           </div>
 
           {/* UNIVERSAL VOICE QUALITY */}
