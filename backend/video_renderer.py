@@ -83,13 +83,84 @@ def _safe_filter(text: str) -> str:
     return text[:120]
 
 
+def _ass_escape(text: str) -> str:
+    """Escape text for ASS subtitle content."""
+    return (text or "").replace("{", "").replace("}", "").replace("\n", " ")
+
+
+def _build_ass_captions(words: List[dict], width: int, height: int,
+                         style: dict) -> str:
+    """Build an ASS subtitle file with 2-3 word chunks + karaoke-style word
+    highlighting. Placed in the bottom safe zone."""
+    font = style.get("font", "Arial")
+    font_size = int(style.get("font_size", max(36, height // 22)))
+    prim_color = "&H00FFFFFF"      # white text (ASS uses AABBGGRR)
+    highlight = "&H003DFFE2"       # #E2FF3D-ish yellow (BGR)
+    outline = "&H00000000"         # black outline
+    margin_v = int(style.get("margin_v", max(60, height // 8)))
+    max_words = int(style.get("group_size", 3))
+
+    def _fmt_time(sec: float) -> str:
+        sec = max(0.0, sec)
+        h = int(sec // 3600); sec -= h * 3600
+        m = int(sec // 60); sec -= m * 60
+        cs = int(round(sec * 100))
+        return f"{h:d}:{m:02d}:{cs//100:02d}.{cs%100:02d}"
+
+    # Group words into chunks
+    chunks = []
+    for i in range(0, len(words), max_words):
+        chunk = words[i:i + max_words]
+        if chunk:
+            chunks.append({
+                "start": float(chunk[0].get("start", 0)),
+                "end": float(chunk[-1].get("end", 0)),
+                "words": chunk,
+            })
+
+    dialogues = []
+    for ch in chunks:
+        parts = []
+        for wobj in ch["words"]:
+            wtext = _ass_escape(str(wobj.get("word", "")).strip())
+            wdur = max(1, int(round((float(wobj.get("end", 0)) - float(wobj.get("start", 0))) * 100)))
+            parts.append(f"{{\\kf{wdur}}}{wtext} ")
+        line = "".join(parts).strip()
+        dialogues.append(
+            f"Dialogue: 0,{_fmt_time(ch['start'])},{_fmt_time(ch['end'])},"
+            f"Default,,0,0,0,,{line}"
+        )
+
+    header = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: {width}
+PlayResY: {height}
+WrapStyle: 2
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,{font},{font_size},{prim_color},{highlight},{outline},&H80000000,1,0,0,0,100,100,0,0,1,3,1,2,60,60,{margin_v},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    return header + "\n".join(dialogues) + "\n"
+
+
 async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                        aspect_ratio: str = "9:16", fps: int = 30,
-                       default_scene_seconds: float = 3.5) -> Optional[str]:
+                       default_scene_seconds: float = 3.5,
+                       caption_words: Optional[List[dict]] = None,
+                       caption_style: Optional[dict] = None) -> Optional[str]:
     """Render an MP4 from a list of scenes.
 
     Each scene can carry either a still `image_url` (rendered with ken-burns) or
     a `video_clip_url` (a Seedance MP4 that is preferred over the image).
+
+    If `caption_words` is provided (list of {start, end, word} in seconds), the
+    words are grouped into 2-3 word chunks and burned into the final video as
+    karaoke-style captions (auto-safe-zone, bottom-third for 9:16, bottom for 16:9).
     """
 
     async def _fetch(url: str) -> Optional[bytes]:
@@ -218,6 +289,15 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
             # last CTA scene). We use ffmpeg's atempo filter with a safety cap of
             # 1.35× so the voice never sounds robotic.
             final = STATIC_DIR / f"{job_id}.mp4"
+
+            # 4a) Build caption ASS subtitle file if word-level timing provided.
+            subs_path: Optional[Path] = None
+            if caption_words:
+                subs_path = tmp_path / "captions.ass"
+                subs_path.write_text(_build_ass_captions(
+                    caption_words, w, h, caption_style or {}
+                ), encoding="utf-8")
+
             if audio_bytes:
                 audio_path = tmp_path / "voice.mp3"
                 audio_path.write_bytes(audio_bytes)
@@ -250,14 +330,36 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                 if atempo > 1.001:
                     audio_filter_args = ["-filter:a", f"atempo={atempo:.3f}"]
 
-                cmd = [
-                    FFMPEG_BIN, "-y", "-threads", "1", "-i", str(combined), "-i", str(audio_path),
-                    "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
-                    *audio_filter_args,
-                    "-shortest", str(final),
-                ]
+                if subs_path and subs_path.exists():
+                    # Burn karaoke captions AND mux audio in one pass.
+                    # Note: ffmpeg's `subtitles` filter needs escaped colons in Windows-style
+                    # paths but our tmp paths are POSIX so a raw path works.
+                    subs_filter = f"subtitles={subs_path}"
+                    cmd = [
+                        FFMPEG_BIN, "-y", "-threads", "1",
+                        "-i", str(combined), "-i", str(audio_path),
+                        "-vf", subs_filter,
+                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20", "-pix_fmt", "yuv420p",
+                        "-c:a", "aac", "-b:a", "128k",
+                        *audio_filter_args,
+                        "-shortest", str(final),
+                    ]
+                else:
+                    cmd = [
+                        FFMPEG_BIN, "-y", "-threads", "1", "-i", str(combined), "-i", str(audio_path),
+                        "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
+                        *audio_filter_args,
+                        "-shortest", str(final),
+                    ]
             else:
-                cmd = [FFMPEG_BIN, "-y", "-threads", "1", "-i", str(combined), "-c", "copy", str(final)]
+                if subs_path and subs_path.exists():
+                    cmd = [FFMPEG_BIN, "-y", "-threads", "1", "-i", str(combined),
+                           "-vf", f"subtitles={subs_path}",
+                           "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
+                           "-pix_fmt", "yuv420p", str(final)]
+                else:
+                    cmd = [FFMPEG_BIN, "-y", "-threads", "1", "-i", str(combined),
+                           "-c", "copy", str(final)]
             r = subprocess.run(cmd, capture_output=True, timeout=120)
             if r.returncode != 0:
                 print("[render] mux fail:", r.stderr.decode()[-300:])

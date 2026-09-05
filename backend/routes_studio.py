@@ -239,6 +239,71 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
             raise HTTPException(status_code=500, detail=str(e)[:160])
         return {**out, "credits_left": user.credits}
 
+    # ---------- BURN CAPTIONS: transcribe + save word-level timing ----------
+    class CaptionsGenReq(BaseModel):
+        project_id: str
+        style: Optional[dict] = None  # {font, font_size, margin_v, group_size}
+
+    @router.post("/projects/captions/generate")
+    async def generate_captions(body: CaptionsGenReq, request: Request):
+        user = await current_user_dep(request)
+        proj = await db.projects.find_one(
+            {"project_id": body.project_id, "user_id": user.user_id}, {"_id": 0},
+        )
+        if not proj:
+            raise HTTPException(status_code=404, detail="Project not found")
+        audio_url = proj.get("audio_url")
+        if not audio_url:
+            raise HTTPException(status_code=400, detail="Generate voiceover first")
+        audio_bytes = await fetch_to_bytes(audio_url)
+        if not audio_bytes:
+            raise HTTPException(status_code=400, detail="Could not read audio")
+        user = await charge_credits(user, 4, "captions_generate")
+        result = await transcribe_audio(audio_bytes, "auto")
+        if result.get("error"):
+            await refund(user, 4, "captions_error")
+            raise HTTPException(status_code=500, detail=result["error"])
+        # Build word-level list. Whisper may return `words` OR only segments.
+        words = result.get("words") or []
+        if not words:
+            # Fallback: split each segment's text uniformly across its duration
+            for seg in (result.get("segments") or []):
+                txt = (seg.get("text") or "").strip().split()
+                if not txt:
+                    continue
+                s = float(seg.get("start", 0))
+                e = float(seg.get("end", s + 1))
+                dur = max(0.1, (e - s) / max(1, len(txt)))
+                for i, w in enumerate(txt):
+                    words.append({"word": w, "start": s + i * dur, "end": s + (i + 1) * dur})
+        # Normalize keys
+        words = [{"word": w.get("word") or w.get("text") or "",
+                   "start": float(w.get("start", 0)),
+                   "end": float(w.get("end", 0))} for w in words if (w.get("word") or w.get("text"))]
+        await db.projects.update_one(
+            {"project_id": body.project_id, "user_id": user.user_id},
+            {"$set": {
+                "caption_words": words,
+                "caption_style": body.style or {},
+                "captions_enabled": True,
+                "updated_at": utc_now().isoformat(),
+            }},
+        )
+        return {"count": len(words), "captions_enabled": True, "credits_left": user.credits}
+
+    class CaptionsToggleReq(BaseModel):
+        project_id: str
+        enabled: bool
+
+    @router.post("/projects/captions/toggle")
+    async def toggle_captions(body: CaptionsToggleReq, request: Request):
+        user = await current_user_dep(request)
+        await db.projects.update_one(
+            {"project_id": body.project_id, "user_id": user.user_id},
+            {"$set": {"captions_enabled": body.enabled, "updated_at": utc_now().isoformat()}},
+        )
+        return {"ok": True, "captions_enabled": body.enabled}
+
     # ---------- STT / TRANSCRIPTION ----------
     @router.post("/ai/stt")
     async def stt(body: STTRequest, request: Request):

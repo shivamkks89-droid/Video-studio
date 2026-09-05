@@ -961,6 +961,57 @@ export default function ProjectDetail() {
                 </a>
               </div>
             )}
+
+            {/* CAPTIONS: burn word-level animated captions into every scene */}
+            {project.audio_url && (
+              <div className="mt-3 bg-[#0A0A0B] border border-white/5 rounded-lg p-3" data-testid="captions-panel">
+                <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                  <div>
+                    <div className="text-sm font-medium">🎬 Burn Captions</div>
+                    <div className="label-mono text-zinc-500 text-[10px]">
+                      Word-level karaoke captions rendered into video · 4 CR
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {project.caption_words?.length > 0 && (
+                      <span className="label-mono text-[10px] text-[#E2FF3D]">{project.caption_words.length} WORDS READY</span>
+                    )}
+                    <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                      <input type="checkbox" data-testid="captions-toggle"
+                        checked={!!project.captions_enabled}
+                        onChange={async (e) => {
+                          try {
+                            await api.post("/projects/captions/toggle", { project_id: id, enabled: e.target.checked });
+                            setProject((p) => ({ ...p, captions_enabled: e.target.checked }));
+                          } catch (_) { toast.error("Toggle failed"); }
+                        }}
+                        className="accent-[#E2FF3D]"/>
+                      <span className="text-xs">{project.captions_enabled ? "ON" : "OFF"}</span>
+                    </label>
+                  </div>
+                </div>
+                <button data-testid="captions-generate"
+                  onClick={async () => {
+                    const t = toast.loading("Transcribing voice to word-level captions…");
+                    try {
+                      const { data } = await api.post("/projects/captions/generate", {
+                        project_id: id,
+                        style: { font_size: 42, group_size: 3, margin_v: 100 },
+                      });
+                      const { data: p } = await api.get(`/projects/${id}`);
+                      setProject(p);
+                      toast.success(`${data.count} caption words ready — next render will burn them in`, { id: t });
+                    } catch (e) {
+                      toast.error(e.response?.data?.detail || "Caption generation failed", { id: t });
+                    }
+                  }}
+                  disabled={busyVoice}
+                  className="btn-volt rounded-full px-4 py-2 text-xs flex items-center gap-2 disabled:opacity-60">
+                  <Sparkles className="w-3.5 h-3.5"/>
+                  {project.caption_words?.length ? "Regenerate captions from voice" : "Generate captions from voice"}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* UNIVERSAL VOICE QUALITY */}

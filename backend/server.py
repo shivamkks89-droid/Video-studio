@@ -1449,6 +1449,8 @@ async def render_project_video(project_id: str, request: Request):
         job_id=job_id, user_id=user.user_id, project_id=project_id,
         scenes=scenes, audio_url=p.get("audio_url"),
         aspect_ratio=p.get("aspect_ratio", "9:16"), fps=int(p.get("fps", 30)),
+        caption_words=p.get("caption_words") if p.get("captions_enabled") else None,
+        caption_style=p.get("caption_style"),
     ))
     return {"job_id": job_id, "status": "pending", "credits_left": user.credits}
 
@@ -1464,10 +1466,14 @@ async def render_job_status(job_id: str, request: Request):
 
 async def _run_render_job(job_id: str, user_id: str, project_id: str,
                           scenes: list, audio_url: Optional[str],
-                          aspect_ratio: str, fps: int):
+                          aspect_ratio: str, fps: int,
+                          caption_words: Optional[list] = None,
+                          caption_style: Optional[dict] = None):
     try:
         video_url = await render_video(scenes=scenes, audio_data_uri=audio_url,
-                                       aspect_ratio=aspect_ratio, fps=fps)
+                                       aspect_ratio=aspect_ratio, fps=fps,
+                                       caption_words=caption_words,
+                                       caption_style=caption_style)
         if not video_url:
             # Refund and mark failed
             udoc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
