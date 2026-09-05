@@ -587,14 +587,34 @@ async def synthesize_speech(text: str, voice_id: str, stability: float = 0.55,
 
 
 def project_language_to_iso(lang: Optional[str]) -> Optional[str]:
-    """Map project language field → ElevenLabs ISO-639-1 code for accent locking."""
+    """Map project language / accent field → ElevenLabs ISO-639-1 code for accent locking."""
     if not lang:
         return None
     lang = lang.lower()
+    # Regional Indian languages (each maps to its own ISO code so ElevenLabs
+    # multilingual_v2 picks the right phoneme set).
+    lang_map = {
+        "hindi": "hi", "hinglish": "hi", "indian_english": "en",
+        "bengali": "bn", "marathi": "mr", "gujarati": "gu",
+        "punjabi": "pa", "tamil": "ta", "telugu": "te",
+        "kannada": "kn", "malayalam": "ml",
+        "american_english": "en", "british_english": "en",
+        "australian_english": "en", "neutral_english": "en",
+    }
+    if lang in lang_map:
+        return lang_map[lang]
     if "hindi" in lang or "hinglish" in lang:
         return "hi"
     if "indian" in lang or "english" in lang:
         return "en"
+    if "bengali" in lang: return "bn"
+    if "marathi" in lang: return "mr"
+    if "gujarati" in lang: return "gu"
+    if "punjabi" in lang: return "pa"
+    if "tamil" in lang: return "ta"
+    if "telugu" in lang: return "te"
+    if "kannada" in lang: return "kn"
+    if "malayalam" in lang: return "ml"
     return None
 
 

@@ -986,11 +986,25 @@ export default function ProjectDetail() {
                   onChange={(e) => setAccentLock(project.accent_locked, e.target.value)}
                   className="bg-[#141416] text-xs rounded px-2 py-1 border border-white/10">
                   <option value="">Accent…</option>
-                  <option value="indian_english">Indian English</option>
-                  <option value="american_english">American English</option>
-                  <option value="british_english">British English</option>
-                  <option value="australian_english">Australian English</option>
-                  <option value="neutral_english">Neutral English</option>
+                  <optgroup label="🇮🇳 Indian">
+                    <option value="hindi">Hindi</option>
+                    <option value="hinglish">Hinglish</option>
+                    <option value="indian_english">Indian English</option>
+                    <option value="bengali">Bengali</option>
+                    <option value="marathi">Marathi</option>
+                    <option value="gujarati">Gujarati</option>
+                    <option value="punjabi">Punjabi</option>
+                    <option value="tamil">Tamil</option>
+                    <option value="telugu">Telugu</option>
+                    <option value="kannada">Kannada</option>
+                    <option value="malayalam">Malayalam</option>
+                  </optgroup>
+                  <optgroup label="🌍 English variants">
+                    <option value="american_english">American English</option>
+                    <option value="british_english">British English</option>
+                    <option value="australian_english">Australian English</option>
+                    <option value="neutral_english">Neutral English</option>
+                  </optgroup>
                 </select>
                 <button data-testid="accent-lock-btn" onClick={() => setAccentLock(!project.accent_locked)}
                   className={`rounded-full px-3 py-1 text-xs ${project.accent_locked ? "bg-[#E2FF3D] text-black font-semibold" : "surface"}`}>

@@ -1024,18 +1024,25 @@ async def ai_tts(body: TTSRequest, request: Request):
     user = await _charge_credits(user, cost, "tts_generation")
     # Look up the project language + pronunciation dict for accent-locked TTS.
     proj_lang = None
+    proj_accent = None
+    accent_locked = False
     pron_dict: dict = {}
     if body.project_id:
         proj = await db.projects.find_one(
             {"project_id": body.project_id, "user_id": user.user_id},
-            {"_id": 0, "language": 1, "pronunciation": 1},
+            {"_id": 0, "language": 1, "pronunciation": 1, "accent": 1, "accent_locked": 1},
         )
         proj_lang = (proj or {}).get("language")
+        proj_accent = (proj or {}).get("accent")
+        accent_locked = bool((proj or {}).get("accent_locked"))
         pron_dict = (proj or {}).get("pronunciation") or {}
     # Apply the pronunciation dictionary to the raw text (HeartLink → Heart Link, AI → A I)
     from ai_services import apply_pronunciation
     speak_text = apply_pronunciation(body.text, pron_dict)
-    language_code = project_language_to_iso(proj_lang)
+    # 🔒 Accent Lock: when the user locked a specific accent, override language ISO
+    # code with the accent's ISO. Ensures every scene inherits the same accent.
+    iso_source = proj_accent if (accent_locked and proj_accent) else proj_lang
+    language_code = project_language_to_iso(iso_source)
     # Try ElevenLabs first (real human-grade voice if user's plan allows)
     result = await synthesize_speech(speak_text, body.voice_id, body.stability,
                                      body.similarity_boost, body.style,
