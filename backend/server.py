@@ -291,7 +291,15 @@ async def voices_clone_route(request: Request, name: str = Form(...),
     result = await clone_voice(name=name, audio_bytes=audio_bytes, description=description)
     if result.get("error"):
         await _refund(user, 100, "voice_clone_refund", None)
-        raise HTTPException(status_code=502, detail=result["error"])
+        # Use 400 (Bad Request) NOT 502 — Cloudflare hides 502 details with its
+        # own "Bad gateway" page, so the frontend can never show the real error.
+        err = result["error"]
+        low = err.lower()
+        if "plan" in low or "upgrade" in low or "limit_reached" in low:
+            status = 402  # Payment Required — plan blocks feature
+        else:
+            status = 400  # Bad Request — config / key / audio issue
+        raise HTTPException(status_code=status, detail=err)
 
     voice_entry = {
         "id": result["voice_id"],
@@ -796,7 +804,7 @@ async def video_clip_generate(body: VideoClipReq, request: Request):
                 detail=("fal.ai account balance exhausted — top up at fal.ai/dashboard/billing, "
                         "or switch to the free Sora 2 engine."),
             )
-        raise HTTPException(status_code=502, detail=f"{engine.title()} error: {detail[:300]}")
+        raise HTTPException(status_code=400, detail=f"{engine.title()} error: {detail[:300]}")
 
     scenes[body.scene_index] = {
         **scene,
