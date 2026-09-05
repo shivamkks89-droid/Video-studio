@@ -25,6 +25,7 @@ from models import (
     ProjectVersion, STTRequest, ScriptRefineRequest, Workspace, WorkspaceCreate,
     Project, new_id, utc_now, CreditTransaction,
     PronunciationCheckRequest, FeedbackRequest, CommercialCheckRequest,
+    Avatar, AvatarGenerateRequest, LipSyncRequest,
 )
 from ai_services import (
     check_compliance, generate_ad_copy, generate_campaign, generate_multi_creatives,
@@ -303,6 +304,113 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
             {"$set": {"captions_enabled": body.enabled, "updated_at": utc_now().isoformat()}},
         )
         return {"ok": True, "captions_enabled": body.enabled}
+
+    # ---------- AVATAR STUDIO ----------
+    @router.get("/avatars/status")
+    async def avatars_status():
+        from avatar_provider import provider_status
+        return provider_status()
+
+    @router.get("/avatars")
+    async def list_avatars(request: Request):
+        user = await current_user_dep(request)
+        return await db.avatars.find({"user_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(200)
+
+    @router.post("/avatars/generate")
+    async def gen_avatar(body: AvatarGenerateRequest, request: Request):
+        user = await current_user_dep(request)
+        user = await charge_credits(user, 15, "avatar_generate")
+        from avatar_provider import get_generator
+        gen = get_generator()
+        result = await gen.generate_avatar_image(body.prompt, body.style)
+        if result.get("error"):
+            await refund(user, 15, "avatar_generate_error")
+            raise HTTPException(status_code=500, detail=result["error"])
+        av = Avatar(
+            user_id=user.user_id, name=body.name, image_url=result["image_url"],
+            source="generated", prompt=body.prompt, style=body.style,
+            gender=body.gender, age_range=body.age_range, provider=result["provider"],
+        )
+        d = av.model_dump(); d["created_at"] = d["created_at"].isoformat()
+        await db.avatars.insert_one(dict(d))
+        return {**d, "credits_left": user.credits}
+
+    @router.post("/avatars/upload")
+    async def upload_avatar(request: Request, file: UploadFile = File(...),
+                             name: str = Form("My avatar"),
+                             gender: Optional[str] = Form(None),
+                             style: str = Form("presenter")):
+        user = await current_user_dep(request)
+        if file.content_type and "image" not in file.content_type:
+            raise HTTPException(status_code=400, detail="Only image files")
+        raw = await file.read()
+        if len(raw) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Max 10 MB")
+        mime = file.content_type or "image/png"
+        b64 = base64.b64encode(raw).decode()
+        data_uri = f"data:{mime};base64,{b64}"
+        # Reuse the image asset store
+        from image_store import save_data_uri
+        url = save_data_uri(data_uri) or data_uri
+        av = Avatar(user_id=user.user_id, name=name, image_url=url,
+                    source="uploaded", style=style, gender=gender, provider="upload")
+        d = av.model_dump(); d["created_at"] = d["created_at"].isoformat()
+        await db.avatars.insert_one(dict(d))
+        return d
+
+    @router.delete("/avatars/{avatar_id}")
+    async def delete_avatar(avatar_id: str, request: Request):
+        user = await current_user_dep(request)
+        await db.avatars.delete_one({"avatar_id": avatar_id, "user_id": user.user_id})
+        return {"ok": True}
+
+    class AvatarAttachReq(BaseModel):
+        project_id: str
+        avatar_id: str
+
+    @router.post("/projects/avatar/attach")
+    async def attach_avatar(body: AvatarAttachReq, request: Request):
+        user = await current_user_dep(request)
+        av = await db.avatars.find_one(
+            {"avatar_id": body.avatar_id, "user_id": user.user_id}, {"_id": 0},
+        )
+        if not av:
+            raise HTTPException(status_code=404, detail="Avatar not found")
+        await db.projects.update_one(
+            {"project_id": body.project_id, "user_id": user.user_id},
+            {"$set": {"avatar_id": av["avatar_id"], "avatar_image": av["image_url"],
+                      "updated_at": utc_now().isoformat()}},
+        )
+        return {"ok": True, "avatar_id": av["avatar_id"], "image_url": av["image_url"]}
+
+    @router.post("/avatars/lipsync")
+    async def lipsync_avatar(body: LipSyncRequest, request: Request):
+        user = await current_user_dep(request)
+        proj = await db.projects.find_one(
+            {"project_id": body.project_id, "user_id": user.user_id}, {"_id": 0},
+        )
+        if not proj:
+            raise HTTPException(status_code=404, detail="Project not found")
+        av = await db.avatars.find_one(
+            {"avatar_id": body.avatar_id, "user_id": user.user_id}, {"_id": 0},
+        )
+        if not av:
+            raise HTTPException(status_code=404, detail="Avatar not found")
+        if not proj.get("audio_url"):
+            raise HTTPException(status_code=400, detail="Generate voiceover first")
+        from avatar_provider import get_lipsync
+        provider = get_lipsync()
+        if not provider:
+            raise HTTPException(
+                status_code=402,
+                detail=("No lip-sync provider configured. Add HEYGEN_API_KEY or DID_API_KEY "
+                        "to backend .env to enable talking-avatar rendering."),
+            )
+        result = await provider.create_talking_video(av["image_url"], proj["audio_url"],
+                                                      proj.get("caption_words"))
+        if result.get("error"):
+            raise HTTPException(status_code=400, detail=result["error"])
+        return {**result, "avatar_id": av["avatar_id"]}
 
     # ---------- STT / TRANSCRIPTION ----------
     @router.post("/ai/stt")

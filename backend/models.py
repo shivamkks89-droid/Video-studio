@@ -300,6 +300,35 @@ class STTRequest(BaseModel):
     language: str = "auto"
 
 
+# ---------- AVATARS ----------
+class Avatar(BaseModel):
+    avatar_id: str = Field(default_factory=lambda: new_id("av"))
+    user_id: str
+    name: str
+    image_url: str
+    source: Literal["generated", "uploaded"] = "generated"
+    prompt: Optional[str] = None
+    style: str = "presenter"    # presenter, ugc, corporate, influencer, cinematic
+    gender: Optional[str] = None  # male, female, non_binary
+    age_range: Optional[str] = None
+    provider: str = "nano_banana"
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class AvatarGenerateRequest(BaseModel):
+    name: str
+    prompt: str
+    style: str = "presenter"
+    gender: Optional[str] = None
+    age_range: Optional[str] = None
+
+
+class LipSyncRequest(BaseModel):
+    project_id: str
+    avatar_id: str
+    provider: Optional[str] = None  # heygen | did — auto-detects if None
+
+
 # ---------- PROJECT VERSION SNAPSHOT ----------
 class ProjectVersion(BaseModel):
     version_id: str = Field(default_factory=lambda: new_id("ver"))
