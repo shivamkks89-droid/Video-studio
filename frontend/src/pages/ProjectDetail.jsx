@@ -51,6 +51,7 @@ export default function ProjectDetail() {
   const [brandLogo, setBrandLogo] = useState("");
   const [targetGender, setTargetGender] = useState("all"); // women, men, teens, kids, all
   const [targetAge, setTargetAge] = useState(""); // "", "13-17", "18-24", ...
+  const autoRegenTriedRef = useRef(false);
 
   const BACKEND = process.env.REACT_APP_BACKEND_URL;
   const videoSrc = project?.video_url ? `${BACKEND}${project.video_url}` : null;
@@ -73,6 +74,18 @@ export default function ProjectDetail() {
     api.get("/catalog/voices").then(({ data }) => setVoices(data));
     api.get("/ai/video-clip/engines").then(({ data }) => setEngines(data)).catch(() => {});
   }, [id]);
+
+  // Auto-regenerate voiceover if the voice was changed externally (e.g. from
+  // Voice Studio → Attach) and the project already had a rendered voiceover.
+  useEffect(() => {
+    if (!project || autoRegenTriedRef.current) return;
+    if (!project.voice_stale) return;
+    if (!project.audio_url || !project.script?.body) return;
+    autoRegenTriedRef.current = true;
+    toast.info("Voice changed — regenerating voiceover with the new voice…");
+    setTimeout(() => { genVoice().catch(() => {}); }, 800);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.project_id, project?.voice_stale]);
 
   // Auto-pick a language-matched voice once BOTH voices and project are loaded.
   // Order matters: check `hinglish` BEFORE `hindi` because "hinglish".includes("hindi")
@@ -286,14 +299,20 @@ export default function ProjectDetail() {
       setVoices(vs);
       setVoiceId(data.voice.id);
       // PERSIST on the project so refresh keeps the selection
+      const hadAudio = !!project?.audio_url;
       try {
         await api.put(`/projects/${id}`, { voice_id: data.voice.id });
-        setProject((p) => (p ? { ...p, voice_id: data.voice.id } : p));
+        setProject((p) => (p ? { ...p, voice_id: data.voice.id, voice_stale: hadAudio ? true : p.voice_stale } : p));
       } catch (persistErr) {
         // Non-fatal: user can hit Generate voiceover which will pick voiceId state
       }
       setShowClone(false); setCloneName(""); setCloneFile(null);
       setCloneTrimReady(null); setCloneTrimStart(0); setCloneTrimEnd(0);
+      // Auto-regenerate voiceover with the new cloned voice if project already had one
+      if (hadAudio && project?.script) {
+        toast.info("Re-recording voiceover in your cloned voice…");
+        setTimeout(() => { genVoice().catch(() => {}); }, 600);
+      }
     } catch (err) {
       toast.error(err.response?.data?.detail || "Clone failed", { id: t });
     } finally { setBusyClone(false); }

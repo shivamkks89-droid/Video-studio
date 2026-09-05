@@ -1322,6 +1322,16 @@ async def update_project(project_id: str, request: Request):
     if "script" in body:
         body["voice_stale"] = True
         inc = {"script_version": 1}
+    # If the caller changed the voice_id, mark voice stale so any existing
+    # voiceover audio is recognised as belonging to the previous voice —
+    # the frontend uses this to auto-regenerate with the new voice.
+    if "voice_id" in body:
+        existing = await db.projects.find_one(
+            {"project_id": project_id, "user_id": user.user_id},
+            {"_id": 0, "voice_id": 1, "audio_url": 1},
+        )
+        if existing and existing.get("voice_id") != body["voice_id"] and existing.get("audio_url"):
+            body["voice_stale"] = True
     ops = {"$set": body}
     if inc:
         ops["$inc"] = inc
