@@ -88,9 +88,60 @@ class DIDLipSyncProvider(AvatarProvider):
         return {"error": "D-ID SDK adapter not yet implemented in this build."}
 
 
+# ---------- fal.ai Lip-sync (pay-per-use, uses existing FAL_KEY) ----------
+class FalLipSyncProvider(AvatarProvider):
+    id = "fal"
+    name = "fal.ai (Sync-1.6)"
+    supports_generate = False
+    supports_lipsync = True
+
+    async def create_talking_video(self, avatar_url: str, audio_url: str,
+                                    words: Optional[list] = None) -> dict:
+        if not os.environ.get("FAL_KEY"):
+            return {"error": "fal.ai not configured. Add FAL_KEY to backend .env "
+                             "(same key as Seedance)."}
+        try:
+            import fal_client  # type: ignore
+            # Public URLs required — the frontend's asset URLs work because our
+            # /api/files/* routes serve them publicly.
+            handler = fal_client.submit(
+                "fal-ai/sync-lipsync",
+                arguments={
+                    "video_url": avatar_url,   # can be an image too — sync-lipsync accepts still portraits
+                    "audio_url": audio_url,
+                    "sync_mode": "cut_off",
+                    "model": "lipsync-1.9.0-beta",
+                },
+            )
+            result = handler.get()
+            video_url = (result or {}).get("video", {}).get("url") if isinstance(result, dict) else None
+            if not video_url:
+                return {"error": f"fal.ai lipsync returned no video. Raw: {str(result)[:200]}"}
+            return {"video_url": video_url, "provider": self.id}
+        except Exception as e:
+            return {"error": f"fal.ai lipsync failed: {str(e)[:200]}"}
+
+
+# ---------- Sync.so (has free API tier) ----------
+class SyncLipSyncProvider(AvatarProvider):
+    id = "sync"
+    name = "Sync.so (Free tier)"
+    supports_generate = False
+    supports_lipsync = True
+
+    async def create_talking_video(self, avatar_url: str, audio_url: str,
+                                    words: Optional[list] = None) -> dict:
+        if not os.environ.get("SYNC_API_KEY"):
+            return {"error": ("Sync.so not configured. Add SYNC_API_KEY to backend .env. "
+                              "Sign up at sync.so — they include API access in their free tier.")}
+        return {"error": "Sync.so SDK adapter available on request — send us your API key."}
+
+
 # ---------- registry ----------
 PROVIDERS = {
     "nano_banana": NanoBananaAvatarProvider(),
+    "fal": FalLipSyncProvider(),
+    "sync": SyncLipSyncProvider(),
     "heygen": HeyGenLipSyncProvider(),
     "did": DIDLipSyncProvider(),
 }
@@ -102,12 +153,15 @@ def get_generator() -> AvatarProvider:
 
 
 def get_lipsync() -> Optional[AvatarProvider]:
-    """Return the first CONFIGURED lipsync provider or None."""
-    for p_id in ("heygen", "did"):
+    """Return the first CONFIGURED lipsync provider or None.
+    Priority: fal (uses existing FAL_KEY) > sync > heygen > did."""
+    for p_id in ("fal", "sync", "heygen", "did"):
         p = PROVIDERS.get(p_id)
-        if p and p.supports_lipsync:
-            if os.environ.get(f"{p_id.upper()}_API_KEY"):
-                return p
+        if not p or not p.supports_lipsync:
+            continue
+        env_key = "FAL_KEY" if p_id == "fal" else f"{p_id.upper()}_API_KEY"
+        if os.environ.get(env_key):
+            return p
     return None
 
 
@@ -121,7 +175,9 @@ def provider_status() -> dict:
         ],
         "lipsync": [
             {"id": p.id, "name": p.name,
-             "configured": bool(os.environ.get(f"{p.id.upper()}_API_KEY")),
+             "configured": bool(os.environ.get(
+                 "FAL_KEY" if p.id == "fal" else f"{p.id.upper()}_API_KEY"
+             )),
              "supports": ["talking_video"]}
             for p in PROVIDERS.values() if p.supports_lipsync
         ],
