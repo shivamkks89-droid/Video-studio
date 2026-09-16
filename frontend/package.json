@@ -74,7 +74,7 @@
     "start": "craco start",
     "build": "craco build",
     "test": "craco test",
-    "mobile:build": "REACT_APP_MOBILE=1 REACT_APP_BACKEND_URL=https://video-studio-ai-38.emergent.host craco build",
+    "mobile:build": "REACT_APP_MOBILE=1 REACT_APP_BACKEND_URL=https://cinemaai.online craco build",
     "mobile:sync": "yarn mobile:build && npx cap sync android",
     "mobile:open": "yarn mobile:sync && npx cap open android",
     "mobile:aab": "yarn mobile:sync && cd android && ./gradlew bundleRelease"
