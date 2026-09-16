@@ -4,6 +4,7 @@ import {
   Home, FolderKanban, Plus, LayoutGrid, User as UserIcon,
   Sparkles, Mic, Image as ImageIcon, Megaphone, Rocket, User, X,
 } from "lucide-react";
+import { hapticTap, hapticSelection } from "../lib/native";
 
 /**
  * Native-style Android bottom tab bar.
@@ -110,6 +111,7 @@ export default function BottomNav() {
               to="/dashboard/new"
               data-testid="tab-create"
               aria-label="New project"
+              onClick={() => hapticTap("Medium")}
               className="absolute -top-5 w-14 h-14 rounded-full bg-[#E2FF3D] text-black
                          grid place-items-center shadow-[0_10px_28px_rgba(226,255,61,0.45)]
                          ring-4 ring-[#0A0A0B] active:scale-95 transition-transform"
@@ -122,7 +124,7 @@ export default function BottomNav() {
           <button
             type="button"
             data-testid="tab-studios"
-            onClick={() => setStudiosOpen(true)}
+            onClick={() => { hapticSelection(); setStudiosOpen(true); }}
             className={`flex flex-col items-center justify-center gap-0.5 transition
                         ${studiosOpen ? "text-[#E2FF3D]" : "text-zinc-400 hover:text-white"}`}
           >
@@ -148,6 +150,7 @@ function Tab({ to, label, icon: Icon, active, testid }) {
     <NavLink
       to={to}
       data-testid={testid}
+      onClick={() => hapticSelection()}
       className={`flex flex-col items-center justify-center gap-0.5 transition
                   ${active ? "text-[#E2FF3D]" : "text-zinc-400 hover:text-white"}`}
     >

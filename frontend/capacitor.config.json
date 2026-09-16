@@ -10,15 +10,18 @@
   "backgroundColor": "#0A0A0B",
   "plugins": {
     "SplashScreen": {
-      "launchShowDuration": 1400,
-      "launchAutoHide": true,
+      "launchShowDuration": 2000,
+      "launchAutoHide": false,
       "backgroundColor": "#0A0A0B",
       "androidScaleType": "CENTER_CROP",
-      "showSpinner": true,
-      "spinnerColor": "#E2FF3D",
+      "showSpinner": false,
       "splashFullScreen": true,
-      "splashImmersive": true
+      "splashImmersive": true,
+      "launchFadeOutDuration": 300,
+      "androidSplashResourceName": "splash",
+      "useDialog": false
     },
+    "Haptics": {},
     "StatusBar": {
       "style": "DARK",
       "backgroundColor": "#0A0A0B"

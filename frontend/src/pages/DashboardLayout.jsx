@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import BottomNav from "../components/BottomNav";
+import OfflineBadge from "../components/OfflineBadge";
 
 const SIDE_LINKS = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
@@ -150,6 +151,9 @@ export default function DashboardLayout() {
 
       {/* Native-style bottom tab bar (mobile only) */}
       <BottomNav />
+
+      {/* Offline / syncing indicator */}
+      <OfflineBadge />
     </div>
   );
 }

@@ -1,12 +1,18 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import PullToRefresh from "../components/PullToRefresh";
 
 export default function Credits() {
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
   const [items, setItems] = useState([]);
-  useEffect(() => { api.get("/credits/history").then(({data}) => setItems(data)); }, []);
+  const load = async () => {
+    try { const { data } = await api.get("/credits/history"); setItems(data); } catch { /* offline */ }
+    try { await refresh?.(); } catch { /* ignore */ }
+  };
+  useEffect(() => { load(); }, []);
   return (
+    <PullToRefresh onRefresh={load} testid="credits-ptr">
     <div data-testid="credits-page" className="space-y-6">
       <div>
         <div className="label-mono text-zinc-500 mb-2">/ CREDITS & USAGE</div>
@@ -37,6 +43,7 @@ export default function Credits() {
         </table>
       </div>
     </div>
+    </PullToRefresh>
   );
 }
 function Stat({ title, value, testid }) {

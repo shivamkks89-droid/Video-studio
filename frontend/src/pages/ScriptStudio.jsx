@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Sparkles, Loader2, Copy, Film, Edit3, Wand2, Scissors, Type, Languages, Layers } from "lucide-react";
+import { Sparkles, Loader2, Copy, Film, Edit3, Wand2, Scissors, Type, Languages, Layers, CloudOff, Check } from "lucide-react";
 import { api } from "../lib/api";
 import { toast } from "sonner";
+import { saveDraft, loadDraft, deleteDraft, queueForSync, newLocalDraftId, syncPending } from "../lib/drafts";
 
 const LANGS = ["english", "hindi", "hinglish"];
 const TONES = ["professional", "motivational", "friendly", "emotional", "storytelling", "luxury", "ugc"];
@@ -42,6 +43,50 @@ export default function ScriptStudio() {
   const estDurationSec = Math.max(1, Math.round(wordCount / 2.5));
   const sceneCount = Math.max(1, Math.round(estDurationSec / 5));
 
+  // -------- Offline draft state --------
+  const draftIdRef = useRef(null);
+  const [draftStatus, setDraftStatus] = useState("idle"); // idle | saving | saved | offline
+
+  useEffect(() => {
+    // Ensure we have a persistent local draft id + rehydrate any existing text.
+    let cancelled = false;
+    (async () => {
+      const stored = localStorage.getItem("cinereel.active-draft-id");
+      const did = stored || newLocalDraftId();
+      draftIdRef.current = did;
+      if (!stored) localStorage.setItem("cinereel.active-draft-id", did);
+      const d = await loadDraft(did);
+      if (!cancelled && d?.script?.body) {
+        setManualText(d.script.body);
+        setLanguage(d.language || "english");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    // Debounced auto-save whenever the script or language changes.
+    const id = draftIdRef.current;
+    if (!id) return;
+    setDraftStatus(navigator.onLine ? "saving" : "offline");
+    const t = setTimeout(async () => {
+      await saveDraft(id, {
+        title: manualText.trim().split(/\s+/).slice(0, 8).join(" ") || "Untitled draft",
+        script: { body: manualText, hook: manualText.split(/[.\n]/)[0] || "", cta },
+        language, video_type: videoType, target_gender: targetGender, target_age: targetAge,
+      });
+      await queueForSync(id);
+      if (navigator.onLine) {
+        // Best-effort background sync so the draft never lingers when online.
+        syncPending().catch(() => {});
+        setDraftStatus("saved");
+      } else {
+        setDraftStatus("offline");
+      }
+    }, 900);
+    return () => clearTimeout(t);
+  }, [manualText, language, videoType, targetGender, targetAge, cta]);
+
   const runRefine = async (action) => {
     if (!manualText.trim()) return toast.error("Paste or type a script first");
     setRefining(action);
@@ -78,6 +123,12 @@ export default function ScriptStudio() {
         title, video_type: videoType, language, aspect_ratio: aspect,
         duration_sec: Math.max(15, estDurationSec), script: scriptObj,
       });
+      // Draft is now a real server project — clean up local copy.
+      if (draftIdRef.current) {
+        await deleteDraft(draftIdRef.current);
+        localStorage.removeItem("cinereel.active-draft-id");
+        draftIdRef.current = null;
+      }
       toast.success("Project created from manual script");
       navigate(`/dashboard/projects/${data.project_id}`);
     } catch (e) { toast.error("Failed to create project"); }
@@ -148,7 +199,23 @@ export default function ScriptStudio() {
       {/* MANUAL EDITOR */}
       <div className="surface rounded-xl p-5" data-testid="ss-manual-editor">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <div className="label-mono text-[#E2FF3D]">/ MANUAL SCRIPT EDITOR</div>
+          <div className="flex items-center gap-3">
+            <div className="label-mono text-[#E2FF3D]">/ MANUAL SCRIPT EDITOR</div>
+            {/* Offline-first draft indicator */}
+            <span data-testid="ss-draft-status"
+              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium
+                ${draftStatus === "offline"
+                  ? "border-amber-400/30 bg-amber-400/10 text-amber-400"
+                  : draftStatus === "saving"
+                    ? "border-white/10 bg-white/5 text-zinc-400"
+                    : draftStatus === "saved"
+                      ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-400"
+                      : "hidden"}`}>
+              {draftStatus === "offline" ? <><CloudOff className="w-3 h-3"/> Offline · saved locally</>
+                : draftStatus === "saving" ? <><Loader2 className="w-3 h-3 animate-spin"/> Auto-saving</>
+                : draftStatus === "saved" ? <><Check className="w-3 h-3"/> Draft saved</> : null}
+            </span>
+          </div>
           <div className="flex items-center gap-4 label-mono text-zinc-500 text-[10px]">
             <span data-testid="ss-word-count">{wordCount} WORDS</span>
             <span data-testid="ss-char-count">{charCount} CHARS</span>

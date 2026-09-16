@@ -4,6 +4,7 @@ import { Film, Copy, Trash2, Plus } from "lucide-react";
 import { api } from "../lib/api";
 import { toast } from "sonner";
 import { assetUrl } from "../lib/assetUrl";
+import PullToRefresh from "../components/PullToRefresh";
 
 export default function Projects() {
   const [items, setItems] = useState([]);
@@ -25,6 +26,7 @@ export default function Projects() {
   };
 
   return (
+    <PullToRefresh onRefresh={load} testid="projects-ptr">
     <div data-testid="projects-page">
       <div className="flex items-center justify-between mb-8">
         <div>
@@ -66,5 +68,6 @@ export default function Projects() {
         </div>
       )}
     </div>
+    </PullToRefresh>
   );
 }

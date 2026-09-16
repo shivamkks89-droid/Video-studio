@@ -26,6 +26,7 @@ import AdStudio from "./pages/AdStudio";
 import Workspaces from "./pages/Workspaces";
 import AvatarStudio from "./pages/AvatarStudio";
 import PlayStoreAssets from "./pages/PlayStoreAssets";
+import SplashGate from "./components/SplashGate";
 
 function AppRouter() {
   const location = useLocation();
@@ -77,9 +78,11 @@ export default function App() {
         <Toaster position="top-right" theme="dark" toastOptions={{
           style: { background: "#141416", border: "1px solid rgba(255,255,255,0.1)", color: "#fff" }
         }} />
-        <ErrorBoundary>
-          <AppRouter />
-        </ErrorBoundary>
+        <SplashGate minMs={900}>
+          <ErrorBoundary>
+            <AppRouter />
+          </ErrorBoundary>
+        </SplashGate>
       </AuthProvider>
     </BrowserRouter>
   );
