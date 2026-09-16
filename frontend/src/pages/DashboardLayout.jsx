@@ -96,7 +96,7 @@ export default function DashboardLayout() {
   );
 
   return (
-    <div className="min-h-screen bg-[#0A0A0B] text-white flex">
+    <div className="min-h-screen bg-[#0A0A0B] text-white flex overflow-x-hidden">
       {/* DESKTOP SIDEBAR */}
       <aside data-testid="sidebar" className="hidden lg:flex w-60 shrink-0 flex-col border-r border-white/5 bg-[#0A0A0B]">
         {sidebarBody()}
@@ -106,8 +106,9 @@ export default function DashboardLayout() {
       {mobileOpen && (
         <>
           <div className="fixed inset-0 z-40 bg-black/70 lg:hidden" onClick={() => setMobileOpen(false)} />
-          <aside data-testid="mobile-sidebar" className="fixed inset-y-0 left-0 z-50 w-64 lg:hidden bg-[#0A0A0B] border-r border-white/5 flex flex-col">
-            <button onClick={() => setMobileOpen(false)} className="absolute top-4 right-3 text-zinc-400 hover:text-white">
+          <aside data-testid="mobile-sidebar" className="fixed inset-y-0 left-0 z-50 w-[85vw] max-w-xs lg:hidden bg-[#0A0A0B] border-r border-white/5 flex flex-col safe-top safe-bottom">
+            <button onClick={() => setMobileOpen(false)}
+              className="absolute top-3 right-3 z-10 text-zinc-400 hover:text-white p-2 -m-2">
               <X className="w-5 h-5" />
             </button>
             {sidebarBody(() => setMobileOpen(false))}
@@ -117,28 +118,31 @@ export default function DashboardLayout() {
 
       {/* MAIN */}
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="sticky top-0 z-30 glass h-14 px-4 lg:px-8 flex items-center justify-between border-b border-white/5">
-          <div className="flex items-center gap-3">
-            <button data-testid="mobile-menu-btn" onClick={() => setMobileOpen(true)} className="lg:hidden text-zinc-300 hover:text-white">
+        <header className="sticky top-0 z-30 glass safe-top h-14 px-3 sm:px-4 lg:px-8 flex items-center justify-between border-b border-white/5 gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+            <button data-testid="mobile-menu-btn" onClick={() => setMobileOpen(true)}
+              aria-label="Open menu"
+              className="lg:hidden text-zinc-300 hover:text-white p-1 -ml-1 shrink-0">
               <Menu className="w-5 h-5" />
             </button>
-            <Link to="/dashboard" className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-md bg-[#E2FF3D] grid place-items-center">
+            <Link to="/dashboard" className="flex items-center gap-2 min-w-0">
+              <div className="w-7 h-7 rounded-md bg-[#E2FF3D] grid place-items-center shrink-0">
                 <Film className="w-3.5 h-3.5 text-black" />
               </div>
-              <span className="font-semibold hidden sm:inline">CineReel</span>
+              <span className="font-semibold hidden sm:inline truncate">CineReel</span>
             </Link>
-            <div className="label-mono text-zinc-500 hidden md:block">/ STUDIO</div>
+            <div className="label-mono text-zinc-500 hidden lg:block">/ STUDIO</div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <Link to="/dashboard/credits" data-testid="header-credits"
-                  className="px-3 py-1.5 rounded-full surface text-xs label-mono">
-              <span className="text-[#E2FF3D]">{user.credits}</span> CREDITS
+                  className="px-2.5 sm:px-3 py-1.5 rounded-full surface text-[10px] sm:text-xs label-mono whitespace-nowrap">
+              <span className="text-[#E2FF3D]">{user.credits}</span><span className="hidden xs:inline"> CR</span>
             </Link>
-            <Link to="/pricing" data-testid="header-upgrade" className="text-xs label-mono hover:text-[#E2FF3D]">UPGRADE</Link>
+            <Link to="/pricing" data-testid="header-upgrade"
+              className="text-[10px] sm:text-xs label-mono hover:text-[#E2FF3D] px-1 hidden xs:inline-block">UPGRADE</Link>
           </div>
         </header>
-        <main className="flex-1 p-4 lg:p-8 overflow-y-auto">
+        <main className="flex-1 p-3 sm:p-4 lg:p-8 overflow-y-auto safe-bottom">
           <Outlet />
         </main>
       </div>

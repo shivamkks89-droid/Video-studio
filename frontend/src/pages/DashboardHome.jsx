@@ -105,19 +105,20 @@ export default function DashboardHome() {
               ad concepts you can render in one click.
             </p>
             <form onSubmit={onSuggest} className="mt-6 flex flex-col gap-3 max-w-2xl">
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   data-testid="idea-input"
                   value={ideaQuery}
                   onChange={(e) => setIdeaQuery(e.target.value)}
-                  placeholder="Paste Play Store ID, website URL, or product idea (we'll pull real brand assets)"
-                  className="flex-1 surface rounded-full px-5 py-3 bg-[#141416] outline-none text-sm focus:border-white/30"
+                  placeholder="Paste Play Store ID, website URL, or product idea"
+                  className="w-full sm:flex-1 min-w-0 surface rounded-full px-4 sm:px-5 py-3 bg-[#141416] outline-none text-sm focus:border-white/30"
                 />
-                <button data-testid="idea-submit" disabled={loadingIdeas} className="btn-volt rounded-full px-5 py-3 flex items-center gap-2 disabled:opacity-60">
+                <button data-testid="idea-submit" disabled={loadingIdeas}
+                  className="btn-volt rounded-full px-5 py-3 flex items-center justify-center gap-2 disabled:opacity-60 shrink-0 whitespace-nowrap">
                   <Wand2 className="w-4 h-4" /> {loadingIdeas ? "Thinking…" : "Suggest"}
                 </button>
               </div>
-              <div className="flex items-center gap-2" data-testid="idea-language-tabs">
+              <div className="flex items-center gap-2 flex-wrap" data-testid="idea-language-tabs">
                 <span className="label-mono text-zinc-500 text-[10px] mr-1">LANGUAGE</span>
                 {[
                   { k: "hindi", label: "हिन्दी" },

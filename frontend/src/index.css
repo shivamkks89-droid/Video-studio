@@ -12,6 +12,31 @@ html, body, #root {
   -moz-osx-font-smoothing: grayscale;
   margin: 0;
   min-height: 100vh;
+  /* Kill horizontal scroll globally on mobile / WebView */
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Every layout block must respect the viewport width */
+img, video, canvas, svg { max-width: 100%; height: auto; }
+
+/* Android WebView + iOS notch safe areas */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+.safe-top    { padding-top: max(var(--safe-top), 0px); }
+.safe-bottom { padding-bottom: max(var(--safe-bottom), 0px); }
+.safe-x      { padding-left: max(var(--safe-left), 0px); padding-right: max(var(--safe-right), 0px); }
+
+/* Touch targets should be ≥ 44px on mobile */
+@media (max-width: 767px) {
+  button, a[role="button"], .touch { min-height: 44px; }
+  /* Prevent iOS input auto-zoom */
+  input, select, textarea { font-size: 16px !important; }
 }
 
 ::selection { background: #E2FF3D; color: #000; }
