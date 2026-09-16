@@ -79,6 +79,12 @@ InVideo AI + CapCut + Canva AI.
 - Templates library expansion (Dating / E-commerce / SaaS / RealEstate / Restaurants / Fitness / Festivals)
 
 ## Recent Changes
+- **Feb 2026 — Shipping Kit shipped**:
+  - **Lipsync Muxing**: fal.ai talking-avatar MP4 now composited into final ffmpeg render — full-screen or PiP overlay (BR/BL/TR/TL). New endpoints `POST /api/avatars/lipsync` (auto-saves to project), `POST /api/projects/lipsync/mode`, `POST /api/projects/lipsync/clear`. `talking_avatar_url` + `talking_avatar_mode` on Project.
+  - **Campaign Ad Pack**: one-click 5-platform variations at `POST /api/ai/campaign-quick` (IG Reel, YouTube Ad, TikTok, YouTube Short, LinkedIn Ad). 12 CR flat. Wired into ProjectDetail.
+  - **Play Store Kit**: new page at `/dashboard/playstore`, endpoint `POST /api/studio/playstore-assets` — generates 512×512 icon + 1024×500 feature graphic via Nano Banana. Client-side resize to exact PNG dims on download. 12 CR total.
+  - **Aspect Ratio Export**: 4:5 (1080×1350) added to `_aspect_dims`. UI in ProjectDetail: "Render all 4 formats" one-click + per-ratio chips (9:16 Reels, 16:9 YouTube, 1:1 Feed, 4:5 IG Portrait). Talking avatar & captions carry across all ratios.
+  - **Android Studio build guide** at `/app/ANDROID_STUDIO_GUIDE.md` — Hindi/Hinglish, debug APK + Play Store AAB.
 - **Feb 2026** — Phases 1-4 shipped in one session:
   - Ad Studio + Multi-Platform Campaign + Ad Copy + Format Resize
   - Multi-creative + Creative Score + Compliance

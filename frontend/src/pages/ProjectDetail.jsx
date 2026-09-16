@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { toast } from "sonner";
-import { Sparkles, Mic, Image as ImageIcon, Download, Share2, Loader2, Film, Video, Upload, Play, Copy } from "lucide-react";
+import { Sparkles, Mic, Image as ImageIcon, Download, Share2, Loader2, Film, Video, Upload, Play, Copy, Megaphone, Layers, User } from "lucide-react";
 import { assetUrl } from "../lib/assetUrl";
 
 export default function ProjectDetail() {
@@ -67,6 +67,20 @@ export default function ProjectDetail() {
   const [qa, setQa] = useState(null); // {checks, overall, blockers}
   const [busyQa, setBusyQa] = useState(false);
 
+  // ---- Aspect ratio export ----
+  const [busyResize, setBusyResize] = useState(false);
+  const [resizeResults, setResizeResults] = useState(null);
+
+  // ---- Campaign quick pack ----
+  const [busyCampaign, setBusyCampaign] = useState(false);
+  const [campaignData, setCampaignData] = useState(null);
+
+  // ---- Lipsync avatar attach ----
+  const [avatars, setAvatars] = useState([]);
+  const [pickedAvatarId, setPickedAvatarId] = useState("");
+  const [busyLipsync, setBusyLipsync] = useState(false);
+  const [busyLipsyncMode, setBusyLipsyncMode] = useState(false);
+
   const BACKEND = process.env.REACT_APP_BACKEND_URL;
   const videoSrc = project?.video_url ? `${BACKEND}${project.video_url}` : null;
   const audioSrc = project?.audio_url ? assetUrl(project.audio_url) : null;
@@ -87,6 +101,7 @@ export default function ProjectDetail() {
     loadMetrics();
     api.get("/catalog/voices").then(({ data }) => setVoices(data));
     api.get("/ai/video-clip/engines").then(({ data }) => setEngines(data)).catch(() => {});
+    api.get("/avatars").then(({ data }) => setAvatars(data || [])).catch(() => {});
   }, [id]);
 
   // Auto-regenerate voiceover if the voice was changed externally (e.g. from
@@ -578,6 +593,98 @@ export default function ProjectDetail() {
     } catch (err) {
       toast.error(err.response?.data?.detail || err.response?.data?.error || "Render failed");
       setBusyRender(false);
+    }
+  };
+
+  // ---------- Aspect Ratio Export ----------
+  const runResize = async (ratios) => {
+    if (!project.scenes?.length) return toast.error("Generate storyboard first");
+    setBusyResize(true);
+    const t = toast.loading(`Rendering ${ratios.length} formats — this can take a couple of minutes…`);
+    try {
+      const { data } = await api.post("/projects/resize", {
+        project_id: id, aspect_ratios: ratios,
+      });
+      setResizeResults(data.renders || []);
+      const okCount = (data.renders || []).filter(r => r.video_url).length;
+      toast.success(`${okCount}/${ratios.length} formats rendered`, { id: t });
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Resize failed", { id: t });
+    } finally {
+      setBusyResize(false);
+    }
+  };
+
+  // ---------- Campaign Quick Pack ----------
+  const runCampaignQuick = async () => {
+    if (!project.script?.body && !project.script?.hook) {
+      return toast.error("Generate the script first");
+    }
+    setBusyCampaign(true);
+    const t = toast.loading("Spinning 5 platform-tuned ad variations…");
+    try {
+      const { data } = await api.post("/ai/campaign-quick", {
+        project_id: id,
+        topic: project.title || project.script?.body?.slice(0, 60) || "",
+        hook: project.script?.hook,
+        body: project.script?.body,
+        cta: project.script?.cta,
+        language: project.language,
+      });
+      setCampaignData(data.campaign);
+      toast.success("5 platform variations ready", { id: t });
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Campaign failed", { id: t });
+    } finally {
+      setBusyCampaign(false);
+    }
+  };
+
+  // ---------- Lipsync avatar ----------
+  const generateLipsync = async () => {
+    if (!pickedAvatarId) return toast.error("Pick an avatar first");
+    if (!project.audio_url) return toast.error("Generate voiceover first");
+    setBusyLipsync(true);
+    const t = toast.loading("Generating talking-head via fal.ai (30-60s)…");
+    try {
+      const { data } = await api.post("/avatars/lipsync", {
+        project_id: id, avatar_id: pickedAvatarId,
+      });
+      toast.success("Talking avatar ready — attached to project", { id: t });
+      setProject((p) => ({ ...p,
+        talking_avatar_url: data.video_url,
+        talking_avatar_mode: data.talking_avatar_mode || "pip_br" }));
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Lipsync failed", { id: t });
+    } finally {
+      setBusyLipsync(false);
+    }
+  };
+
+  const setLipsyncMode = async (mode) => {
+    setBusyLipsyncMode(true);
+    try {
+      await api.post("/projects/lipsync/mode", { project_id: id, mode });
+      setProject((p) => ({ ...p, talking_avatar_mode: mode }));
+      toast.success(`Mode: ${mode.replace("_", " ")}`);
+    } catch (e) {
+      toast.error("Failed to update mode");
+    } finally {
+      setBusyLipsyncMode(false);
+    }
+  };
+
+  const clearLipsync = async () => {
+    if (!window.confirm("Remove the talking avatar from this project?")) return;
+    try {
+      await api.post("/projects/lipsync/clear", { project_id: id });
+      setProject((p) => ({ ...p, talking_avatar_url: null, talking_avatar_mode: "off" }));
+      toast.success("Talking avatar removed");
+    } catch (e) {
+      toast.error("Failed to clear");
     }
   };
 
@@ -1310,6 +1417,216 @@ export default function ProjectDetail() {
               <div className="mt-3 flex items-center gap-3 text-xs text-zinc-400">
                 <span className="label-mono text-[#E2FF3D]">✓ READY</span>
                 <a href={videoSrc} download={`${project.title || "cinereel"}.mp4`} className="underline hover:text-white">Download MP4</a>
+              </div>
+            )}
+          </div>
+
+          {/* LIPSYNC TALKING AVATAR */}
+          <div className="surface rounded-xl p-5" data-testid="lipsync-panel">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <User className="w-4 h-4 text-[#E2FF3D]" />
+                <div className="font-medium">Talking Avatar (Lip-sync)</div>
+              </div>
+              <span className="label-mono text-zinc-500">20 CR</span>
+            </div>
+            <p className="text-xs text-zinc-500 mb-3">
+              Pick an avatar, generate a lip-synced talking head via fal.ai, then choose how it appears in the final video.
+            </p>
+
+            {!project.talking_avatar_url ? (
+              <>
+                {avatars.length === 0 ? (
+                  <div className="text-xs text-zinc-500 border border-dashed border-white/10 rounded-lg p-3">
+                    No avatars yet. <Link to="/dashboard/avatars" className="text-[#E2FF3D] underline">Create one in Avatar Studio →</Link>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 mb-3 max-h-40 overflow-y-auto scroll-thin">
+                      {avatars.map((av) => (
+                        <button key={av.avatar_id}
+                          data-testid={`ls-pick-${av.avatar_id}`}
+                          onClick={() => setPickedAvatarId(av.avatar_id)}
+                          className={`relative aspect-square rounded-lg overflow-hidden border-2 transition ${
+                            pickedAvatarId === av.avatar_id
+                              ? "border-[#E2FF3D]"
+                              : "border-white/10 hover:border-white/30"
+                          }`}>
+                          <img src={assetUrl(av.image_url)} alt={av.name} className="w-full h-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                    <button data-testid="ls-generate"
+                      onClick={generateLipsync}
+                      disabled={busyLipsync || !pickedAvatarId || !project.audio_url}
+                      className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
+                      {busyLipsync ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                      {busyLipsync ? "Generating…" : "Generate lip-sync"}
+                    </button>
+                    {!project.audio_url && (
+                      <div className="text-[10px] text-amber-400 mt-2">Voiceover required first.</div>
+                    )}
+                  </>
+                )}
+              </>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <video src={assetUrl(project.talking_avatar_url)}
+                    className="w-24 h-32 rounded-lg object-cover bg-black"
+                    controls={false} muted loop autoPlay playsInline
+                    data-testid="ls-preview" />
+                  <div className="flex-1 text-xs text-zinc-400">
+                    <div className="text-[#E2FF3D] label-mono text-[10px]">✓ TALKING AVATAR ATTACHED</div>
+                    <div className="mt-1">The next render will composite this into your final video.</div>
+                    <button onClick={clearLipsync} data-testid="ls-clear"
+                      className="mt-2 text-[11px] text-red-400 hover:text-red-300 underline">
+                      Remove
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="label-mono text-zinc-500 mb-2 text-[10px]">RENDER MODE</div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {[
+                      { id: "fullscreen", label: "Full-screen" },
+                      { id: "pip_br",     label: "PiP · BR" },
+                      { id: "pip_bl",     label: "PiP · BL" },
+                      { id: "pip_tr",     label: "PiP · TR" },
+                      { id: "pip_tl",     label: "PiP · TL" },
+                      { id: "off",        label: "Disabled" },
+                    ].map(m => (
+                      <button key={m.id}
+                        data-testid={`ls-mode-${m.id}`}
+                        disabled={busyLipsyncMode}
+                        onClick={() => setLipsyncMode(m.id)}
+                        className={`rounded-md px-2 py-1.5 text-[11px] transition ${
+                          (project.talking_avatar_mode || "off") === m.id
+                            ? "bg-[#E2FF3D] text-black font-semibold"
+                            : "surface hover:border-white/30"
+                        }`}>
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="text-[10px] text-zinc-600 mt-2">
+                    PiP = Picture-in-Picture overlay. Full-screen replaces the storyboard with the talking head.
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ASPECT RATIO EXPORT */}
+          <div className="surface rounded-xl p-5" data-testid="resize-panel">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-[#E2FF3D]" />
+                <div className="font-medium">Aspect Ratio Export</div>
+              </div>
+              <span className="label-mono text-zinc-500">8 CR × format</span>
+            </div>
+            <p className="text-xs text-zinc-500 mb-3">
+              One click renders the same project for Reels/Shorts (9:16), YouTube (16:9), Feed (1:1) and Instagram Portrait (4:5).
+            </p>
+            <div className="flex flex-wrap gap-2 mb-3">
+              <button data-testid="resize-all"
+                onClick={() => runResize(["9:16", "16:9", "1:1", "4:5"])}
+                disabled={busyResize || !project.scenes?.length}
+                className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
+                {busyResize ? <Loader2 className="w-4 h-4 animate-spin" /> : <Layers className="w-4 h-4" />}
+                {busyResize ? "Rendering…" : "Render all 4 formats"}
+              </button>
+              {[
+                { r: "9:16", label: "Reels/Shorts" },
+                { r: "16:9", label: "YouTube" },
+                { r: "1:1",  label: "Feed" },
+                { r: "4:5",  label: "IG Portrait" },
+              ].map(({ r, label }) => (
+                <button key={r} data-testid={`resize-single-${r.replace(":", "-")}`}
+                  onClick={() => runResize([r])}
+                  disabled={busyResize || !project.scenes?.length}
+                  className="rounded-full surface px-3 py-2 text-xs flex items-center gap-1 disabled:opacity-60 hover:border-white/30">
+                  {r} <span className="text-zinc-500">· {label}</span>
+                </button>
+              ))}
+            </div>
+            {(resizeResults || project.alt_renders) && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {["9:16", "16:9", "1:1", "4:5"].map((r) => {
+                  const fromResults = resizeResults?.find((x) => x.aspect_ratio === r);
+                  const url = fromResults?.video_url || project.alt_renders?.[r]
+                    || (r === project.aspect_ratio ? project.video_url : null);
+                  return (
+                    <div key={r} className="surface rounded-lg p-2" data-testid={`resize-cell-${r.replace(":", "-")}`}>
+                      <div className="label-mono text-zinc-500 text-[10px] mb-1">{r}</div>
+                      {url ? (
+                        <a href={`${BACKEND}${url.startsWith("/") ? url : "/" + url}`}
+                          download={`${project.title || "cinereel"}-${r.replace(":", "x")}.mp4`}
+                          className="flex items-center gap-1 text-xs text-[#E2FF3D] hover:underline">
+                          <Download className="w-3 h-3" /> Download
+                        </a>
+                      ) : fromResults?.error ? (
+                        <div className="text-[10px] text-red-400">Failed</div>
+                      ) : (
+                        <div className="text-[10px] text-zinc-600">—</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* CAMPAIGN AD PACK */}
+          <div className="surface rounded-xl p-5" data-testid="campaign-panel">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Megaphone className="w-4 h-4 text-[#E2FF3D]" />
+                <div className="font-medium">Campaign Ad Pack</div>
+              </div>
+              <span className="label-mono text-zinc-500">12 CR</span>
+            </div>
+            <p className="text-xs text-zinc-500 mb-3">
+              One click generates 5 platform-tuned ad variations (Meta, Google, TikTok, YouTube Shorts, LinkedIn) — hooks, body, CTAs, hashtags — ready to paste into ad managers.
+            </p>
+            <button data-testid="campaign-run"
+              onClick={runCampaignQuick}
+              disabled={busyCampaign || !project.script}
+              className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
+              {busyCampaign ? <Loader2 className="w-4 h-4 animate-spin" /> : <Megaphone className="w-4 h-4" />}
+              {busyCampaign ? "Generating…" : "Spin 5 variations"}
+            </button>
+            {(campaignData || project.campaign) && (
+              <div className="mt-4 space-y-3">
+                {(campaignData || project.campaign)?.map?.((v, i) => (
+                  <div key={i} className="surface rounded-lg p-3" data-testid={`campaign-var-${i}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="label-mono text-[#E2FF3D] text-[10px]">
+                        {(v.platform || "").toUpperCase().replace("_", " ") || `VARIATION ${i + 1}`}
+                      </div>
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(JSON.stringify(v, null, 2)); toast.success("Copied to clipboard"); }}
+                        className="text-zinc-500 hover:text-white">
+                        <Copy className="w-3 h-3" />
+                      </button>
+                    </div>
+                    {v.hook && <div className="text-sm text-white mb-1">🎯 {v.hook}</div>}
+                    {v.body && <div className="text-xs text-zinc-300 mb-1 leading-relaxed">{v.body}</div>}
+                    {v.cta && <div className="text-xs text-[#E2FF3D] mt-1">→ {v.cta}</div>}
+                    {v.hashtags && (
+                      <div className="text-[10px] text-zinc-500 mt-1">
+                        {Array.isArray(v.hashtags) ? v.hashtags.join(" ") : v.hashtags}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <a href={`${BACKEND}/api/projects/${id}/campaign-pack`}
+                  className="inline-flex items-center gap-1 text-xs text-[#E2FF3D] hover:underline"
+                  data-testid="campaign-pack-zip">
+                  <Download className="w-3 h-3" /> Download campaign ZIP
+                </a>
               </div>
             )}
           </div>

@@ -26,11 +26,12 @@ from models import (
     Project, new_id, utc_now, CreditTransaction,
     PronunciationCheckRequest, FeedbackRequest, CommercialCheckRequest,
     Avatar, AvatarGenerateRequest, LipSyncRequest,
+    PlayStoreAssetsRequest, CampaignQuickRequest, LipSyncRenderModeRequest,
 )
 from ai_services import (
     check_compliance, generate_ad_copy, generate_campaign, generate_multi_creatives,
     refine_script, score_creative, check_pronunciation, analyse_feedback,
-    commercial_check as commercial_qa,
+    commercial_check as commercial_qa, generate_scene_image,
 )
 from stt_service import transcribe_audio
 from music_library import MUSIC_TRACKS, SFX_LIBRARY
@@ -406,11 +407,199 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
                 detail=("No lip-sync provider configured. Add HEYGEN_API_KEY or DID_API_KEY "
                         "to backend .env to enable talking-avatar rendering."),
             )
-        result = await provider.create_talking_video(av["image_url"], proj["audio_url"],
-                                                      proj.get("caption_words"))
+        # Charge before starting (lipsync is heavy). Refund on failure.
+        user = await charge_credits(user, 20, "lipsync_generate")
+        # Build absolute URLs so fal.ai can fetch them.
+        import os as _os
+        base = (_os.environ.get("PUBLIC_BACKEND_URL")
+                or _os.environ.get("REACT_APP_BACKEND_URL")
+                or "").rstrip("/")
+        def _abs(u: str) -> str:
+            if not u:
+                return u
+            if u.startswith("http://") or u.startswith("https://") or u.startswith("data:"):
+                return u
+            if u.startswith("/") and base:
+                return f"{base}{u}"
+            return u
+        result = await provider.create_talking_video(
+            _abs(av["image_url"]), _abs(proj["audio_url"]),
+            proj.get("caption_words"),
+        )
         if result.get("error"):
+            await refund(user, 20, "lipsync_error")
             raise HTTPException(status_code=400, detail=result["error"])
-        return {**result, "avatar_id": av["avatar_id"]}
+        # Save the lipsynced MP4 to project so the renderer can mux it in.
+        vurl = result.get("video_url")
+        default_mode = proj.get("talking_avatar_mode") or "pip_br"
+        if default_mode == "off":
+            default_mode = "pip_br"
+        await db.projects.update_one(
+            {"project_id": body.project_id, "user_id": user.user_id},
+            {"$set": {
+                "talking_avatar_url": vurl,
+                "talking_avatar_mode": default_mode,
+                "avatar_id": av["avatar_id"],
+                "avatar_image": av["image_url"],
+                "updated_at": utc_now().isoformat(),
+            }},
+        )
+        return {**result, "avatar_id": av["avatar_id"],
+                "talking_avatar_mode": default_mode,
+                "credits_left": user.credits}
+
+    @router.post("/projects/lipsync/mode")
+    async def set_lipsync_mode(body: LipSyncRenderModeRequest, request: Request):
+        user = await current_user_dep(request)
+        await db.projects.update_one(
+            {"project_id": body.project_id, "user_id": user.user_id},
+            {"$set": {"talking_avatar_mode": body.mode,
+                       "updated_at": utc_now().isoformat()}},
+        )
+        return {"ok": True, "talking_avatar_mode": body.mode}
+
+    class LipSyncClearReq(BaseModel):
+        project_id: str
+
+    @router.post("/projects/lipsync/clear")
+    async def clear_lipsync(body: LipSyncClearReq, request: Request):
+        user = await current_user_dep(request)
+        await db.projects.update_one(
+            {"project_id": body.project_id, "user_id": user.user_id},
+            {"$set": {"talking_avatar_url": None, "talking_avatar_mode": "off",
+                       "updated_at": utc_now().isoformat()}},
+        )
+        return {"ok": True}
+
+    # ---------- CAMPAIGN QUICK PACK (one-click 5 platforms) ----------
+    @router.post("/ai/campaign-quick")
+    async def campaign_quick(body: CampaignQuickRequest, request: Request):
+        """One-click 5-platform ad pack: Meta (IG Reel + FB), Google (YouTube Ad),
+        TikTok, YouTube Shorts, LinkedIn."""
+        user = await current_user_dep(request)
+        target_platforms = ["instagram_reel", "youtube_ad", "tiktok",
+                            "youtube_short", "linkedin_ad"]
+        cost = 12  # flat one-click bundle price
+        user = await charge_credits(user, cost, "campaign_quick_5")
+        try:
+            campaign = await generate_campaign(
+                topic=body.topic, platforms=target_platforms, hook=body.hook,
+                body=body.body, cta=body.cta, language=body.language,
+            )
+        except Exception as e:
+            await refund(user, cost, "campaign_quick_error")
+            raise HTTPException(status_code=500, detail=str(e)[:160])
+        # Filter to only our target platforms (AI sometimes adds extras).
+        if isinstance(campaign, list):
+            campaign = [c for c in campaign if c.get("platform") in target_platforms]
+            # Ensure every target platform has at least a placeholder so the UI
+            # renders 5 cards even if the model dropped one.
+            existing = {c.get("platform") for c in campaign}
+            for p in target_platforms:
+                if p not in existing:
+                    campaign.append({
+                        "platform": p, "hook": body.hook or "", "script": body.body or "",
+                        "cta": body.cta or "", "on_screen_text": "", "caption": "",
+                    })
+            # Preserve target order
+            order = {p: i for i, p in enumerate(target_platforms)}
+            campaign.sort(key=lambda c: order.get(c.get("platform"), 99))
+        if body.project_id:
+            await db.projects.update_one(
+                {"project_id": body.project_id, "user_id": user.user_id},
+                {"$set": {"campaign": campaign, "updated_at": utc_now().isoformat()}},
+            )
+        return {"campaign": campaign, "platforms": target_platforms,
+                "credits_left": user.credits}
+
+    # ---------- PLAY STORE ASSETS (App icon + Feature graphic) ----------
+    @router.post("/studio/playstore-assets")
+    async def playstore_assets(body: PlayStoreAssetsRequest, request: Request):
+        """Generate Play Store app icon (512×512) + feature graphic (1024×500)."""
+        user = await current_user_dep(request)
+        if not body.brand_name.strip():
+            raise HTTPException(status_code=400, detail="Brand name required")
+        cost = 6 * ((1 if body.generate_icon else 0) + (1 if body.generate_feature else 0))
+        if cost == 0:
+            raise HTTPException(status_code=400, detail="Nothing to generate")
+        user = await charge_credits(user, cost, "playstore_assets")
+
+        style_hints = {
+            "modern":  "modern flat design, bold geometry, high contrast",
+            "minimal": "ultra minimal, single icon shape, generous negative space",
+            "playful": "friendly rounded shapes, cheerful colours, playful vibe",
+            "premium": "premium luxury feel, gold accents, deep dark background",
+            "tech":    "futuristic, neon glow, tech grid, sharp edges",
+        }
+        style_line = style_hints.get(body.style, style_hints["modern"])
+        icon_hint = body.icon_description or f"symbolic icon representing {body.brand_name}"
+        color = body.primary_color or "#E2FF3D"
+
+        icon_url = None
+        feature_url = None
+
+        try:
+            if body.generate_icon:
+                icon_prompt = (
+                    f"Google Play Store app icon for '{body.brand_name}'. "
+                    f"Square 1:1 aspect ratio, centred single glyph, {style_line}. "
+                    f"Solid rich background using brand colour {color}. "
+                    f"Bold, memorable, extremely simple, crisp edges, works at 48px thumbnail size. "
+                    f"Element: {icon_hint}. "
+                    f"Absolutely NO text, NO letters, NO logotype, NO UI, NO shadows outside the icon. "
+                    f"Just the icon shape on the solid background."
+                )
+                icon_url = await generate_scene_image(icon_prompt, "1:1")
+
+            if body.generate_feature:
+                # Feature graphic is 1024×500 (~2:1) — closest supported aspect is 16:9.
+                feature_prompt = (
+                    f"Google Play Store feature graphic banner for '{body.brand_name}' — "
+                    f"wide landscape 1024x500 aspect. {style_line}. "
+                    f"Use brand colour {color} with complementary accents. "
+                    f"Left side: bold hero visual showing the app's purpose ({icon_hint}). "
+                    f"Right side: intentionally left CLEAN with breathing room "
+                    f"(store overlays app name there). "
+                    f"Cinematic depth, subtle gradient, premium finish. "
+                    f"Absolutely NO text, NO logo, NO app screenshots inside the image."
+                )
+                if body.tagline:
+                    feature_prompt += f" Overall mood: {body.tagline}."
+                feature_url = await generate_scene_image(feature_prompt, "16:9")
+        except Exception as e:
+            await refund(user, cost, "playstore_error")
+            raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)[:160]}")
+
+        if body.generate_icon and not icon_url:
+            await refund(user, 6, "playstore_icon_missing")
+        if body.generate_feature and not feature_url:
+            await refund(user, 6, "playstore_feature_missing")
+
+        # Persist for later re-download
+        record = {
+            "id": new_id("psa"),
+            "user_id": user.user_id,
+            "brand_name": body.brand_name,
+            "tagline": body.tagline,
+            "style": body.style,
+            "primary_color": color,
+            "icon_url": icon_url,
+            "feature_url": feature_url,
+            "created_at": utc_now().isoformat(),
+        }
+        await db.playstore_assets.insert_one(dict(record))
+        return {
+            "icon_url": icon_url, "feature_url": feature_url,
+            "icon_size": "512x512", "feature_size": "1024x500",
+            "credits_left": user.credits,
+        }
+
+    @router.get("/studio/playstore-assets")
+    async def list_playstore_assets(request: Request):
+        user = await current_user_dep(request)
+        return await db.playstore_assets.find(
+            {"user_id": user.user_id}, {"_id": 0}
+        ).sort("created_at", -1).to_list(50)
 
     # ---------- STT / TRANSCRIPTION ----------
     @router.post("/ai/stt")
@@ -600,8 +789,14 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
                 results.append({"aspect_ratio": ar, "video_url": proj["video_url"], "reused": True})
                 continue
             try:
-                url = await render_video(scenes=scenes, audio_data_uri=proj.get("audio_url"),
-                                          aspect_ratio=ar, fps=int(proj.get("fps", 30)))
+                url = await render_video(
+                    scenes=scenes, audio_data_uri=proj.get("audio_url"),
+                    aspect_ratio=ar, fps=int(proj.get("fps", 30)),
+                    caption_words=proj.get("caption_words") if proj.get("captions_enabled") else None,
+                    caption_style=proj.get("caption_style"),
+                    talking_avatar_url=proj.get("talking_avatar_url"),
+                    talking_avatar_mode=proj.get("talking_avatar_mode") or "off",
+                )
                 results.append({"aspect_ratio": ar, "video_url": url})
             except Exception as e:
                 results.append({"aspect_ratio": ar, "video_url": None, "error": str(e)[:120]})

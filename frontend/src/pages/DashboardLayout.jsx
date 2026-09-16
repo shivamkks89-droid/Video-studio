@@ -3,7 +3,7 @@ import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, FolderKanban, LayoutTemplate, Palette, Library, CreditCard,
   Settings, ShieldCheck, LogOut, Plus, Film, Sparkles, Mic, Image as ImageIcon,
-  Menu, X, Megaphone, Users, User,
+  Menu, X, Megaphone, Users, User, Rocket,
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
 
@@ -13,6 +13,7 @@ const SIDE_LINKS = [
   { to: "/dashboard/workspaces", label: "Workspaces", icon: Users },
   { to: "/dashboard/ad-studio", label: "Ad Studio", icon: Megaphone },
   { to: "/dashboard/avatars", label: "Avatar Studio", icon: User },
+  { to: "/dashboard/playstore", label: "Play Store Kit", icon: Rocket },
   { to: "/dashboard/script", label: "Script Studio", icon: Sparkles },
   { to: "/dashboard/voice", label: "Voice Studio", icon: Mic },
   { to: "/dashboard/scene", label: "Scene Generator", icon: ImageIcon },

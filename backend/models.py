@@ -79,6 +79,9 @@ class Project(BaseModel):
     scenes: List[dict] = []  # generated scene images
     thumbnail: Optional[str] = None
     video_url: Optional[str] = None
+    talking_avatar_url: Optional[str] = None   # fal.ai lipsync MP4 (raw talking head)
+    talking_avatar_mode: str = "off"           # off | pip_br | pip_bl | pip_tr | pip_tl | fullscreen
+    alt_renders: dict = Field(default_factory=dict)  # {"1:1": url, "16:9": url, ...}
     duration_sec: int = 30
     brand_kit_id: Optional[str] = None
     folder: Optional[str] = None
@@ -355,6 +358,33 @@ class FeedbackRequest(BaseModel):
 
 class CommercialCheckRequest(BaseModel):
     project_id: str
+
+
+# ---------- PLAY STORE ASSETS ----------
+class PlayStoreAssetsRequest(BaseModel):
+    brand_name: str
+    tagline: Optional[str] = None            # short subtitle for feature graphic
+    style: str = "modern"                     # modern | minimal | playful | premium | tech
+    primary_color: str = "#E2FF3D"
+    icon_description: Optional[str] = None    # e.g. "camera lens with film reel"
+    generate_icon: bool = True
+    generate_feature: bool = True
+
+
+# ---------- CAMPAIGN QUICK PACK (one-click 5 platforms) ----------
+class CampaignQuickRequest(BaseModel):
+    project_id: Optional[str] = None
+    topic: str
+    hook: Optional[str] = None
+    body: Optional[str] = None
+    cta: Optional[str] = None
+    language: str = "english"
+
+
+# ---------- LIPSYNC RENDER MODE ----------
+class LipSyncRenderModeRequest(BaseModel):
+    project_id: str
+    mode: Literal["off", "pip_br", "pip_bl", "pip_tr", "pip_tl", "fullscreen"] = "pip_br"
 
 
 class VoiceTuning(BaseModel):

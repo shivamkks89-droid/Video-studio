@@ -71,6 +71,8 @@ def _aspect_dims(aspect: str) -> tuple:
         return 1920, 1080
     if aspect == "1:1":
         return 1080, 1080
+    if aspect == "4:5":
+        return 1080, 1350
     return 1080, 1920  # default 9:16
 
 
@@ -152,7 +154,9 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                        aspect_ratio: str = "9:16", fps: int = 30,
                        default_scene_seconds: float = 3.5,
                        caption_words: Optional[List[dict]] = None,
-                       caption_style: Optional[dict] = None) -> Optional[str]:
+                       caption_style: Optional[dict] = None,
+                       talking_avatar_url: Optional[str] = None,
+                       talking_avatar_mode: str = "off") -> Optional[str]:
     """Render an MP4 from a list of scenes.
 
     Each scene can carry either a still `image_url` (rendered with ken-burns) or
@@ -161,6 +165,11 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
     If `caption_words` is provided (list of {start, end, word} in seconds), the
     words are grouped into 2-3 word chunks and burned into the final video as
     karaoke-style captions (auto-safe-zone, bottom-third for 9:16, bottom for 16:9).
+
+    If `talking_avatar_url` is provided and `talking_avatar_mode != "off"`:
+      - "fullscreen" — the talking-head MP4 replaces the storyboard entirely.
+      - "pip_br/pip_bl/pip_tr/pip_tl" — the talking-head is overlaid as a
+        circular picture-in-picture on the storyboard render (30% width).
     """
 
     async def _fetch(url: str) -> Optional[bytes]:
@@ -204,6 +213,21 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
         else:
             from asset_store import fetch_to_bytes as _fetch2
             audio_bytes = await _fetch2(audio_data_uri)
+
+    # Pre-fetch talking avatar bytes (fal.ai returns a public https URL).
+    talking_bytes: Optional[bytes] = None
+    if talking_avatar_url and talking_avatar_mode in (
+        "fullscreen", "pip_br", "pip_bl", "pip_tr", "pip_tl"
+    ):
+        try:
+            if talking_avatar_url.startswith("data:"):
+                talking_bytes = _data_uri_to_bytes(talking_avatar_url)
+            else:
+                from asset_store import fetch_to_bytes as _fetch3
+                talking_bytes = await _fetch3(talking_avatar_url)
+        except Exception as e:
+            print(f"[render] talking-avatar fetch failed: {e}")
+            talking_bytes = None
 
     def _work() -> Optional[str]:
         with tempfile.TemporaryDirectory() as tmp:
@@ -283,6 +307,59 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
             if r.returncode != 0:
                 print("[render] concat fail:", r.stderr.decode()[-300:])
                 return None
+
+            # 3b) Talking-avatar composition (fullscreen replace OR PiP overlay).
+            #     Loops the talking clip when it is shorter than the storyboard
+            #     via `-stream_loop -1` so the avatar keeps moving to the end.
+            if talking_bytes:
+                tsrc = tmp_path / "talking_src.mp4"
+                tsrc.write_bytes(talking_bytes)
+                if talking_avatar_mode == "fullscreen":
+                    tout = tmp_path / "combined_talking.mp4"
+                    vf = (
+                        f"scale={w}:{h}:force_original_aspect_ratio=increase,"
+                        f"crop={w}:{h},setsar=1,fps={fps},format=yuv420p"
+                    )
+                    cmd = [FFMPEG_BIN, "-y", "-threads", "1",
+                           "-i", str(tsrc), "-vf", vf,
+                           "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
+                           "-pix_fmt", "yuv420p", "-an", str(tout)]
+                    r = subprocess.run(cmd, capture_output=True, timeout=180)
+                    if r.returncode == 0:
+                        combined = tout
+                    else:
+                        print("[render] talking fullscreen fail:", r.stderr.decode()[-400:])
+                elif talking_avatar_mode in ("pip_br", "pip_bl", "pip_tr", "pip_tl"):
+                    # PiP: 30% of canvas width, safe-zone margin, lime border.
+                    pip_w = max(200, int(w * 0.30))
+                    pip_h = pip_w
+                    margin = max(24, int(w * 0.03))
+                    corner = {
+                        "pip_br": (f"W-w-{margin}", f"H-h-{margin}"),
+                        "pip_bl": (f"{margin}",     f"H-h-{margin}"),
+                        "pip_tr": (f"W-w-{margin}", f"{margin}"),
+                        "pip_tl": (f"{margin}",     f"{margin}"),
+                    }[talking_avatar_mode]
+                    x_expr, y_expr = corner
+                    tout = tmp_path / "combined_pip.mp4"
+                    # Loop talking clip if it's shorter than storyboard.
+                    fc = (
+                        f"[1:v]scale={pip_w}:{pip_h}:force_original_aspect_ratio=increase,"
+                        f"crop={pip_w}:{pip_h},setsar=1,fps={fps},"
+                        f"pad={pip_w + 8}:{pip_h + 8}:4:4:color=0xE2FF3D@0.9[pip];"
+                        f"[0:v][pip]overlay={x_expr}:{y_expr}:shortest=1,format=yuv420p"
+                    )
+                    cmd = [FFMPEG_BIN, "-y", "-threads", "1",
+                           "-i", str(combined),
+                           "-stream_loop", "-1", "-i", str(tsrc),
+                           "-filter_complex", fc,
+                           "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
+                           "-pix_fmt", "yuv420p", "-an", str(tout)]
+                    r = subprocess.run(cmd, capture_output=True, timeout=240)
+                    if r.returncode == 0:
+                        combined = tout
+                    else:
+                        print("[render] talking pip fail:", r.stderr.decode()[-400:])
 
             # 4) add audio if available. Auto-tighten voiceover pacing when it
             # exceeds the total video length (else `-shortest` would cut off the
