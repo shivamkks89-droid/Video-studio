@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { toast } from "sonner";
 import { Sparkles, Mic, Image as ImageIcon, Download, Share2, Loader2, Film, Video, Upload, Play, Copy, Megaphone, Layers, User } from "lucide-react";
 import { assetUrl } from "../lib/assetUrl";
+import { notify, ensureNotifyPermission, hapticSuccess } from "../lib/native";
 
 export default function ProjectDetail() {
   const { id } = useParams();
@@ -525,6 +526,8 @@ export default function ProjectDetail() {
       if (!proceed) return;
     }
     setBusyRender(true);
+    // Ask for notification permission the first time a render starts.
+    ensureNotifyPermission();
     try {
       const { data } = await api.post(`/projects/${id}/render`);
       if (data.error) { toast.error(data.error); setBusyRender(false); return; }
@@ -553,11 +556,22 @@ export default function ProjectDetail() {
           if (job.status === "complete" && job.video_url) {
             setProject({ ...project, video_url: job.video_url, status: "complete" });
             toast.success("Video rendered — play or download below");
+            hapticSuccess();
+            notify({
+              title: "Your reel is ready 🎬",
+              body: `"${project.title || "Your video"}" finished rendering. Tap to preview.`,
+              url: `/dashboard/projects/${id}`,
+            });
             setBusyRender(false);
             return;
           }
           if (job.status === "failed") {
             toast.error(job.error || "Render failed");
+            notify({
+              title: "Render failed",
+              body: job.error || "Something went wrong. Open the project to retry.",
+              url: `/dashboard/projects/${id}`,
+            });
             setBusyRender(false);
             return;
           }
@@ -570,6 +584,12 @@ export default function ProjectDetail() {
             if (proj?.video_url && proj?.status === "complete") {
               setProject(proj);
               toast.success("Video rendered — play or download below");
+              hapticSuccess();
+              notify({
+                title: "Your reel is ready 🎬",
+                body: `"${proj.title || "Your video"}" finished rendering. Tap to preview.`,
+                url: `/dashboard/projects/${id}`,
+              });
               setBusyRender(false);
               return;
             }
@@ -1413,6 +1433,13 @@ export default function ProjectDetail() {
               {busyRender ? <Loader2 className="w-4 h-4 animate-spin" /> : <Video className="w-4 h-4" />}
               {busyRender ? "Rendering…" : videoSrc ? "Re-render video" : "Render video"}
             </button>
+            {busyRender && (
+              <div data-testid="render-notify-hint"
+                className="mt-3 flex items-center gap-2 text-[11px] text-zinc-500">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#E2FF3D] animate-pulse" />
+                We'll ping your phone the moment it's ready — feel free to close the app.
+              </div>
+            )}
             {videoSrc && (
               <div className="mt-3 flex items-center gap-3 text-xs text-zinc-400">
                 <span className="label-mono text-[#E2FF3D]">✓ READY</span>

@@ -253,7 +253,7 @@ sdk.dir=C\:\\Users\\<you>\\AppData\\Local\\Android\\Sdk   # Windows
 ### Bug 4: **Mixed content / HTTP blocked**
 Backend HTTPS pe hi hona chahiye. `capacitor.config.json` me `allowMixedContent: false` set hai (correct).
 
-### Bug 5: **Microphone / Camera permission nahi maang raha**
+### Bug 5: **Microphone / Camera / Notification permission nahi maang raha**
 File `android/app/src/main/AndroidManifest.xml` me `<application>` ke UPAR add karo:
 ```xml
 <uses-permission android:name="android.permission.INTERNET" />
@@ -261,6 +261,11 @@ File `android/app/src/main/AndroidManifest.xml` me `<application>` ke UPAR add k
 <uses-permission android:name="android.permission.CAMERA" />
 <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
 <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+<!-- Android 13+ (API 33) needs this for notification tray access -->
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+<uses-permission android:name="android.permission.VIBRATE" />
+<uses-permission android:name="android.permission.WAKE_LOCK" />
+<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 <uses-feature android:name="android.hardware.camera" android:required="false" />
 <uses-feature android:name="android.hardware.microphone" android:required="false" />
 ```

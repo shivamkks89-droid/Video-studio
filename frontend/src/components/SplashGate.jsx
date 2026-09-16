@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { hideNativeSplash } from "../lib/native";
+import { useNavigate } from "react-router-dom";
+import { hideNativeSplash, installNotificationTapListener } from "../lib/native";
 
 /**
  * Web-level splash gate that mirrors the native Android splash.
@@ -10,6 +11,17 @@ import { hideNativeSplash } from "../lib/native";
 export default function SplashGate({ minMs = 900, children }) {
   const [visible, setVisible] = useState(true);
   const [fading, setFading] = useState(false);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // Notification taps → deep-link into the target project.
+    installNotificationTapListener((url) => {
+      try {
+        if (url?.startsWith("http")) window.location.href = url;
+        else if (url) navigate(url);
+      } catch { /* ignore */ }
+    });
+  }, [navigate]);
 
   useEffect(() => {
     let mounted = true;
