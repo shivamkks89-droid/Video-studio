@@ -94,6 +94,16 @@ async def fetch_to_bytes(url: str) -> Optional[bytes]:
     # /api/files/<kind>/<filename>
     m = re.match(r"^/api/files/(images|audio|videos)/([\w.-]+)$", url)
     if not m:
+        # External URL (e.g. picsum, cdn, seedance output, etc.) — download it.
+        if url.startswith(("http://", "https://")):
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=30, follow_redirects=True) as c:
+                    r = await c.get(url)
+                    if r.status_code == 200:
+                        return r.content
+            except Exception:
+                pass
         return None
     kind, fname = m.group(1), m.group(2)
     local_dir = {"images": IMG_DIR, "audio": AUD_DIR, "videos": VID_DIR}[kind]
