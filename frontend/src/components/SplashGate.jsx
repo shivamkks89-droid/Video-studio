@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { hideNativeSplash, installNotificationTapListener } from "../lib/native";
+import BrandMark from "./BrandMark";
 
 /**
  * Web-level splash gate that mirrors the native Android splash.
@@ -55,23 +56,9 @@ export default function SplashGate({ minMs = 900, children }) {
                }}
           />
           <div className="relative flex flex-col items-center">
-            {/* Lime rounded tile with film-reel play glyph */}
-            <div className="w-24 h-24 rounded-3xl bg-[#E2FF3D] grid place-items-center
-                            shadow-[0_20px_60px_-15px_rgba(226,255,61,0.55)]
-                            animate-splash-pop">
-              <svg viewBox="0 0 64 64" className="w-12 h-12 text-black" fill="currentColor">
-                <rect x="10" y="18" width="44" height="28" rx="6" />
-                {/* perforations */}
-                <g fill="#E2FF3D">
-                  <rect x="6"  y="22" width="4" height="4" rx="1" />
-                  <rect x="6"  y="30" width="4" height="4" rx="1" />
-                  <rect x="6"  y="38" width="4" height="4" rx="1" />
-                  <rect x="54" y="22" width="4" height="4" rx="1" />
-                  <rect x="54" y="30" width="4" height="4" rx="1" />
-                  <rect x="54" y="38" width="4" height="4" rx="1" />
-                  <path d="M28 25 L40 32 L28 39 Z" />
-                </g>
-              </svg>
+            {/* Volt-Play brand mark — bold chevron stack with signature lime dot */}
+            <div className="animate-splash-pop drop-shadow-[0_20px_60px_rgba(226,255,61,0.55)]">
+              <BrandMark size={104} />
             </div>
 
             <div className="mt-6 text-white text-xl font-semibold tracking-tight">

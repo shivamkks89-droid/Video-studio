@@ -105,7 +105,7 @@ export async function notify({ title, body, url, tag = "cinereel-render", silent
       return false;
     }
     const n = new Notification(title, {
-      body, tag, icon: "/logo192.png", badge: "/logo192.png",
+      body, tag, icon: "/app-icon-192.png", badge: "/app-icon-96.png",
       silent: false,
     });
     if (url) {

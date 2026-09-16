@@ -4,6 +4,7 @@ import { Film, Mail, Lock, User as UserIcon, ArrowRight, KeyRound } from "lucide
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { toast } from "sonner";
+import BrandMark from "../components/BrandMark";
 
 export default function Login({ mode = "login" }) {
   const navigate = useNavigate();
@@ -84,8 +85,8 @@ export default function Login({ mode = "login" }) {
         <div className="absolute inset-0 bg-gradient-to-r from-[#0A0A0B] via-[#0A0A0B]/60 to-transparent" />
         <div className="relative z-10 p-12 h-full flex flex-col justify-between">
           <Link to="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-md bg-[#E2FF3D] grid place-items-center">
-              <Film className="w-4 h-4 text-black" />
+            <div className="w-8 h-8 grid place-items-center">
+              <BrandMark size={32} />
             </div>
             <span className="font-semibold text-lg tracking-tight">CineReel<span className="text-[#E2FF3D]">.</span>AI</span>
           </Link>
@@ -107,8 +108,8 @@ export default function Login({ mode = "login" }) {
         <div className="w-full max-w-md surface rounded-2xl p-8">
           <div className="lg:hidden mb-6">
             <Link to="/" className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-md bg-[#E2FF3D] grid place-items-center">
-                <Film className="w-4 h-4 text-black" />
+              <div className="w-8 h-8 grid place-items-center">
+                <BrandMark size={32} />
               </div>
               <span className="font-semibold tracking-tight">CineReel.AI</span>
             </Link>

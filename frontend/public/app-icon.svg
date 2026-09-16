@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Subtle inner glow behind the mark -->
+    <radialGradient id="halo" cx="50%" cy="42%" r="55%">
+      <stop offset="0%"  stop-color="#E2FF3D" stop-opacity="0.28"/>
+      <stop offset="55%" stop-color="#E2FF3D" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#E2FF3D" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Chevron gradient (top-brighter, bottom-slightly-cooler for depth) -->
+    <linearGradient id="volt" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#F0FF66"/>
+      <stop offset="55%"  stop-color="#E2FF3D"/>
+      <stop offset="100%" stop-color="#BFDD22"/>
+    </linearGradient>
+    <!-- Soft highlight along the top edge -->
+    <linearGradient id="shine" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.14"/>
+      <stop offset="60%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Base tile: near-black rounded square -->
+  <rect x="0" y="0" width="512" height="512" rx="108" fill="#0A0A0B"/>
+  <!-- Halo -->
+  <circle cx="256" cy="220" r="180" fill="url(#halo)"/>
+  <!-- Ambient top shine -->
+  <rect x="0" y="0" width="512" height="180" rx="108" fill="url(#shine)"/>
+
+  <!-- Diagonal grain streaks (very subtle, 2026 texture) -->
+  <g opacity="0.05" stroke="#ffffff" stroke-width="1">
+    <line x1="-40" y1="120" x2="200" y2="-40"/>
+    <line x1="-40" y1="220" x2="300" y2="-40"/>
+    <line x1="200" y1="552" x2="552" y2="200"/>
+  </g>
+
+  <!--
+    THE MARK: two stacked "volt play" chevrons.
+    Each chevron is a bold right-pointing arrow-head with a chunky notch.
+    Together they read as ▶▶ (fast-forward / cinema motion).
+  -->
+  <g transform="translate(146 108)">
+    <!-- Back chevron (slightly darker, offset down-left) -->
+    <path
+      d="
+        M 0 40
+        L 90 40
+        L 170 156
+        L 90 272
+        L 0 272
+        L 80 156
+        Z"
+      fill="#BFDD22" opacity="0.55"/>
+    <!-- Front chevron (bright lime volt gradient) -->
+    <path
+      d="
+        M 40 0
+        L 130 0
+        L 220 148
+        L 130 296
+        L 40 296
+        L 130 148
+        Z"
+      fill="url(#volt)"/>
+  </g>
+
+  <!-- Signature lime accent dot (bottom-right, echoes the . in CineReel.AI) -->
+  <circle cx="388" cy="410" r="18" fill="#E2FF3D"/>
+  <circle cx="388" cy="410" r="26" fill="#E2FF3D" opacity="0.18"/>
+</svg>

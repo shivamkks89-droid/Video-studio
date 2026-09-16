@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { toast } from "sonner";
+import BrandMark from "../components/BrandMark";
 import { Check, ArrowRight, Film } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -29,7 +30,7 @@ export default function Pricing() {
       <header className="sticky top-0 z-50 glass">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-md bg-[#E2FF3D] grid place-items-center"><Film className="w-4 h-4 text-black" /></div>
+            <div className="w-8 h-8 grid place-items-center"><BrandMark size={32} /></div>
             <span className="font-semibold tracking-tight">CineReel<span className="text-[#E2FF3D]">.</span>AI</span>
           </Link>
           {user ? <Link to="/dashboard" className="text-sm">Dashboard →</Link> : <Link to="/login" className="text-sm">Log in</Link>}

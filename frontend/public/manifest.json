@@ -1,0 +1,17 @@
+{
+  "short_name": "CineReel",
+  "name": "CineReel.AI — AI Video Studio",
+  "description": "Turn any prompt into a cinema-grade ad, reel or promo in minutes.",
+  "icons": [
+    { "src": "/app-icon-32.png",  "type": "image/png", "sizes": "32x32" },
+    { "src": "/app-icon-96.png",  "type": "image/png", "sizes": "96x96" },
+    { "src": "/app-icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any maskable" },
+    { "src": "/app-icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any maskable" },
+    { "src": "/app-icon.svg",     "type": "image/svg+xml", "sizes": "any" }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#0A0A0B",
+  "background_color": "#0A0A0B",
+  "orientation": "portrait"
+}

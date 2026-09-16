@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Sparkles, Film, Wand2, Mic, Bot, Languages, Layers, ShieldCheck, Zap, Menu, X } from "lucide-react";
+import BrandMark from "../components/BrandMark";
 
 const HERO_BG = "https://images.pexels.com/photos/13812458/pexels-photo-13812458.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940";
 
@@ -36,9 +37,8 @@ export default function Landing() {
       <header className="sticky top-0 z-50 glass safe-top">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2">
           <Link data-testid="brand-logo" to="/" className="flex items-center gap-2 shrink-0">
-            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-md bg-[#E2FF3D] grid place-items-center">
-              <Film className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-black" />
-            </div>
+            <BrandMark size={30} className="sm:hidden" />
+            <BrandMark size={34} className="hidden sm:block" />
             <span className="font-semibold text-base sm:text-lg tracking-tight">CineReel<span className="text-[#E2FF3D]">.</span>AI</span>
           </Link>
 

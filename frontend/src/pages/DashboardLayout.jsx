@@ -8,6 +8,7 @@ import {
 import { useAuth } from "../lib/auth";
 import BottomNav from "../components/BottomNav";
 import OfflineBadge from "../components/OfflineBadge";
+import BrandMark from "../components/BrandMark";
 
 const SIDE_LINKS = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
@@ -41,9 +42,7 @@ export default function DashboardLayout() {
   const sidebarBody = (onClickItem) => (
     <>
       <Link to="/" className="flex items-center gap-2 px-5 h-16 border-b border-white/5">
-        <div className="w-7 h-7 rounded-md bg-[#E2FF3D] grid place-items-center">
-          <Film className="w-3.5 h-3.5 text-black" />
-        </div>
+        <BrandMark size={28} />
         <span className="font-semibold tracking-tight">CineReel<span className="text-[#E2FF3D]">.</span>AI</span>
       </Link>
       <div className="p-3">
@@ -128,9 +127,7 @@ export default function DashboardLayout() {
               <Menu className="w-5 h-5" />
             </button>
             <Link to="/dashboard" className="flex items-center gap-2 min-w-0">
-              <div className="w-7 h-7 rounded-md bg-[#E2FF3D] grid place-items-center shrink-0">
-                <Film className="w-3.5 h-3.5 text-black" />
-              </div>
+              <BrandMark size={30} />
               <span className="font-semibold hidden sm:inline truncate">CineReel</span>
             </Link>
             <div className="label-mono text-zinc-500 hidden lg:block">/ STUDIO</div>
