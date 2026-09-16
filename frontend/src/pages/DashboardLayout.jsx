@@ -6,6 +6,7 @@ import {
   Menu, X, Megaphone, Users, User, Rocket,
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
+import BottomNav from "../components/BottomNav";
 
 const SIDE_LINKS = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
@@ -142,10 +143,13 @@ export default function DashboardLayout() {
               className="text-[10px] sm:text-xs label-mono hover:text-[#E2FF3D] px-1 hidden xs:inline-block">UPGRADE</Link>
           </div>
         </header>
-        <main className="flex-1 p-3 sm:p-4 lg:p-8 overflow-y-auto safe-bottom">
+        <main className="flex-1 p-3 sm:p-4 lg:p-8 overflow-y-auto safe-bottom pb-24 lg:pb-8">
           <Outlet />
         </main>
       </div>
+
+      {/* Native-style bottom tab bar (mobile only) */}
+      <BottomNav />
     </div>
   );
 }
