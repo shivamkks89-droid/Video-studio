@@ -369,6 +369,7 @@ class PlayStoreAssetsRequest(BaseModel):
     icon_description: Optional[str] = None    # e.g. "camera lens with film reel"
     generate_icon: bool = True
     generate_feature: bool = True
+    workspace_id: Optional[str] = None
 
 
 # ---------- CAMPAIGN QUICK PACK (one-click 5 platforms) ----------

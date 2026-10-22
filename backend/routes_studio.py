@@ -570,6 +570,18 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
             await refund(user, cost, "playstore_error")
             raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)[:160]}")
 
+        feature_text_url = None
+        if feature_url:
+            try:
+                from playstore_shots import compose_feature
+                from asset_store import save_image_data_uri
+                raw = await fetch_to_bytes(feature_url)
+                kit = await _load_kit(user.user_id, body.workspace_id)
+                png = await asyncio.to_thread(compose_feature, raw, body.brand_name, body.tagline or "", kit)
+                feature_text_url = await save_image_data_uri("data:image/png;base64," + base64.b64encode(png).decode())
+            except Exception:
+                log.exception("feature text overlay failed")
+
         if body.generate_icon and not icon_url:
             await refund(user, 6, "playstore_icon_missing")
         if body.generate_feature and not feature_url:
@@ -585,11 +597,12 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
             "primary_color": color,
             "icon_url": icon_url,
             "feature_url": feature_url,
+            "feature_text_url": feature_text_url,
             "created_at": utc_now().isoformat(),
         }
         await db.playstore_assets.insert_one(dict(record))
         return {
-            "icon_url": icon_url, "feature_url": feature_url,
+            "icon_url": icon_url, "feature_url": feature_url, "feature_text_url": feature_text_url,
             "icon_size": "512x512", "feature_size": "1024x500",
             "credits_left": user.credits,
         }
@@ -600,6 +613,35 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
         return await db.playstore_assets.find(
             {"user_id": user.user_id}, {"_id": 0}
         ).sort("created_at", -1).to_list(50)
+
+    # ---------- BRAND KIT (per client workspace) ----------
+    async def _load_kit(user_id: str, ws_id: Optional[str]) -> dict:
+        from playstore_shots import open_upload
+        if not ws_id:
+            return {}
+        ws = await db.workspaces.find_one({"workspace_id": ws_id, "user_id": user_id},
+                                          {"_id": 0, "brand_kit": 1})
+        kit = dict((ws or {}).get("brand_kit") or {})
+        if kit.get("logo_url"):
+            raw = await fetch_to_bytes(kit["logo_url"])
+            kit["logo"] = open_upload(raw, rgba=True) if raw else None
+        return kit
+
+    @router.post("/workspaces/{workspace_id}/logo")
+    async def upload_ws_logo(workspace_id: str, request: Request, file: UploadFile = File(...)):
+        from asset_store import save_image_data_uri
+        user = await current_user_dep(request)
+        raw = await file.read()
+        if len(raw) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Logo max 5 MB")
+        if not (file.content_type or "").startswith("image"):
+            raise HTTPException(status_code=400, detail="Only image files")
+        url = await save_image_data_uri(f"data:{file.content_type};base64," + base64.b64encode(raw).decode())
+        res = await db.workspaces.update_one({"workspace_id": workspace_id, "user_id": user.user_id},
+                                             {"$set": {"brand_kit.logo_url": url}})
+        if not res.matched_count:
+            raise HTTPException(status_code=404, detail="Workspace not found")
+        return {"logo_url": url}
 
     # ---------- ADAPTIVE ICON (Android foreground + background layers) ----------
     @router.get("/studio/adaptive-icon/preview/{layer}.png")
@@ -641,8 +683,9 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
         user = await charge_credits(user, 2, "playstore_headlines")
         from ai_services import _claude_send, _safe_json
         system = ("You write Google Play Store screenshot captions. Reply ONLY with JSON: "
-                  '{"items":[{"headline":"...","sub":"..."}]} with exactly 6 items. '
+                  '{"items":[{"headline":"...","sub":"...","points":"a, b, c"}]} with exactly 6 items. '
                   "headline: 2-5 punchy words, benefit-led. sub: max 8 words. "
+                  "points: 3 feature bullets of max 3 words each, comma separated. "
                   "Write in English or Hinglish using Latin letters only. No emojis.")
         focus = ("each caption should describe a moment from the promo video"
                  if body.source == "video" else
@@ -655,7 +698,8 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
         except Exception as e:
             await refund(user, 2, "playstore_headlines_error")
             raise HTTPException(status_code=500, detail=str(e)[:160])
-        items = [{"headline": str(i.get("headline", ""))[:60], "sub": str(i.get("sub", ""))[:80]}
+        items = [{"headline": str(i.get("headline", ""))[:60], "sub": str(i.get("sub", ""))[:80],
+                  "points": str(i.get("points", ""))[:90]}
                  for i in items if isinstance(i, dict)][:6]
         if len(items) < 6:
             await refund(user, 2, "playstore_headlines_empty")
@@ -669,6 +713,8 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
                            bg_style: str = Form("brand"),
                            brand_name: str = Form("CineReel AI"),
                            project_id: Optional[str] = Form(None),
+                           layout: str = Form("classic"),
+                           workspace_id: Optional[str] = Form(None),
                            files: List[UploadFile] = File(default=[])):
         import json as _json
         from playstore_shots import compose_all, extract_frames, open_upload
@@ -700,12 +746,15 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
                     contents.append(img)
         if not contents:
             raise HTTPException(status_code=400, detail="No frames or screens to compose")
-        pngs = await asyncio.to_thread(compose_all, contents, parsed, bg_style, brand_name or "CineReel AI")
+        kit = await _load_kit(user.user_id, workspace_id)
+        pngs = await asyncio.to_thread(compose_all, contents, parsed, bg_style,
+                                       brand_name or "CineReel AI", layout, kit)
         urls = []
         for p in pngs:
             urls.append(await save_image_data_uri("data:image/png;base64," + base64.b64encode(p).decode()))
         record = {"id": new_id("pss"), "user_id": user.user_id, "source": source,
                   "project_id": project_id, "bg_style": bg_style, "items": parsed,
+                  "layout": layout, "workspace_id": workspace_id,
                   "urls": urls, "created_at": utc_now().isoformat()}
         await db.playstore_shots.insert_one(dict(record))
         record.pop("_id", None)
@@ -726,6 +775,50 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
                     z.writestr(f"playstore-screenshot-{i + 1}-1080x1920.png", data)
         return Response(content=out.getvalue(), media_type="application/zip", headers={
             "Content-Disposition": 'attachment; filename="playstore-screenshots.zip"'})
+
+    @router.get("/studio/playstore-screenshots/{shot_id}")
+    async def shot_get(shot_id: str, request: Request):
+        user = await current_user_dep(request)
+        rec = await db.playstore_shots.find_one({"id": shot_id, "user_id": user.user_id}, {"_id": 0})
+        if not rec:
+            raise HTTPException(status_code=404, detail="Not found")
+        return rec
+
+    class PromoReq(BaseModel):
+        music_id: Optional[str] = None
+
+    PROMO_COST = 5
+
+    async def _promo_job(user, shot_id: str, urls: list, music_id: Optional[str]):
+        from playstore_shots import build_promo
+        from asset_store import save_video_bytes
+        try:
+            pngs = [b for b in [await fetch_to_bytes(u) for u in urls] if b]
+            track = next((t for t in MUSIC_TRACKS if t["id"] == music_id), None) if music_id else None
+            music = await fetch_to_bytes(track["url"]) if track else None
+            mp4 = await asyncio.to_thread(build_promo, pngs, music)
+            url = await save_video_bytes(mp4)
+            await db.playstore_shots.update_one({"id": shot_id}, {"$set": {
+                "promo_status": "complete", "promo_url": url, "promo_music": bool(music)}})
+        except Exception as e:
+            log.exception("promo render failed")
+            await refund(user, PROMO_COST, "promo_video_error")
+            await db.playstore_shots.update_one({"id": shot_id}, {"$set": {
+                "promo_status": "failed", "promo_error": str(e)[:200]}})
+
+    @router.post("/studio/playstore-screenshots/{shot_id}/promo")
+    async def shot_promo(shot_id: str, body: PromoReq, request: Request):
+        user = await current_user_dep(request)
+        rec = await db.playstore_shots.find_one({"id": shot_id, "user_id": user.user_id}, {"_id": 0})
+        if not rec:
+            raise HTTPException(status_code=404, detail="Not found")
+        if rec.get("promo_status") == "rendering":
+            return {"promo_status": "rendering"}
+        user = await charge_credits(user, PROMO_COST, "promo_video")
+        await db.playstore_shots.update_one({"id": shot_id}, {"$set": {
+            "promo_status": "rendering", "promo_url": None, "promo_error": None}})
+        asyncio.create_task(_promo_job(user, shot_id, rec["urls"], body.music_id))
+        return {"promo_status": "rendering", "credits_left": user.credits}
 
     # ---------- STT / TRANSCRIPTION ----------
     @router.post("/ai/stt")

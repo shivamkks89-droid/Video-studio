@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { FolderPlus, FolderOpen, Trash2, Edit3, Loader2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
+import { assetUrl } from "../lib/assetUrl";
+import { BrandKitEditor } from "../components/workspaces/BrandKitEditor";
 
 const COLORS = ["#E2FF3D", "#7CFC00", "#00CED1", "#FF6B9D", "#FF9F1C", "#A78BFA"];
 
@@ -131,6 +133,20 @@ export default function Workspaces() {
                       </Link>
                     ))}
                   </div>
+                  {wsProjects.some((p) => p.video_url) && (
+                    <div className="mt-3" data-testid={`ws-renders-${w.workspace_id}`}>
+                      <div className="label-mono text-zinc-500 text-[10px] mb-1.5">/ RENDERS ({wsProjects.filter((p) => p.video_url).length})</div>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {wsProjects.filter((p) => p.video_url).slice(0, 8).map((p) => (
+                          <Link key={p.project_id} to={`/dashboard/projects/${p.project_id}`}
+                            className="aspect-[9/16] rounded bg-[#141416] overflow-hidden hover:ring-1 hover:ring-white/30">
+                            {p.thumbnail && <img src={assetUrl(p.thumbnail)} alt={p.title} className="w-full h-full object-cover" />}
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <BrandKitEditor ws={w} onSaved={load} />
                 </div>
               );
             })}

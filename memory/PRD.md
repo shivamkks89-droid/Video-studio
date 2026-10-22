@@ -51,6 +51,10 @@ InVideo AI + CapCut + Canva AI.
 - ✅ Estimated Credits pricer (`/api/ai/estimate`)
 
 ### Mobile
+- ✅ (Jun 2026) Client Brand Kit per workspace (logo upload `POST /api/workspaces/{id}/logo`, primary/secondary colour, font sans/serif/mono saved in `workspace.brand_kit`) + renders strip on workspace cards. Brand kit applies to screenshots + feature graphic.
+- ✅ (Jun 2026) Screenshot layouts: classic / tilted / duo / callout (`layout` form field, callout uses `points`).
+- ✅ (Jun 2026) Feature graphic auto text overlay (app name + tagline, brand font) → `feature_text_url`.
+- ✅ (Jun 2026) 30s promo MP4 from 6 screenshots w/ xfade + library music, 5 CR, background job (`POST /api/studio/playstore-screenshots/{id}/promo`, poll `GET .../{id}`).
 - ✅ Android Adaptive Icon (fg + bg + monochrome layers, all densities) installed in `frontend/android/.../res` + ZIP (`GET /api/studio/adaptive-icon.zip`, previews `/api/studio/adaptive-icon/preview/{layer}.png`). Duplicate `values/ic_launcher_background.xml` removed.
 - ✅ Play Store Screenshot Generator (6x 1080x1920, phone frame + headline; source = project video frames OR uploaded app screens; brand-dark / multi-colour bg). AI headlines 2 CR (`POST /api/studio/playstore-screenshots/headlines`), compose free (`POST /api/studio/playstore-screenshots`), ZIP (`GET /api/studio/playstore-screenshots/{id}/zip`). UI on `/dashboard/playstore`.
 - ✅ Capacitor Android wrapper (~28 MB AAB)

@@ -5,8 +5,13 @@ import { api } from "../../lib/api";
 import { assetUrl } from "../../lib/assetUrl";
 import { saveBlob } from "./saveBlob";
 import { ShotSourcePicker } from "./ShotSourcePicker";
+import { ShotHeadlineEditor } from "./ShotHeadlineEditor";
+import { KitSelect } from "./KitSelect";
+import { PromoVideoPanel } from "./PromoVideoPanel";
 
-const EMPTY = Array.from({ length: 6 }, () => ({ headline: "", sub: "" }));
+const LAYOUTS = [["classic", "Classic"], ["tilted", "Tilted phone"], ["duo", "Two phones"], ["callout", "Feature callouts"]];
+
+const EMPTY = Array.from({ length: 6 }, () => ({ headline: "", sub: "", points: "" }));
 
 export const ScreenshotGenerator = () => {
   const [source, setSource] = useState("video");
@@ -17,6 +22,8 @@ export const ScreenshotGenerator = () => {
   const [items, setItems] = useState(EMPTY);
   const [busy, setBusy] = useState("");
   const [result, setResult] = useState(null);
+  const [layout, setLayout] = useState("classic");
+  const [workspaceId, setWorkspaceId] = useState(null);
 
   const writeAI = async () => {
     setBusy("ai");
@@ -38,6 +45,8 @@ export const ScreenshotGenerator = () => {
     fd.append("source", source); fd.append("items", JSON.stringify(items));
     fd.append("bg_style", bgStyle); fd.append("brand_name", brand);
     if (projectId) fd.append("project_id", projectId);
+    fd.append("layout", layout);
+    if (workspaceId) fd.append("workspace_id", workspaceId);
     files.forEach((f) => fd.append("files", f));
     setBusy("compose");
     try {
@@ -54,8 +63,6 @@ export const ScreenshotGenerator = () => {
     saveBlob(data, "playstore-screenshots.zip");
   };
 
-  const setItem = (i, k, v) => setItems(items.map((it, j) => (j === i ? { ...it, [k]: v } : it)));
-
   return (
     <div className="surface rounded-xl p-5 space-y-5" data-testid="screenshot-generator">
       <div>
@@ -67,6 +74,13 @@ export const ScreenshotGenerator = () => {
           <ShotSourcePicker {...{ source, setSource, projectId, setProjectId, files, setFiles }} />
           <input data-testid="shots-brand-name" value={brand} onChange={(e) => setBrand(e.target.value)}
             placeholder="App name" className="w-full bg-[#0A0A0B] border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-white/30" />
+          <KitSelect value={workspaceId} onChange={setWorkspaceId} testId="shots-kit-select" />
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {LAYOUTS.map(([id, l]) => (
+              <button key={id} data-testid={`shots-layout-${id}`} onClick={() => setLayout(id)}
+                className={`rounded-lg px-2 py-2 text-xs transition-colors ${layout === id ? "bg-[#E2FF3D] text-black font-semibold" : "surface hover:border-white/30"}`}>{l}</button>
+            ))}
+          </div>
           <div className="flex gap-2">
             {[["brand", "Brand dark gradient"], ["multi", "Har screenshot alag colour"]].map(([id, l]) => (
               <button key={id} data-testid={`shots-bg-${id}`} onClick={() => setBgStyle(id)}
@@ -84,19 +98,7 @@ export const ScreenshotGenerator = () => {
             </button>
           </div>
         </div>
-        <div className="space-y-2" data-testid="shots-headlines">
-          {items.map((it, i) => (
-            <div key={i} className="flex gap-2 items-start">
-              <span className="label-mono text-zinc-600 text-[10px] pt-2.5 w-5">{String(i + 1).padStart(2, "0")}</span>
-              <div className="flex-1 grid sm:grid-cols-2 gap-1.5">
-                <input data-testid={`shots-headline-${i}`} value={it.headline} onChange={(e) => setItem(i, "headline", e.target.value)}
-                  placeholder="Headline" maxLength={60} className="bg-[#0A0A0B] border border-white/10 rounded-md px-2 py-1.5 text-xs outline-none focus:border-white/30" />
-                <input data-testid={`shots-sub-${i}`} value={it.sub} onChange={(e) => setItem(i, "sub", e.target.value)}
-                  placeholder="Sub-line (optional)" maxLength={80} className="bg-[#0A0A0B] border border-white/10 rounded-md px-2 py-1.5 text-xs outline-none focus:border-white/30" />
-              </div>
-            </div>
-          ))}
-        </div>
+        <ShotHeadlineEditor items={items} setItems={setItems} showPoints={layout === "callout"} />
       </div>
       {result && (
         <div className="space-y-3" data-testid="shots-result">
@@ -113,6 +115,7 @@ export const ScreenshotGenerator = () => {
               </a>
             ))}
           </div>
+          <PromoVideoPanel shotId={result.id} />
         </div>
       )}
     </div>

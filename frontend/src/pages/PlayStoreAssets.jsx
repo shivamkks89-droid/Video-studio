@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { assetUrl } from "../lib/assetUrl";
 import { AdaptiveIconCard } from "../components/playstore/AdaptiveIconCard";
 import { ScreenshotGenerator } from "../components/playstore/ScreenshotGenerator";
+import { KitSelect } from "../components/playstore/KitSelect";
 
 const STYLES = [
   { id: "modern",  label: "Modern",  hint: "flat + bold geometry" },
@@ -26,6 +27,7 @@ export default function PlayStoreAssets() {
     icon_description: "",
     generate_icon: true,
     generate_feature: true,
+    workspace_id: null,
   });
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
@@ -191,6 +193,8 @@ export default function PlayStoreAssets() {
             </div>
           </div>
 
+          <KitSelect value={form.workspace_id} onChange={(v) => setForm({ ...form, workspace_id: v })} testId="ps-kit-select" />
+
           <div className="flex items-center gap-4 pt-2 border-t border-white/5">
             <label className="flex items-center gap-2 text-xs cursor-pointer">
               <input type="checkbox" data-testid="ps-check-icon"
@@ -247,7 +251,7 @@ export default function PlayStoreAssets() {
               <div className="label-mono text-[#E2FF3D]">/ FEATURE GRAPHIC · 1024×500</div>
               {result?.feature_url && (
                 <button data-testid="ps-download-feature"
-                  onClick={() => downloadAt(result.feature_url, `${form.brand_name || "app"}-feature-1024x500.png`, 1024, 500)}
+                  onClick={() => downloadAt(result.feature_text_url || result.feature_url, `${form.brand_name || "app"}-feature-1024x500.png`, 1024, 500)}
                   className="rounded-full surface px-3 py-1 text-xs flex items-center gap-1 hover:border-white/30">
                   <Download className="w-3 h-3" /> Download PNG
                 </button>
@@ -255,13 +259,13 @@ export default function PlayStoreAssets() {
             </div>
             <div className="aspect-[1024/500] rounded-lg overflow-hidden bg-black/50 grid place-items-center">
               {result?.feature_url ? (
-                <img src={assetUrl(result.feature_url)} alt="Feature graphic" className="w-full h-full object-cover" />
+                <img data-testid="ps-feature-preview" src={assetUrl(result.feature_text_url || result.feature_url)} alt="Feature graphic" className="w-full h-full object-cover" />
               ) : (
                 <Sparkles className="w-8 h-8 text-zinc-700" />
               )}
             </div>
             <div className="text-[10px] text-zinc-500 mt-2">
-              Auto-resized to exact 1024×500 PNG on download.
+              App name + tagline brand font me auto-overlay · exact 1024×500 PNG.
             </div>
           </div>
         </div>
@@ -277,7 +281,7 @@ export default function PlayStoreAssets() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {history.slice(0, 8).map((h) => (
               <button key={h.id} data-testid={`ps-history-${h.id}`}
-                onClick={() => setResult({ icon_url: h.icon_url, feature_url: h.feature_url })}
+                onClick={() => setResult({ icon_url: h.icon_url, feature_url: h.feature_url, feature_text_url: h.feature_text_url })}
                 className="surface rounded-xl overflow-hidden text-left hover:border-white/30 transition">
                 <div className="aspect-square bg-black/50">
                   {h.icon_url && <img src={assetUrl(h.icon_url)} alt="" className="w-full h-full object-cover" />}
