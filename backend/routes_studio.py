@@ -601,6 +601,132 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
             {"user_id": user.user_id}, {"_id": 0}
         ).sort("created_at", -1).to_list(50)
 
+    # ---------- ADAPTIVE ICON (Android foreground + background layers) ----------
+    @router.get("/studio/adaptive-icon/preview/{layer}.png")
+    async def adaptive_icon_preview(layer: str):
+        from adaptive_icon import layer_png
+        if layer not in ("foreground", "background", "monochrome", "squircle", "circle"):
+            raise HTTPException(status_code=404, detail="Unknown layer")
+        data = await asyncio.to_thread(layer_png, layer, 432)
+        return Response(content=data, media_type="image/png",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+    @router.get("/studio/adaptive-icon.zip")
+    async def adaptive_icon_zip(request: Request):
+        await current_user_dep(request)
+        from adaptive_icon import build_zip
+        data = await asyncio.to_thread(build_zip)
+        return Response(content=data, media_type="application/zip", headers={
+            "Content-Disposition": 'attachment; filename="cinereel-adaptive-icon.zip"'})
+
+    # ---------- PLAY STORE SCREENSHOT GENERATOR ----------
+    class ShotHeadlinesReq(BaseModel):
+        brand_name: str = "CineReel AI"
+        project_id: Optional[str] = None
+        source: str = "video"
+
+    @router.post("/studio/playstore-screenshots/headlines")
+    async def shot_headlines(body: ShotHeadlinesReq, request: Request):
+        user = await current_user_dep(request)
+        ctx = ""
+        if body.project_id:
+            proj = await db.projects.find_one(
+                {"project_id": body.project_id, "user_id": user.user_id},
+                {"_id": 0, "title": 1, "topic": 1, "script": 1, "video_type": 1},
+            )
+            if proj:
+                script = proj.get("script")
+                script_txt = " ".join(str(script.get(k) or "") for k in ("hook", "body", "cta")) if isinstance(script, dict) else ""
+                ctx = f"Project: {proj.get('title')} | topic: {proj.get('topic')} | script: {str(script_txt)[:600]}"
+        user = await charge_credits(user, 2, "playstore_headlines")
+        from ai_services import _claude_send, _safe_json
+        system = ("You write Google Play Store screenshot captions. Reply ONLY with JSON: "
+                  '{"items":[{"headline":"...","sub":"..."}]} with exactly 6 items. '
+                  "headline: 2-5 punchy words, benefit-led. sub: max 8 words. "
+                  "Write in English or Hinglish using Latin letters only. No emojis.")
+        focus = ("each caption should describe a moment from the promo video"
+                 if body.source == "video" else
+                 "each caption should sell one app feature (AI script, voiceover, avatars, "
+                 "captions, ad studio, one-tap export)")
+        try:
+            raw = await _claude_send(system, f"App: {body.brand_name}. {focus}. {ctx}")
+            parsed = _safe_json(raw)
+            items = parsed.get("items", []) if isinstance(parsed, dict) else (parsed or [])
+        except Exception as e:
+            await refund(user, 2, "playstore_headlines_error")
+            raise HTTPException(status_code=500, detail=str(e)[:160])
+        items = [{"headline": str(i.get("headline", ""))[:60], "sub": str(i.get("sub", ""))[:80]}
+                 for i in items if isinstance(i, dict)][:6]
+        if len(items) < 6:
+            await refund(user, 2, "playstore_headlines_empty")
+            raise HTTPException(status_code=500, detail="AI returned too few headlines, try again")
+        return {"items": items, "credits_left": user.credits}
+
+    @router.post("/studio/playstore-screenshots")
+    async def shot_compose(request: Request,
+                           source: str = Form("video"),
+                           items: str = Form(...),
+                           bg_style: str = Form("brand"),
+                           brand_name: str = Form("CineReel AI"),
+                           project_id: Optional[str] = Form(None),
+                           files: List[UploadFile] = File(default=[])):
+        import json as _json
+        from playstore_shots import compose_all, extract_frames, open_upload
+        from asset_store import save_image_data_uri
+        user = await current_user_dep(request)
+        try:
+            parsed = _json.loads(items)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid headlines")
+        if not isinstance(parsed, list) or len(parsed) != 6:
+            raise HTTPException(status_code=400, detail="Exactly 6 headlines required")
+        contents = []
+        if source == "video":
+            proj = await db.projects.find_one(
+                {"project_id": project_id, "user_id": user.user_id}, {"_id": 0, "video_url": 1})
+            if not proj or not proj.get("video_url"):
+                raise HTTPException(status_code=400, detail="Pick a project with a finished render")
+            vid = await fetch_to_bytes(proj["video_url"])
+            if not vid:
+                raise HTTPException(status_code=400, detail="Could not read the rendered video")
+            contents = await asyncio.to_thread(extract_frames, vid, 6)
+        else:
+            for f in files[:6]:
+                raw = await f.read()
+                if len(raw) > 10 * 1024 * 1024:
+                    raise HTTPException(status_code=413, detail="Each screen max 10 MB")
+                img = open_upload(raw)
+                if img:
+                    contents.append(img)
+        if not contents:
+            raise HTTPException(status_code=400, detail="No frames or screens to compose")
+        pngs = await asyncio.to_thread(compose_all, contents, parsed, bg_style, brand_name or "CineReel AI")
+        urls = []
+        for p in pngs:
+            urls.append(await save_image_data_uri("data:image/png;base64," + base64.b64encode(p).decode()))
+        record = {"id": new_id("pss"), "user_id": user.user_id, "source": source,
+                  "project_id": project_id, "bg_style": bg_style, "items": parsed,
+                  "urls": urls, "created_at": utc_now().isoformat()}
+        await db.playstore_shots.insert_one(dict(record))
+        record.pop("_id", None)
+        return record
+
+    @router.get("/studio/playstore-screenshots/{shot_id}/zip")
+    async def shot_zip(shot_id: str, request: Request):
+        import zipfile
+        user = await current_user_dep(request)
+        rec = await db.playstore_shots.find_one({"id": shot_id, "user_id": user.user_id}, {"_id": 0})
+        if not rec:
+            raise HTTPException(status_code=404, detail="Not found")
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+            for i, u in enumerate(rec["urls"]):
+                data = await fetch_to_bytes(u)
+                if data:
+                    z.writestr(f"playstore-screenshot-{i + 1}-1080x1920.png", data)
+        return Response(content=out.getvalue(), media_type="application/zip", headers={
+            "Content-Disposition": 'attachment; filename="playstore-screenshots.zip"'})
+
     # ---------- STT / TRANSCRIPTION ----------
     @router.post("/ai/stt")
     async def stt(body: STTRequest, request: Request):

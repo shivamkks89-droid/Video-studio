@@ -51,6 +51,8 @@ InVideo AI + CapCut + Canva AI.
 - ✅ Estimated Credits pricer (`/api/ai/estimate`)
 
 ### Mobile
+- ✅ Android Adaptive Icon (fg + bg + monochrome layers, all densities) installed in `frontend/android/.../res` + ZIP (`GET /api/studio/adaptive-icon.zip`, previews `/api/studio/adaptive-icon/preview/{layer}.png`). Duplicate `values/ic_launcher_background.xml` removed.
+- ✅ Play Store Screenshot Generator (6x 1080x1920, phone frame + headline; source = project video frames OR uploaded app screens; brand-dark / multi-colour bg). AI headlines 2 CR (`POST /api/studio/playstore-screenshots/headlines`), compose free (`POST /api/studio/playstore-screenshots`), ZIP (`GET /api/studio/playstore-screenshots/{id}/zip`). UI on `/dashboard/playstore`.
 - ✅ Capacitor Android wrapper (~28 MB AAB)
 - ✅ GitHub Actions workflows for APK/AAB
 

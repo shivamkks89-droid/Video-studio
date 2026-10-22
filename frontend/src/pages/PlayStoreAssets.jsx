@@ -3,6 +3,8 @@ import { Loader2, Sparkles, Download, Rocket, Layers, Palette, Info } from "luci
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import { assetUrl } from "../lib/assetUrl";
+import { AdaptiveIconCard } from "../components/playstore/AdaptiveIconCard";
+import { ScreenshotGenerator } from "../components/playstore/ScreenshotGenerator";
 
 const STYLES = [
   { id: "modern",  label: "Modern",  hint: "flat + bold geometry" },
@@ -114,8 +116,8 @@ export default function PlayStoreAssets() {
         <Info className="w-4 h-4 text-[#E2FF3D] mt-0.5 shrink-0" />
         <div className="text-xs text-zinc-300 leading-relaxed">
           <b>Google Play requires:</b> Hi-res icon <span className="text-white">512×512 PNG</span>{" "}
-          + feature graphic <span className="text-white">1024×500 PNG/JPG</span>. Screenshots
-          you'll capture in Android Studio separately.
+          + feature graphic <span className="text-white">1024×500 PNG/JPG</span> + 2-8 phone
+          screenshots — sab kuch isi page pe ban jaata hai (neeche scroll karo).
         </div>
       </div>
 
@@ -264,6 +266,9 @@ export default function PlayStoreAssets() {
           </div>
         </div>
       </div>
+
+      <AdaptiveIconCard />
+      <ScreenshotGenerator />
 
       {/* History */}
       {history.length > 0 && (
