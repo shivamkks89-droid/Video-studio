@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useBackClose } from "../lib/backStack";
 import { NavLink, Link, useLocation } from "react-router-dom";
 import {
   Home, FolderKanban, Plus, LayoutGrid, User as UserIcon,
@@ -15,6 +16,7 @@ import { hapticTap, hapticSelection } from "../lib/native";
  */
 export default function BottomNav() {
   const [studiosOpen, setStudiosOpen] = useState(false);
+  useBackClose(studiosOpen, () => setStudiosOpen(false));
   const { pathname } = useLocation();
 
   const isActive = (to, exact = false) =>

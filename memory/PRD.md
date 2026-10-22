@@ -51,6 +51,9 @@ InVideo AI + CapCut + Canva AI.
 - ✅ Estimated Credits pricer (`/api/ai/estimate`)
 
 ### Mobile
+- ✅ (Jun 2026) Android back button: single listener `components/BackButtonHandler.jsx` (closers stack `lib/backStack.js` → Radix layer Escape → history back → root double-press exit 2s). Exit guard while rendering. Debug sim on web: localStorage.debugNativeBack=1 → window.__simulateBack().
+- ✅ (Jun 2026) In-app Recent projects (`GET /api/projects?sort=recent`, `last_opened_at` set on project open) on Dashboard.
+- ✅ (Jun 2026) Mobile overflow root-cause fix: `grid grid-cols-1` + `.grid > * {min-width:0}`; content padding above bottom nav; 44px hamburger/close; Landing hero text-first on mobile; native app skips Landing; adjustResize + adjustMarginsForEdgeToEdge.
 - ✅ (Jun 2026) Client Brand Kit per workspace (logo upload `POST /api/workspaces/{id}/logo`, primary/secondary colour, font sans/serif/mono saved in `workspace.brand_kit`) + renders strip on workspace cards. Brand kit applies to screenshots + feature graphic.
 - ✅ (Jun 2026) Screenshot layouts: classic / tilted / duo / callout (`layout` form field, callout uses `points`).
 - ✅ (Jun 2026) Feature graphic auto text overlay (app name + tagline, brand font) → `feature_text_url`.

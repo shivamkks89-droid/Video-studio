@@ -252,7 +252,7 @@ export default function ScriptStudio() {
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
       <div className="lg:col-span-5 space-y-4">
         <div className="surface rounded-xl p-5 space-y-4">
           <div className="label-mono text-[#E2FF3D]">/ AI SCRIPT GENERATOR</div>

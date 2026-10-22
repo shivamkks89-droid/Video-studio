@@ -29,6 +29,7 @@
   },
   "android": {
     "allowMixedContent": false,
+    "adjustMarginsForEdgeToEdge": "auto",
     "captureInput": true,
     "webContentsDebuggingEnabled": false,
     "buildOptions": {

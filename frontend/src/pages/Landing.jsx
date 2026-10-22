@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useBackClose } from "../lib/backStack";
+import { isNativeApp } from "../lib/native";
+import { Link, Navigate } from "react-router-dom";
 import { ArrowRight, Sparkles, Film, Wand2, Mic, Bot, Languages, Layers, ShieldCheck, Zap, Menu, X } from "lucide-react";
 import BrandMark from "../components/BrandMark";
 
@@ -30,6 +32,8 @@ const TRUSTED = ["aurora", "lumen", "northstar", "obsidian", "monolith", "kepler
 
 export default function Landing() {
   const [menuOpen, setMenuOpen] = useState(false);
+  useBackClose(menuOpen, () => setMenuOpen(false));
+  if (isNativeApp()) return <Navigate to={localStorage.getItem("cinereel_token") ? "/dashboard" : "/login"} replace />;
 
   return (
     <div data-testid="landing-page" className="min-h-screen bg-[#0A0A0B] text-white overflow-x-hidden">
@@ -60,7 +64,7 @@ export default function Landing() {
           {/* Mobile hamburger */}
           <button data-testid="mobile-nav-toggle" onClick={() => setMenuOpen(v => !v)}
             aria-label="Toggle menu"
-            className="sm:hidden text-zinc-300 hover:text-white p-2 -mr-1">
+            className="sm:hidden text-zinc-300 hover:text-white w-11 h-11 -mr-2 grid place-items-center rounded-full active:bg-white/10">
             {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
         </div>
@@ -87,13 +91,13 @@ export default function Landing() {
           style={{ backgroundImage: `url(${HERO_BG})` }}
         />
         <div className="absolute inset-0 bg-gradient-to-b from-[#0A0A0B]/60 via-[#0A0A0B]/80 to-[#0A0A0B]" />
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 pt-12 pb-16 sm:pt-20 sm:pb-24 lg:pt-24 lg:pb-32 grid md:grid-cols-12 gap-8 md:gap-12 items-center">
-          <div className="md:col-span-7 order-2 md:order-1">
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 pt-8 pb-12 sm:pt-20 sm:pb-24 lg:pt-24 lg:pb-32 grid md:grid-cols-12 gap-8 md:gap-12 items-center">
+          <div className="md:col-span-7 order-1">
             <div className="flex flex-wrap items-center gap-2 mb-4 sm:mb-6">
               <Badge><Sparkles className="w-3 h-3 inline mr-1 -mt-0.5" /> v1 — Cinematic edition</Badge>
               <Badge>Hindi · Hinglish · English</Badge>
             </div>
-            <h1 className="text-[34px] leading-[1.05] xs:text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-semibold tracking-tight">
+            <h1 className="text-[32px] leading-[1.08] xs:text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-semibold tracking-tight">
               Make cinema-grade <span className="text-[#E2FF3D]">ads & reels</span>{" "}
               in the time of a coffee break.
             </h1>
@@ -118,7 +122,7 @@ export default function Landing() {
           </div>
 
           {/* Preview card — smaller on mobile, sits ABOVE headline for visual anchor */}
-          <div className="md:col-span-5 relative order-1 md:order-2 mx-auto w-full max-w-[280px] sm:max-w-sm md:max-w-none">
+          <div className="md:col-span-5 relative order-2 mx-auto w-full max-w-[220px] sm:max-w-xs md:max-w-none">
             <div className="relative ar-916 surface rounded-2xl overflow-hidden">
               <img
                 alt="preview"
@@ -155,7 +159,7 @@ export default function Landing() {
 
       {/* FEATURES */}
       <section id="features" className="max-w-7xl mx-auto px-4 sm:px-6 py-16 sm:py-20 lg:py-24">
-        <div className="grid md:grid-cols-12 gap-6 md:gap-8 mb-8 sm:mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-8 mb-8 sm:mb-12">
           <div className="md:col-span-5">
             <div className="label-mono text-zinc-500 mb-2 sm:mb-3">/ 01 — FEATURES</div>
             <h2 className="text-3xl sm:text-4xl lg:text-5xl font-semibold tracking-tight leading-tight">
@@ -167,7 +171,7 @@ export default function Landing() {
             generation, captions and brand control. Move from idea to export without leaving the canvas.
           </div>
         </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {FEATURES.map((f) => (
             <div key={f.t} className="surface rounded-xl p-5 sm:p-6 transition">
               <f.icon className="w-6 h-6 text-[#E2FF3D] mb-4 sm:mb-6" />
@@ -200,7 +204,7 @@ export default function Landing() {
         <h2 className="text-3xl sm:text-4xl lg:text-5xl font-semibold tracking-tight mb-8 sm:mb-12 leading-tight">
           Four steps to a finished cut.
         </h2>
-        <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
           {[
             ["Prompt", "Paste a URL, App ID or write a line."],
             ["Script", "Claude writes the hook, body, CTA & scenes."],

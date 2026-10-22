@@ -73,7 +73,7 @@ export default function Workspaces() {
       {/* Create */}
       <div className="surface rounded-xl p-5">
         <div className="label-mono text-zinc-500 mb-3">/ NEW WORKSPACE</div>
-        <div className="grid md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <input data-testid="ws-name" value={form.name}
             onChange={(e)=>setForm({...form, name: e.target.value})}
             placeholder="Workspace name"
@@ -107,7 +107,7 @@ export default function Workspaces() {
             <div className="text-zinc-400">No workspaces yet.</div>
           </div>
         ) : (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {items.map((w) => {
               const wsProjects = projects.filter((p) => p.workspace_id === w.workspace_id);
               return (

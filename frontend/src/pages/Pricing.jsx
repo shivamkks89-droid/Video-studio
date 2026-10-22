@@ -42,7 +42,7 @@ export default function Pricing() {
         <h1 className="text-5xl sm:text-6xl font-semibold tracking-tight max-w-3xl">Pay for renders, not for the editor.</h1>
         <p className="mt-4 text-zinc-400 max-w-2xl">Every plan unlocks the same canvas. Credits scale as your output does.</p>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mt-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-12">
           {plans.map((p) => (
             <div key={p.id} className={`surface rounded-2xl p-6 flex flex-col ${p.id === "creator" ? "border-[#E2FF3D]" : ""}`}>
               {p.id === "creator" && <div className="label-mono text-[#E2FF3D] mb-2">MOST POPULAR</div>}

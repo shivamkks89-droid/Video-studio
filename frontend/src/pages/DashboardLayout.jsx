@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useBackClose } from "../lib/backStack";
 import {
   LayoutDashboard, FolderKanban, LayoutTemplate, Palette, Library, CreditCard,
   Settings, ShieldCheck, LogOut, Plus, Film, Sparkles, Mic, Image as ImageIcon,
@@ -31,6 +32,7 @@ export default function DashboardLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
+  useBackClose(mobileOpen, () => setMobileOpen(false));
   if (!user) return null;
   const initial = (user.name || user.email || "U").charAt(0).toUpperCase();
 
@@ -108,8 +110,8 @@ export default function DashboardLayout() {
         <>
           <div className="fixed inset-0 z-40 bg-black/70 lg:hidden" onClick={() => setMobileOpen(false)} />
           <aside data-testid="mobile-sidebar" className="fixed inset-y-0 left-0 z-50 w-[85vw] max-w-xs lg:hidden bg-[#0A0A0B] border-r border-white/5 flex flex-col safe-top safe-bottom">
-            <button onClick={() => setMobileOpen(false)}
-              className="absolute top-3 right-3 z-10 text-zinc-400 hover:text-white p-2 -m-2">
+            <button data-testid="mobile-sidebar-close" aria-label="Close menu" onClick={() => setMobileOpen(false)}
+              className="absolute top-2 right-2 z-10 text-zinc-400 hover:text-white w-11 h-11 grid place-items-center rounded-full active:bg-white/10">
               <X className="w-5 h-5" />
             </button>
             {sidebarBody(() => setMobileOpen(false))}
@@ -123,7 +125,7 @@ export default function DashboardLayout() {
           <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
             <button data-testid="mobile-menu-btn" onClick={() => setMobileOpen(true)}
               aria-label="Open menu"
-              className="lg:hidden text-zinc-300 hover:text-white p-1 -ml-1 shrink-0">
+              className="lg:hidden text-zinc-300 hover:text-white w-11 h-11 -ml-2 grid place-items-center rounded-full active:bg-white/10 shrink-0">
               <Menu className="w-5 h-5" />
             </button>
             <Link to="/dashboard" className="flex items-center gap-2 min-w-0">
@@ -141,7 +143,7 @@ export default function DashboardLayout() {
               className="text-[10px] sm:text-xs label-mono hover:text-[#E2FF3D] px-1 hidden xs:inline-block">UPGRADE</Link>
           </div>
         </header>
-        <main className="flex-1 p-3 sm:p-4 lg:p-8 overflow-y-auto safe-bottom pb-24 lg:pb-8">
+        <main className="flex-1 px-4 pt-4 sm:px-5 lg:p-8 overflow-y-auto pb-[calc(6.5rem+var(--safe-bottom))] lg:pb-8">
           <Outlet />
         </main>
       </div>

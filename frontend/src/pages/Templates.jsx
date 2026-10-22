@@ -22,7 +22,7 @@ export default function Templates() {
             className={`rounded-full px-3 py-1.5 text-xs transition ${cat===c?"bg-[#E2FF3D] text-black":"surface"}`}>{c}</button>
         ))}
       </div>
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         {list.map(t => (
           <button key={t.template_id} data-testid={`tpl-${t.template_id}`} onClick={()=>navigate(`/dashboard/new?type=${t.video_type}`)}
             className="surface rounded-xl overflow-hidden text-left">

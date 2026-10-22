@@ -69,7 +69,7 @@ export const ScreenshotGenerator = () => {
         <div className="label-mono text-[#E2FF3D] flex items-center gap-2"><Images className="w-3 h-3" /> / PLAY STORE SCREENSHOTS · 1080×1920</div>
         <p className="text-xs text-zinc-400 mt-1">6 hero screenshots, phone frame + headline ke saath. AI headlines 2 CR · compose free.</p>
       </div>
-      <div className="grid lg:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <div className="space-y-4">
           <ShotSourcePicker {...{ source, setSource, projectId, setProjectId, files, setFiles }} />
           <input data-testid="shots-brand-name" value={brand} onChange={(e) => setBrand(e.target.value)}

@@ -123,7 +123,7 @@ export default function PlayStoreAssets() {
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Form */}
         <div className="surface rounded-xl p-5 space-y-4" data-testid="ps-form">
           <div className="label-mono text-[#E2FF3D]">/ CONFIGURE · 12 CR</div>

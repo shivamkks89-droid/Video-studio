@@ -1294,7 +1294,7 @@ async def create_project(body: ProjectCreate, request: Request):
 
 
 @api.get("/projects")
-async def list_projects(request: Request, folder: Optional[str] = None):
+async def list_projects(request: Request, folder: Optional[str] = None, sort: Optional[str] = None):
     user = await _current(request)
     q = {"user_id": user.user_id}
     if folder:
@@ -1305,9 +1305,12 @@ async def list_projects(request: Request, folder: Optional[str] = None):
         "aspect_ratio": 1, "resolution": 1, "fps": 1, "duration_sec": 1,
         "status": 1, "thumbnail": 1, "video_url": 1, "folder": 1,
         "workspace_id": 1, "music_id": 1, "music_url": 1,
-        "created_at": 1, "updated_at": 1,
+        "created_at": 1, "updated_at": 1, "last_opened_at": 1,
     }
-    items = await db.projects.find(q, projection).sort("updated_at", -1).to_list(200)
+    if sort == "recent":
+        items = await db.projects.find(q, projection).sort([("last_opened_at", -1), ("updated_at", -1)]).to_list(12)
+    else:
+        items = await db.projects.find(q, projection).sort("updated_at", -1).to_list(200)
     # Coerce any leftover base64 thumbnail to a small placeholder so the list response stays tiny
     for it in items:
         thumb = it.get("thumbnail") or ""
@@ -1322,6 +1325,7 @@ async def get_project(project_id: str, request: Request):
     p = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}, {"_id": 0})
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
+    await db.projects.update_one({"project_id": project_id}, {"$set": {"last_opened_at": utc_now().isoformat()}})
     return p
 
 

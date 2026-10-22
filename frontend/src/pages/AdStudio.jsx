@@ -112,7 +112,7 @@ export default function AdStudio() {
   const cp = (t) => { navigator.clipboard.writeText(t); toast.success("Copied"); };
 
   return (
-    <div data-testid="ad-studio" className="grid lg:grid-cols-12 gap-6">
+    <div data-testid="ad-studio" className="grid grid-cols-1 lg:grid-cols-12 gap-6">
       {/* INPUT */}
       <div className="lg:col-span-5 space-y-4">
         <div>
@@ -224,7 +224,7 @@ export default function AdStudio() {
         {campaign.length > 0 && (
           <div className="surface rounded-xl p-5" data-testid="ads-campaign-out">
             <div className="label-mono text-[#E2FF3D] mb-3">/ MULTI-PLATFORM CAMPAIGN</div>
-            <div className="grid md:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {campaign.map((c, i) => (
                 <div key={i} className="rounded-lg border border-white/10 p-3 bg-[#0A0A0B]">
                   <div className="flex items-center justify-between mb-1">

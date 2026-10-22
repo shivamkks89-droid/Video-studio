@@ -27,6 +27,7 @@ import Workspaces from "./pages/Workspaces";
 import AvatarStudio from "./pages/AvatarStudio";
 import PlayStoreAssets from "./pages/PlayStoreAssets";
 import SplashGate from "./components/SplashGate";
+import { BackButtonHandler } from "./components/BackButtonHandler";
 
 function AppRouter() {
   const location = useLocation();
@@ -80,6 +81,7 @@ export default function App() {
         }} />
         <SplashGate minMs={900}>
           <ErrorBoundary>
+            <BackButtonHandler />
             <AppRouter />
           </ErrorBoundary>
         </SplashGate>

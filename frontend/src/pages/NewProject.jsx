@@ -59,7 +59,7 @@ export default function NewProject() {
       <div className="label-mono text-zinc-500 mb-2">/ NEW PROJECT</div>
       <h1 className="text-4xl font-semibold tracking-tight mb-8">Set the stage.</h1>
 
-      <form onSubmit={submit} className="grid md:grid-cols-12 gap-6">
+      <form onSubmit={submit} className="grid grid-cols-1 md:grid-cols-12 gap-6">
         <div className="md:col-span-7 space-y-6">
           <div>
             <div className="label-mono text-zinc-500 mb-2">Title</div>

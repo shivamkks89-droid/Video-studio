@@ -18,7 +18,7 @@ export default function Credits() {
         <div className="label-mono text-zinc-500 mb-2">/ CREDITS & USAGE</div>
         <h1 className="text-4xl font-semibold tracking-tight">Track every render.</h1>
       </div>
-      <div className="grid md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <Stat title="Available credits" value={user?.credits} testid="stat-credits" />
         <Stat title="Plan" value={user?.plan?.toUpperCase()} testid="stat-plan" />
         <Stat title="Lifetime actions" value={items.length} testid="stat-actions" />

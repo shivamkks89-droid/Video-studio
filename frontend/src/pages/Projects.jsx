@@ -43,7 +43,7 @@ export default function Projects() {
           <div className="text-zinc-400">No projects yet.</div>
         </div>
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {items.map((p) => (
             <div key={p.project_id} data-testid={`project-card-${p.project_id}`} className="surface rounded-xl overflow-hidden">
               <Link to={`/dashboard/projects/${p.project_id}`}>

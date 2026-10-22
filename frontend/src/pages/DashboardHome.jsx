@@ -5,6 +5,7 @@ import { useAuth } from "../lib/auth";
 import { ArrowRight, Film, Layers, Loader2, Sparkles, Mic, Image as ImageIcon, Plus, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { assetUrl } from "../lib/assetUrl";
+import { RecentProjects } from "../components/RecentProjects";
 
 export default function DashboardHome() {
   const { user } = useAuth();
@@ -90,10 +91,10 @@ export default function DashboardHome() {
   ];
 
   return (
-    <div data-testid="dashboard-home" className="space-y-10">
+    <div data-testid="dashboard-home" className="space-y-6 lg:space-y-10">
       {/* GREETING */}
-      <div className="grid md:grid-cols-12 gap-4">
-        <div className="md:col-span-8 surface rounded-2xl p-8 relative overflow-hidden grain">
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+        <div className="md:col-span-8 surface rounded-2xl p-5 sm:p-8 relative overflow-hidden grain">
           <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-[#E2FF3D]/10 blur-3xl" />
           <div className="relative">
             <div className="label-mono text-zinc-500 mb-2">/ WELCOME BACK</div>
@@ -152,6 +153,8 @@ export default function DashboardHome() {
         </div>
       </div>
 
+      <RecentProjects />
+
       {/* QUICK ACTIONS */}
       <div>
         <div className="label-mono text-zinc-500 mb-3">/ QUICK ACTIONS</div>
@@ -179,7 +182,7 @@ export default function DashboardHome() {
               </div>
             )}
           </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {ideas.map((idea, i) => {
               const currentDur = ideaDurations[i] ?? (idea.duration_sec || 30);
               return (
@@ -239,7 +242,7 @@ export default function DashboardHome() {
             </Link>
           </div>
         ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {projects.slice(0, 8).map((p) => (
               <Link key={p.project_id} to={`/dashboard/projects/${p.project_id}`}
                     data-testid={`project-${p.project_id}`}
@@ -265,7 +268,7 @@ export default function DashboardHome() {
           <div className="label-mono text-zinc-500">/ TEMPLATES</div>
           <Link to="/dashboard/templates" className="text-xs text-zinc-400 hover:text-white">Browse all →</Link>
         </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {templates.map((t) => (
             <Link key={t.template_id} to={`/dashboard/new?template=${t.template_id}`}
                   data-testid={`template-${t.template_id}`} className="surface rounded-xl overflow-hidden transition">

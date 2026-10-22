@@ -165,7 +165,7 @@ export default function VoiceStudio() {
       </div>
 
       {mode === MODE_AI ? (
-        <div className="grid lg:grid-cols-12 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-5 surface rounded-xl p-5 space-y-4">
             <div>
               <div className="label-mono text-zinc-500 mb-2">Language</div>
@@ -217,7 +217,7 @@ export default function VoiceStudio() {
           </div>
         </div>
       ) : (
-        <div className="grid lg:grid-cols-12 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-5 surface rounded-xl p-8 flex flex-col items-center justify-center text-center min-h-[280px]">
             <Upload className="w-8 h-8 text-[#E2FF3D] mb-4"/>
             <div className="text-lg font-semibold mb-1">Upload your own voice</div>
@@ -356,7 +356,7 @@ export default function VoiceStudio() {
         </div>
         <div className="mb-4">
           <div className="label-mono text-zinc-500 mb-2 text-[10px]">BACKGROUND MUSIC · {music.music.length} tracks</div>
-          <div className="grid md:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {music.music.map((t) => (
               <div key={t.id} data-testid={`music-${t.id}`} className="bg-[#0A0A0B] rounded p-2 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
@@ -370,7 +370,7 @@ export default function VoiceStudio() {
         </div>
         <div>
           <div className="label-mono text-zinc-500 mb-2 text-[10px]">SFX · {music.sfx.length} sounds</div>
-          <div className="grid md:grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             {music.sfx.map((s) => (
               <div key={s.id} data-testid={`sfx-${s.id}`} className="bg-[#0A0A0B] rounded p-2 flex items-center gap-2">
                 <div className="text-xs font-medium flex-1 truncate">{s.name}</div>

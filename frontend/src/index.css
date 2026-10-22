@@ -140,3 +140,15 @@ code, pre, .mono { font-family: 'JetBrains Mono', monospace; }
 /* Pull-to-refresh spinner */
 @keyframes ptr-spin { to { transform: rotate(360deg); } }
 .animate-ptr-spin { animation: ptr-spin 700ms linear infinite; }
+
+/* Touch feedback + hidden scrollbars for horizontal rails */
+* { -webkit-tap-highlight-color: transparent; }
+input, textarea { scroll-margin-bottom: 120px; }
+@media (hover: none) {
+  button:not(:disabled):active, a:active, [role="button"]:active { opacity: 0.75; }
+}
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+
+/* Grid children must never stretch their track past the viewport on mobile */
+.grid > * { min-width: 0; }

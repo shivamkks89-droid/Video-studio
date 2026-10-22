@@ -1,3 +1,4 @@
+import { useBackClose, setExitGuard } from "../lib/backStack";
 import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../lib/api";
@@ -46,6 +47,7 @@ export default function ProjectDetail() {
   const [busyVoice, setBusyVoice] = useState(false);
   const [busyScenes, setBusyScenes] = useState(false);
   const [busyRender, setBusyRender] = useState(false);
+  useEffect(() => { setExitGuard("render", busyRender); return () => setExitGuard("render", false); }, [busyRender]);
   const [brandOpen, setBrandOpen] = useState(false);
   const [brandName, setBrandName] = useState("");
   const [brandUrl, setBrandUrl] = useState("");
@@ -60,6 +62,7 @@ export default function ProjectDetail() {
   const [newPronWord, setNewPronWord] = useState("");
   const [newPronSaid, setNewPronSaid] = useState("");
   const [fbOpen, setFbOpen] = useState(false);
+  useBackClose(fbOpen, () => setFbOpen(false));
   const [fbTags, setFbTags] = useState([]);
   const [fbText, setFbText] = useState("");
   const [fbContext, setFbContext] = useState("voice");
@@ -726,10 +729,10 @@ export default function ProjectDetail() {
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* PREVIEW */}
         <div className="lg:col-span-5">
-          <div className={`surface rounded-2xl overflow-hidden relative ${project.aspect_ratio === "16:9" ? "ar-169" : project.aspect_ratio === "1:1" ? "ar-11" : "ar-916"}`}>
+          <div className={`surface rounded-2xl overflow-hidden relative mx-auto w-full ${project.aspect_ratio === "16:9" ? "ar-169" : project.aspect_ratio === "1:1" ? "ar-11 max-w-[340px] lg:max-w-none" : "ar-916 max-w-[260px] sm:max-w-[300px] lg:max-w-none"}`}>
             {project.thumbnail ? (
               <img src={project.thumbnail} alt="" className="absolute inset-0 w-full h-full object-cover" />
             ) : (
@@ -748,7 +751,7 @@ export default function ProjectDetail() {
         {/* STEPS */}
         <div className="lg:col-span-7 space-y-4">
           {/* SCRIPT */}
-          <div className="surface rounded-xl p-5">
+          <div className="surface rounded-xl p-4 sm:p-5">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2"><Sparkles className="w-4 h-4 text-[#E2FF3D]" /><div className="font-medium">Script</div></div>
               <span className="label-mono text-zinc-500">5 CR</span>
@@ -936,7 +939,7 @@ export default function ProjectDetail() {
           </div>
 
           {/* VOICE */}
-          <div className="surface rounded-xl p-5">
+          <div className="surface rounded-xl p-4 sm:p-5">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2"><Mic className="w-4 h-4 text-[#E2FF3D]" /><div className="font-medium">Voiceover (ElevenLabs)</div></div>
               <span className="label-mono text-zinc-500">~1-3 CR</span>
@@ -953,8 +956,8 @@ export default function ProjectDetail() {
               </div>
             )}
 
-            <div className="flex items-center gap-2 mb-2">
-              <div className="label-mono text-zinc-500 text-[10px] flex-1">SELECT VOICE (hover to preview)</div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2">
+              <div className="label-mono text-zinc-500 text-[10px] flex-1 min-w-[140px]">SELECT VOICE<span className="hidden lg:inline"> (hover to preview)</span></div>
               <label className="flex items-center gap-1 text-[10px] text-zinc-500 cursor-pointer" data-testid="hover-toggle">
                 <input type="checkbox" checked={hoverPreview} onChange={(e) => setHoverPreview(e.target.checked)}
                   className="accent-[#E2FF3D] w-3 h-3" />
@@ -1142,7 +1145,7 @@ export default function ProjectDetail() {
           </div>
 
           {/* UNIVERSAL VOICE QUALITY */}
-          <div className="surface rounded-xl p-5" data-testid="voice-quality">
+          <div className="surface rounded-xl p-4 sm:p-5" data-testid="voice-quality">
             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-[#E2FF3D]" />
@@ -1152,14 +1155,14 @@ export default function ProjectDetail() {
             </div>
 
             {/* Accent Lock */}
-            <div className="flex items-center justify-between bg-[#0A0A0B] rounded-lg p-3 mb-3" data-testid="accent-lock">
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-[#0A0A0B] rounded-lg p-3 mb-3" data-testid="accent-lock">
               <div>
                 <div className="text-sm font-medium">🔒 Accent Lock</div>
                 <div className="label-mono text-zinc-500 text-[10px]">
                   {project.accent_locked ? `LOCKED · ${project.accent || project.language}` : "Free — every scene may drift"}
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 min-w-0">
                 <select data-testid="accent-select" value={project.accent || ""}
                   onChange={(e) => setAccentLock(project.accent_locked, e.target.value)}
                   className="bg-[#141416] text-xs rounded px-2 py-1 border border-white/10">
@@ -1222,7 +1225,7 @@ export default function ProjectDetail() {
               )}
 
               {/* Manual add */}
-              <div className="flex gap-2 mb-2" data-testid="pron-add">
+              <div className="flex flex-wrap gap-2 mb-2 [&>input]:min-w-[120px]" data-testid="pron-add">
                 <input value={newPronWord} onChange={(e) => setNewPronWord(e.target.value)} placeholder="Word (HeartLink)"
                   className="flex-1 bg-[#0A0A0B] border border-white/10 rounded px-2 py-1 text-xs outline-none"/>
                 <input value={newPronSaid} onChange={(e) => setNewPronSaid(e.target.value)} placeholder="Said as (Heart Link)"
@@ -1324,7 +1327,7 @@ export default function ProjectDetail() {
           )}
 
           {/* SCENES */}
-          <div className="surface rounded-xl p-5">
+          <div className="surface rounded-xl p-4 sm:p-5">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2"><ImageIcon className="w-4 h-4 text-[#E2FF3D]" /><div className="font-medium">Cinematic Storyboard</div></div>
               <span className="label-mono text-zinc-500">3 CR / scene</span>
@@ -1420,7 +1423,7 @@ export default function ProjectDetail() {
           </div>
 
           {/* RENDER VIDEO */}
-          <div className="surface rounded-xl p-5">
+          <div className="surface rounded-xl p-4 sm:p-5">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2"><Video className="w-4 h-4 text-[#E2FF3D]" /><div className="font-medium">Render Final Video</div></div>
               <span className="label-mono text-zinc-500">10 CR</span>
@@ -1449,7 +1452,7 @@ export default function ProjectDetail() {
           </div>
 
           {/* LIPSYNC TALKING AVATAR */}
-          <div className="surface rounded-xl p-5" data-testid="lipsync-panel">
+          <div className="surface rounded-xl p-4 sm:p-5" data-testid="lipsync-panel">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <User className="w-4 h-4 text-[#E2FF3D]" />
@@ -1546,7 +1549,7 @@ export default function ProjectDetail() {
           </div>
 
           {/* ASPECT RATIO EXPORT */}
-          <div className="surface rounded-xl p-5" data-testid="resize-panel">
+          <div className="surface rounded-xl p-4 sm:p-5" data-testid="resize-panel">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Layers className="w-4 h-4 text-[#E2FF3D]" />
@@ -1607,7 +1610,7 @@ export default function ProjectDetail() {
           </div>
 
           {/* CAMPAIGN AD PACK */}
-          <div className="surface rounded-xl p-5" data-testid="campaign-panel">
+          <div className="surface rounded-xl p-4 sm:p-5" data-testid="campaign-panel">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Megaphone className="w-4 h-4 text-[#E2FF3D]" />
@@ -1659,7 +1662,7 @@ export default function ProjectDetail() {
           </div>
 
           {/* A/B ANALYTICS */}
-          <div className="surface rounded-xl p-5" data-testid="ab-panel">
+          <div className="surface rounded-xl p-4 sm:p-5" data-testid="ab-panel">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2"><Share2 className="w-4 h-4 text-[#E2FF3D]" /><div className="font-medium">A/B Variant Tracker</div></div>
               <button onClick={loadMetrics} className="label-mono text-zinc-500 hover:text-white text-[11px]">↻ Refresh</button>
