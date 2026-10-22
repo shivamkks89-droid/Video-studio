@@ -345,3 +345,9 @@ adb logcat | grep -i capacitor
 - [ ] Content rating questionnaire fill kiya
 
 **Bas — sab set hai. Happy shipping! 🚀**
+
+## System navigation bar (dark) — Android 15 edge-to-edge
+- `MainActivity.java` paints the area behind the status/nav bars `#0A0A0B`, keeps bar icons light, and on Android 15+ applies system-bar + keyboard insets as WebView margins.
+- `styles.xml` (AppTheme.NoActionBar) sets dark windowBackground / navigationBarColor, `windowLightNavigationBar=false`.
+- `capacitor.config.json` → `adjustMarginsForEdgeToEdge: "disable"` (MainActivity handles insets itself, so no duplicate listener).
+- After pulling: `yarn build && npx cap sync android`, then rebuild in Android Studio.
