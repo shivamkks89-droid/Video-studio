@@ -351,3 +351,8 @@ adb logcat | grep -i capacitor
 - `styles.xml` (AppTheme.NoActionBar) sets dark windowBackground / navigationBarColor, `windowLightNavigationBar=false`.
 - `capacitor.config.json` → `adjustMarginsForEdgeToEdge: "disable"` (MainActivity handles insets itself, so no duplicate listener).
 - After pulling: `yarn build && npx cap sync android`, then rebuild in Android Studio.
+
+## ⚠️ Android build: hamesha `yarn mobile:sync` use karo (sirf `yarn build` nahi)
+`.env` GitHub me nahi jaata, isliye local `yarn build` me `REACT_APP_BACKEND_URL` undefined ho jaata hai
+(Google login `oauth/undefined` error deta hai). `yarn mobile:sync` → `scripts/mobile-build.js` live URL
+`https://cinemaai.online` set karta hai (Windows pe bhi chalta hai), phir `npx cap sync android`.

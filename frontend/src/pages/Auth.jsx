@@ -20,6 +20,11 @@ export default function Login({ mode = "login" }) {
 
   // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
   const googleLogin = () => {
+    const webUrl = process.env.REACT_APP_BACKEND_URL;
+    if (isNativeApp() && !/^https:\/\//.test(webUrl || "")) {
+      toast.error("App build me website URL missing hai — REACT_APP_BACKEND_URL set karke dobara build karo");
+      return;
+    }
     // Android app: Google blocks sign-in inside WebViews, so it runs in the system browser and
     // returns via the public web page /app-auth, which hands the session back to the app.
     const redirectUrl = isNativeApp()
