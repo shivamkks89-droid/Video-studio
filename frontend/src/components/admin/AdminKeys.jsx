@@ -40,13 +40,32 @@ const KeyRow = ({ k, onDone }) => {
 
 export const AdminKeys = () => {
   const [keys, setKeys] = useState([]);
-  const load = () => api.get("/admin/keys").then(({ data }) => setKeys(data)).catch(() => {});
+  const [log, setLog] = useState([]);
+  const load = () => {
+    api.get("/admin/keys").then(({ data }) => setKeys(data)).catch(() => {});
+    api.get("/admin/keys/log").then(({ data }) => setLog(data)).catch(() => {});
+  };
   useEffect(() => { load(); }, []);
   return (
     <section className="surface rounded-xl p-5" data-testid="admin-keys">
       <div className="label-mono text-[#E2FF3D] flex items-center gap-2 mb-1"><KeyRound className="w-3 h-3" /> / API KEYS</div>
       <p className="text-xs text-zinc-500 mb-2">Naya key test hokar turant live ho jaata hai — redeploy ki zaroorat nahi.</p>
       {keys.map((k) => <KeyRow key={k.name} k={k} onDone={load} />)}
+      <div className="mt-4" data-testid="key-log">
+        <div className="label-mono text-zinc-500 text-[10px] mb-2">/ CHANGE LOG</div>
+        {log.length === 0 ? <div className="text-xs text-zinc-600">Abhi tak koi change nahi.</div> : (
+          <div className="max-h-56 overflow-y-auto divide-y divide-white/5">
+            {log.map((l, i) => (
+              <div key={i} data-testid={`key-log-${i}`} className="py-2 text-xs flex flex-wrap gap-x-3 gap-y-0.5">
+                <span className="text-zinc-500 font-mono">{new Date(l.at).toLocaleString()}</span>
+                <span className="text-white">{l.label}</span>
+                <span className={l.action === "reverted" ? "text-amber-400" : "text-[#E2FF3D]"}>{l.action} → {l.masked || "—"}</span>
+                <span className="text-zinc-400">by {l.by}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </section>
   );
 };

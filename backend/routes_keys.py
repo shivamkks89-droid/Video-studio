@@ -83,6 +83,16 @@ class KeyUpdate(BaseModel):
 def build_keys_router(db, require_admin, current_user):
     router = APIRouter()
 
+    async def _log(name, action, masked, by):
+        await db.app_key_log.insert_one({"name": name, "label": MANAGED[name]["label"], "action": action,
+                                         "masked": masked, "by": by,
+                                         "at": datetime.now(timezone.utc).isoformat()})
+
+    @router.get("/admin/keys/log")
+    async def key_log(request: Request):
+        await require_admin(request)
+        return await db.app_key_log.find({}, {"_id": 0}).sort("at", -1).to_list(50)
+
     @router.get("/admin/keys")
     async def list_keys(request: Request):
         await require_admin(request)
@@ -105,9 +115,11 @@ def build_keys_router(db, require_admin, current_user):
                 "name": body.name, "value": value, "updated_by": admin.email,
                 "updated_at": datetime.now(timezone.utc).isoformat()}}, upsert=True)
             _apply(body.name, value)
+            await _log(body.name, "changed", _mask(value), admin.email)
             return {"ok": True, "masked": _mask(value), "detail": result["detail"]}
         await db.app_keys.delete_one({"name": body.name})
         _apply(body.name, _ENV_DEFAULTS[body.name])
+        await _log(body.name, "reverted", _mask(_ENV_DEFAULTS[body.name]), admin.email)
         return {"ok": True, "masked": _mask(_ENV_DEFAULTS[body.name]), "detail": "reverted to deploy key"}
 
     @router.get("/voice/quota")

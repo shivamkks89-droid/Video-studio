@@ -52,6 +52,7 @@ InVideo AI + CapCut + Canva AI.
 
 ### Admin
 - ✅ (Jun 2026) Admin API Keys (`/admin`): ELEVENLABS_API_KEY, FAL_KEY, EMERGENT_LLM_KEY — test-then-save, stored in `db.app_keys`, applied at runtime + on startup (routes_keys.py), revert to deploy key.
+- ✅ (Jun 2026) Key Change Log on /admin (`GET /api/admin/keys/log`, db.app_key_log: who/when/changed-or-reverted/masked).
 - ✅ (Jun 2026) Voice Quota Meter in Voice Studio (`GET /api/voice/quota`, 60s cache; needs ElevenLabs key with User→Read).
 
 ### Mobile
