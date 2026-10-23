@@ -1675,6 +1675,8 @@ async def admin_analytics(request: Request):
 # ---------- STARTUP: ensure admin + indexes ----------
 @app.on_event("startup")
 async def on_startup():
+    from routes_keys import load_key_overrides as _load_keys
+    await _load_keys(db)
     # default admin
     admin_email = "admin@cinereel.ai"
     existing = await db.users.find_one({"email": admin_email}, {"_id": 0})
@@ -1769,6 +1771,9 @@ app.include_router(api)
 from routes_studio import build_studio_router  # noqa: E402
 studio_router = build_studio_router(db, _current, _charge_credits, _refund)
 app.include_router(studio_router, prefix="/api")
+
+from routes_keys import build_keys_router, load_key_overrides  # noqa: E402
+app.include_router(build_keys_router(db, _require_admin, _current), prefix="/api")
 
 # Serve files: try local disk first, fallback to object storage (persistent across pod restarts).
 from fastapi import Path as FPath

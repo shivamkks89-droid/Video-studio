@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { VoiceQuotaMeter } from "../components/VoiceQuotaMeter";
 import { Mic, Loader2, Upload, Music, X, UserPlus } from "lucide-react";
 import { api } from "../lib/api";
 import { toast } from "sonner";
@@ -152,6 +153,7 @@ export default function VoiceStudio() {
       <div>
         <div className="label-mono text-zinc-500 mb-2">/ VOICE STUDIO</div>
         <h1 className="text-3xl font-semibold tracking-tight">AI voices, uploads & music.</h1>
+        <div className="mt-3"><VoiceQuotaMeter /></div>
         <div className="mt-4 inline-flex bg-[#141416] rounded-full p-1 border border-white/10">
           <button data-testid="vs-mode-ai" onClick={()=>setMode(MODE_AI)}
             className={`px-4 py-1.5 text-xs rounded-full transition ${mode===MODE_AI ? "bg-[#E2FF3D] text-black font-semibold" : "text-zinc-400"}`}>

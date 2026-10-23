@@ -50,6 +50,10 @@ InVideo AI + CapCut + Canva AI.
 - ✅ Music & SFX library (10 tracks + 7 SFX, hotlink-friendly URLs)
 - ✅ Estimated Credits pricer (`/api/ai/estimate`)
 
+### Admin
+- ✅ (Jun 2026) Admin API Keys (`/admin`): ELEVENLABS_API_KEY, FAL_KEY, EMERGENT_LLM_KEY — test-then-save, stored in `db.app_keys`, applied at runtime + on startup (routes_keys.py), revert to deploy key.
+- ✅ (Jun 2026) Voice Quota Meter in Voice Studio (`GET /api/voice/quota`, 60s cache; needs ElevenLabs key with User→Read).
+
 ### Mobile
 - ✅ (Jun 2026) Android Google sign-in: system browser → /app-auth bridge → cinereel://auth deep link (manifest intent-filter) → appUrlOpen → AuthCallback; /auth/google/session now also returns token (Bearer) for WebView.
 - ✅ (Jun 2026) Dark Android system nav bar fix: MainActivity insets (bars + IME) + dark decor/theme; adjustMarginsForEdgeToEdge=disable. Needs native rebuild; device test pending by user.
