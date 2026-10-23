@@ -19,6 +19,7 @@ export default function AuthCallback() {
       const sessionId = m[1];
       try {
         const { data } = await api.post("/auth/google/session", { session_id: sessionId });
+        if (data.token) localStorage.setItem("cinereel_token", data.token);
         setUser(data.user);
         window.history.replaceState(null, "", "/dashboard");
         navigate("/dashboard", { replace: true, state: { user: data.user } });

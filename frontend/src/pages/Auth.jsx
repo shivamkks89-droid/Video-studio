@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { toast } from "sonner";
 import BrandMark from "../components/BrandMark";
+import { isNativeApp } from "../lib/native";
 
 export default function Login({ mode = "login" }) {
   const navigate = useNavigate();
@@ -19,7 +20,11 @@ export default function Login({ mode = "login" }) {
 
   // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
   const googleLogin = () => {
-    const redirectUrl = window.location.origin + "/dashboard";
+    // Android app: Google blocks sign-in inside WebViews, so it runs in the system browser and
+    // returns via the public web page /app-auth, which hands the session back to the app.
+    const redirectUrl = isNativeApp()
+      ? process.env.REACT_APP_BACKEND_URL + "/app-auth"
+      : window.location.origin + "/dashboard";
     window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
   };
 

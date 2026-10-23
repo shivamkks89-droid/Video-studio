@@ -223,7 +223,8 @@ async def google_session(request: Request, response: Response):
         key="session_token", value=session_token, max_age=7 * 24 * 60 * 60,
         httponly=True, secure=True, samesite="none", path="/",
     )
-    return {"user": _public(user).model_dump()}
+    # Token also returned so the Android WebView (third-party cookies blocked) can use Bearer auth
+    return {"user": _public(user).model_dump(), "token": session_token}
 
 
 @api.get("/auth/me")

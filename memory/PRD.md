@@ -51,6 +51,7 @@ InVideo AI + CapCut + Canva AI.
 - ✅ Estimated Credits pricer (`/api/ai/estimate`)
 
 ### Mobile
+- ✅ (Jun 2026) Android Google sign-in: system browser → /app-auth bridge → cinereel://auth deep link (manifest intent-filter) → appUrlOpen → AuthCallback; /auth/google/session now also returns token (Bearer) for WebView.
 - ✅ (Jun 2026) Dark Android system nav bar fix: MainActivity insets (bars + IME) + dark decor/theme; adjustMarginsForEdgeToEdge=disable. Needs native rebuild; device test pending by user.
 - ✅ (Jun 2026) Android back button: single listener `components/BackButtonHandler.jsx` (closers stack `lib/backStack.js` → Radix layer Escape → history back → root double-press exit 2s). Exit guard while rendering. Debug sim on web: localStorage.debugNativeBack=1 → window.__simulateBack().
 - ✅ (Jun 2026) In-app Recent projects (`GET /api/projects?sort=recent`, `last_opened_at` set on project open) on Dashboard.

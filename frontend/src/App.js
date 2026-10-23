@@ -28,9 +28,11 @@ import AvatarStudio from "./pages/AvatarStudio";
 import PlayStoreAssets from "./pages/PlayStoreAssets";
 import SplashGate from "./components/SplashGate";
 import { BackButtonHandler } from "./components/BackButtonHandler";
+import AppAuthBridge from "./pages/AppAuthBridge";
 
 function AppRouter() {
   const location = useLocation();
+  if (location.pathname === "/app-auth") return <AppAuthBridge />;
   // Process OAuth callback synchronously to avoid race conditions
   if (location.hash?.includes("session_id=")) {
     return <AuthCallback />;
