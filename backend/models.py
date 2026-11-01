@@ -107,6 +107,7 @@ class ScriptRequest(BaseModel):
     language: str = "english"
     tone: str = "professional"  # professional, motivational, friendly, emotional, storytelling
     duration_sec: int = 30
+    scene_count: Optional[int] = None  # 3-12, default 6
     target_audience: Optional[str] = None
     target_gender: Optional[str] = None  # women | men | girls | boys | kids | teens | all
     target_age: Optional[str] = None     # e.g. "18-24", "25-34", "35-45", "45+"

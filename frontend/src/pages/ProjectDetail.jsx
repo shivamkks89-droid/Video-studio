@@ -12,6 +12,7 @@ export default function ProjectDetail() {
   const [project, setProject] = useState(null);
   const [voices, setVoices] = useState([]);
   const [topic, setTopic] = useState("");
+  const [sceneCount, setSceneCount] = useState(6);
   // Voice selection uses a composite key `${id}::${name}` because several
   // catalog entries intentionally share the same ElevenLabs voice_id under
   // different display names (e.g. Rohan / Liam both use TX3LPax...). A plain
@@ -171,7 +172,7 @@ export default function ProjectDetail() {
     try {
       const { data } = await api.post("/ai/script", {
         project_id: id, topic, video_type: project.video_type,
-        language: project.language, duration_sec: project.duration_sec,
+        language: project.language, duration_sec: project.duration_sec, scene_count: sceneCount,
         brand_name: brandName || undefined,
         brand_url: brandUrl || undefined,
         brand_logo: brandLogo || undefined,
@@ -195,7 +196,7 @@ export default function ProjectDetail() {
     try {
       const { data } = await api.post("/ai/script/variants", {
         project_id: id, topic, video_type: project.video_type,
-        language: project.language, duration_sec: project.duration_sec,
+        language: project.language, duration_sec: project.duration_sec, scene_count: sceneCount,
         axis,
         brand_name: brandName || undefined,
         brand_url: brandUrl || undefined,
@@ -814,6 +815,13 @@ export default function ProjectDetail() {
                     className={`rounded-full px-2.5 py-1 text-[11px] transition ${
                       targetAge === a ? "bg-[#E2FF3D] text-black font-semibold" : "surface"
                     }`}>{a || "Any"}</button>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5" data-testid="pd-scene-count">
+                <span className="label-mono text-zinc-500 text-[10px] mr-1">SCENES</span>
+                {[3, 4, 5, 6, 8, 10, 12].map((n) => (
+                  <button key={n} type="button" data-testid={`pd-scenes-${n}`} onClick={() => setSceneCount(n)}
+                    className={`rounded-full w-9 h-8 text-[11px] transition ${sceneCount === n ? "bg-[#E2FF3D] text-black font-semibold" : "surface"}`}>{n}</button>
                 ))}
               </div>
               <button data-testid="gen-script" onClick={genScript} disabled={busyScript || busyVariants} className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">

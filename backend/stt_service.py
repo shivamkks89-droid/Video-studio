@@ -30,6 +30,7 @@ async def transcribe_audio(audio_bytes: bytes, language: str = "auto") -> dict:
                 model="whisper-1",
                 response_format="verbose_json",
                 language=lang_kw,
+                timestamp_granularities=["word", "segment"],
             )
         finally:
             try: buf.close()
@@ -51,7 +52,8 @@ async def transcribe_audio(audio_bytes: bytes, language: str = "auto") -> dict:
         return {
             "text": text,
             "segments": segments,
-            "words": _get(resp, "words") or [],
+            "words": [{"word": (_get(w, "word") or "").strip(), "start": float(_get(w, "start") or 0),
+                       "end": float(_get(w, "end") or 0)} for w in (_get(resp, "words") or [])],
             "language": _get(resp, "language", lang_kw or "unknown"),
             "duration": _get(resp, "duration"),
         }

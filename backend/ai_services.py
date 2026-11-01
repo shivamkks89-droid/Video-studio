@@ -291,7 +291,7 @@ async def generate_script(payload: dict) -> dict:
         )
     # Fixed 6-scene structure — matches the storyboard mixer which allocates
     # exactly 4 real product screenshots + 2 AI-rendered scenes.
-    scene_count = 6
+    scene_count = min(12, max(3, int(payload.get("scene_count") or 6)))
     per_scene = round(duration / scene_count, 1)
     user_prompt = f"""Write a {duration}-second {video_type.replace('_', ' ')} script.
 Topic: {topic}
@@ -304,12 +304,11 @@ Notes: {notes}
 STRUCTURE (STRICT):
 - Break into EXACTLY {scene_count} scenes (no more, no less).
 - Each scene's `duration` field MUST be a number close to {per_scene} (use decimals if needed).
-- The sum of all six `duration` values MUST equal {duration}.
+- The sum of all {scene_count} `duration` values MUST equal {duration}.
 - Scene 1 = hook (grab attention in first {per_scene}s).
-- Scenes 2-3 = show real product features (assume product screenshots
-  will appear here — write voiceover that names the specific feature being shown).
-- Scenes 4-5 = show more real product/UI screenshots (feature deep-dive or benefit).
-- Scene 6 = strong CTA scene (voiceover ends on the CTA).
+- Middle scenes (2 to {scene_count - 1}) = show real product features / UI screenshots,
+  each voiceover names the specific feature or benefit being shown.
+- Scene {scene_count} = strong CTA scene (voiceover ends on the CTA).
 
 Return JSON only."""
     text = await _claude_send(SCRIPT_SYSTEM, user_prompt)
@@ -324,7 +323,7 @@ Return JSON only."""
             per = round(duration / len(scenes), 2)
             for s in scenes:
                 s["duration"] = per
-        parsed["scenes"] = scenes
+        parsed["scenes"] = scenes[:scene_count]
     parsed["_duration_sec"] = duration
     return parsed
 
