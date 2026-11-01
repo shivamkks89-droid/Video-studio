@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { VoiceQuotaMeter } from "../components/VoiceQuotaMeter";
+import { AudioMatchPanel } from "../components/AudioMatchPanel";
 import { Mic, Loader2, Upload, Music, X, UserPlus } from "lucide-react";
 import { api } from "../lib/api";
 import { toast } from "sonner";
@@ -342,6 +343,7 @@ export default function VoiceStudio() {
                         </div>
                       ))}
                     </div>
+                    <AudioMatchPanel stt={transcript} audioUrl={uploadedAudio} projects={projects} />
                   </div>
                 )}
               </div>

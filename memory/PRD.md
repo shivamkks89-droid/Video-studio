@@ -50,6 +50,9 @@ InVideo AI + CapCut + Canva AI.
 - ✅ Music & SFX library (10 tracks + 7 SFX, hotlink-friendly URLs)
 - ✅ Estimated Credits pricer (`/api/ai/estimate`)
 
+### Audio Sync
+- ✅ (Jun 2026) Uploaded audio ↔ script match (`POST /api/projects/{id}/audio-match`: match %, exact/partial/different, missing/extra words, diff tokens, silences, precision) + scene sync (`POST /api/projects/{id}/audio-sync` mode keep/replace_script; durations snapped to phrase ends; exact uploaded audio used, no TTS). UI: AudioMatchPanel in Voice Studio → Upload mode after Transcribe. Module: backend/audio_sync.py.
+
 ### Admin
 - ✅ (Jun 2026) Admin API Keys (`/admin`): ELEVENLABS_API_KEY, FAL_KEY, EMERGENT_LLM_KEY — test-then-save, stored in `db.app_keys`, applied at runtime + on startup (routes_keys.py), revert to deploy key.
 - ✅ (Jun 2026) Key Change Log on /admin (`GET /api/admin/keys/log`, db.app_key_log: who/when/changed-or-reverted/masked).

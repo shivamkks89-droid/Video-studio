@@ -876,6 +876,71 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
             )
         return {"audio_url": url, "duration": dur, "source": "upload"}
 
+    # ---------- UPLOADED AUDIO ↔ SCRIPT MATCH + SCENE SYNC ----------
+    class AudioMatchReq(BaseModel):
+        transcript: str = ""
+        segments: list = []
+        words: Optional[list] = None
+        duration: float = 0
+        language: Optional[str] = None
+
+    class AudioSyncReq(AudioMatchReq):
+        audio_url: str
+        mode: str = "keep"  # keep | replace_script
+
+    async def _own_project(pid: str, user_id: str) -> dict:
+        p = await db.projects.find_one({"project_id": pid, "user_id": user_id}, {"_id": 0})
+        if not p:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return p
+
+    @router.post("/projects/{project_id}/audio-match")
+    async def audio_match(project_id: str, body: AudioMatchReq, request: Request):
+        from audio_sync import analyze, script_text
+        user = await current_user_dep(request)
+        p = await _own_project(project_id, user.user_id)
+        res = analyze(script_text(p), body.transcript, body.segments, body.duration, body.words)
+        res.update(language=body.language, script=script_text(p), transcript=body.transcript,
+                   scene_count=len(p.get("scenes") or []))
+        return res
+
+    @router.post("/projects/{project_id}/audio-sync")
+    async def audio_sync(project_id: str, body: AudioSyncReq, request: Request):
+        from audio_sync import scene_timings
+        user = await current_user_dep(request)
+        p = await _own_project(project_id, user.user_id)
+        if not body.duration or not body.segments:
+            raise HTTPException(status_code=400, detail="Transcribe the audio first")
+        old = p.get("scenes") or []
+        if body.mode == "replace_script":
+            auto = _segments_to_scenes(body.segments, body.duration)
+            scenes = []
+            for i, a in enumerate(auto):
+                base = dict(old[i]) if i < len(old) else {"index": i + 1}
+                base.update(voiceover=a["voiceover"], index=i + 1)
+                if not base.get("visual_prompt"):
+                    base["visual_prompt"] = a.get("visual_prompt") or a["voiceover"]
+                scenes.append(base)
+        else:
+            if not old:
+                raise HTTPException(status_code=400, detail="Project has no scenes — use transcript as script")
+            scenes = [dict(s) for s in old]
+        timings = scene_timings([s.get("voiceover") or "" for s in scenes], body.segments, body.duration, body.words)
+        for s, t in zip(scenes, timings):
+            s.update(duration=t["duration"], start=t["start"], end=t["end"])
+        update = {"scenes": scenes, "audio_url": body.audio_url, "voice_source": "upload", "voice_stale": False,
+                  "duration_sec": max(5, int(round(body.duration))),
+                  "audio_sync": {"precision": "word" if body.words else "phrase", "mode": body.mode,
+                                 "language": body.language, "synced_at": utc_now().isoformat()},
+                  "updated_at": utc_now().isoformat()}
+        if body.mode == "replace_script":
+            script = dict(p.get("script") or {})
+            script.update(hook="", body=body.transcript, cta="")
+            update["script"] = script
+        await db.projects.update_one({"project_id": project_id, "user_id": user.user_id}, {"$set": update})
+        missing_imgs = sum(1 for s in scenes if not s.get("image_url") and not s.get("video_clip_url"))
+        return {"scenes": scenes, "precision": update["audio_sync"]["precision"], "missing_visuals": missing_imgs}
+
     # ---------- MUSIC / SFX CATALOG ----------
     @router.get("/catalog/music")
     async def catalog_music():
