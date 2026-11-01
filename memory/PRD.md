@@ -51,6 +51,7 @@ InVideo AI + CapCut + Canva AI.
 - ✅ Estimated Credits pricer (`/api/ai/estimate`)
 
 ### Audio Sync
+- ✅ (Jun 2026) Android "Share → CineReel" for audio (AI Awaaz etc.): manifest SEND audio/* intent-filter, native `ShareTargetPlugin.java` + MainActivity.handleShare (copies to cache, emits `audioShared`), `components/SharedAudioHandler.jsx` → Voice Studio auto-upload. Needs native rebuild; device test pending.
 - ✅ (Jun 2026) Word-level timing: Whisper `timestamp_granularities=[word,segment]` (stt_service) → captions + audio-sync use real word times (precision "word").
 - ✅ (Jun 2026) Scene count selector 3–12 in ProjectDetail script section (`scene_count` on ScriptRequest/VariantsReq; default 6).
 - ✅ (Jun 2026) Uploaded audio ↔ script match (`POST /api/projects/{id}/audio-match`: match %, exact/partial/different, missing/extra words, diff tokens, silences, precision) + scene sync (`POST /api/projects/{id}/audio-sync` mode keep/replace_script; durations snapped to phrase ends; exact uploaded audio used, no TTS). UI: AudioMatchPanel in Voice Studio → Upload mode after Transcribe. Module: backend/audio_sync.py.

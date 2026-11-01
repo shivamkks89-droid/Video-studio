@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { VoiceQuotaMeter } from "../components/VoiceQuotaMeter";
 import { AudioMatchPanel } from "../components/AudioMatchPanel";
 import { Mic, Loader2, Upload, Music, X, UserPlus } from "lucide-react";
@@ -67,6 +68,17 @@ export default function VoiceStudio() {
       toast.error(e.response?.data?.detail || e.response?.data?.error || "Voice gen failed");
     } finally { setBusy(false); }
   };
+
+  const location = useLocation();
+  useEffect(() => {
+    const f = location.state?.sharedAudio;
+    if (!f) return;
+    window.history.replaceState({ ...window.history.state, usr: null }, "");
+    setMode(MODE_UPLOAD);
+    upload(f);
+    toast.success("Shared audio received - uploading");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
   const upload = async (file) => {
     if (!file) return;
