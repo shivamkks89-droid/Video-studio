@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, ClipboardPaste, Copy } from "lucide-react";
+import { Check, ClipboardPaste, Copy, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 
 export const scriptToText = (s = {}) => {
@@ -40,6 +40,22 @@ export const CopyScriptButton = ({ script, testId = "copy-script", label = "Copy
     <button type="button" data-testid={testId} onClick={go}
       className="surface rounded-full px-3 py-1.5 text-xs flex items-center gap-1.5 hover:border-white/30 active:scale-95 transition-transform">
       {done ? <Check className="w-3 h-3 text-[#E2FF3D]" /> : <Copy className="w-3 h-3" />} {label}
+    </button>
+  );
+};
+
+export const ShareWhatsAppButton = ({ script, testId = "share-whatsapp" }) => {
+  const go = (e) => {
+    e?.stopPropagation();
+    const text = encodeURIComponent(scriptToText(script));
+    const native = window.Capacitor?.isNativePlatform?.();
+    if (native) window.location.href = `whatsapp://send?text=${text}`;
+    else window.open(`https://wa.me/?text=${text}`, "_blank", "noopener");
+  };
+  return (
+    <button type="button" data-testid={testId} onClick={go}
+      className="rounded-full px-3 py-1.5 text-xs flex items-center gap-1.5 bg-[#25D366] text-black font-semibold active:scale-95 transition-transform">
+      <MessageCircle className="w-3 h-3" /> WhatsApp
     </button>
   );
 };

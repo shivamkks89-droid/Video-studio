@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { toast } from "sonner";
-import { CopyScriptButton, PasteScriptBox, textToScript } from "../components/ScriptClipboard";
+import { CopyScriptButton, PasteScriptBox, ShareWhatsAppButton, textToScript } from "../components/ScriptClipboard";
 import { Sparkles, Mic, Image as ImageIcon, Download, Share2, Loader2, Film, Video, Upload, Play, Copy, Megaphone, Layers, User } from "lucide-react";
 import { assetUrl } from "../lib/assetUrl";
 import { notify, ensureNotifyPermission, hapticSuccess } from "../lib/native";
@@ -944,7 +944,7 @@ export default function ProjectDetail() {
             )}
             {project.script?.hook && (
               <div className="mt-4 space-y-2 text-sm" data-testid="pd-script-out">
-                <div className="flex justify-end"><CopyScriptButton script={project.script} testId="pd-copy-script" /></div>
+                <div className="flex justify-end gap-2"><ShareWhatsAppButton script={project.script} testId="pd-share-whatsapp" /><CopyScriptButton script={project.script} testId="pd-copy-script" /></div>
                 <Row label="HOOK" copyable={project.script.hook}>{project.script.hook}</Row>
                 <Row label="BODY" copyable={project.script.body}>{project.script.body}</Row>
                 <Row label="CTA" copyable={project.script.cta}>{project.script.cta}</Row>

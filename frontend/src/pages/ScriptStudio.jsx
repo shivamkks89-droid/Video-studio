@@ -4,7 +4,7 @@ import { Sparkles, Loader2, Copy, Film, Edit3, Wand2, Scissors, Type, Languages,
 import { api } from "../lib/api";
 import { toast } from "sonner";
 import { ClipboardPaste } from "lucide-react";
-import { CopyScriptButton } from "../components/ScriptClipboard";
+import { CopyScriptButton, ShareWhatsAppButton } from "../components/ScriptClipboard";
 import { saveDraft, loadDraft, deleteDraft, queueForSync, newLocalDraftId, syncPending } from "../lib/drafts";
 
 const LANGS = ["english", "hindi", "hinglish"];
@@ -369,6 +369,7 @@ export default function ScriptStudio() {
             <div className="flex items-center justify-between gap-3 flex-wrap pb-3 border-b border-white/5">
               <div className="label-mono text-[#E2FF3D]">SCRIPT READY</div>
               <CopyScriptButton script={script} testId="ss-copy-script" />
+              <ShareWhatsAppButton script={script} testId="ss-share-whatsapp" />
               <button data-testid="ss-create-video"
                 onClick={createVideoProject} disabled={busyProj}
                 className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
