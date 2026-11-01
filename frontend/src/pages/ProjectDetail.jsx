@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { toast } from "sonner";
-import { CopyScriptButton, PasteScriptBox, ShareWhatsAppButton, textToScript } from "../components/ScriptClipboard";
+import { CopyScriptButton, PasteScriptBox, ShareVideoWhatsApp, ShareWhatsAppButton, textToScript } from "../components/ScriptClipboard";
 import { Sparkles, Mic, Image as ImageIcon, Download, Share2, Loader2, Film, Video, Upload, Play, Copy, Megaphone, Layers, User } from "lucide-react";
 import { assetUrl } from "../lib/assetUrl";
 import { notify, ensureNotifyPermission, hapticSuccess } from "../lib/native";
@@ -724,7 +724,10 @@ export default function ProjectDetail() {
         <div className="flex gap-2 flex-wrap">
           <button data-testid="share-btn" onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success("Link copied"); }} className="rounded-full surface px-4 py-2 text-sm flex items-center gap-2"><Share2 className="w-4 h-4" /> Share</button>
           {videoSrc ? (
+            <>
+            <ShareVideoWhatsApp src={videoSrc} title={project.title} />
             <a data-testid="download-btn" href={videoSrc} download={`${project.title || "cinereel"}.mp4`} className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2"><Download className="w-4 h-4" /> Download MP4</a>
+            </>
           ) : (
             <button data-testid="export-btn" disabled className="rounded-full surface px-4 py-2 text-sm flex items-center gap-2 opacity-50"><Download className="w-4 h-4" /> Export</button>
           )}

@@ -60,6 +60,40 @@ export const ShareWhatsAppButton = ({ script, testId = "share-whatsapp" }) => {
   );
 };
 
+const openWhatsApp = (text) => {
+  const t = encodeURIComponent(text);
+  if (window.Capacitor?.isNativePlatform?.()) window.location.href = `whatsapp://send?text=${t}`;
+  else window.open(`https://wa.me/?text=${t}`, "_blank", "noopener");
+};
+
+/** Shares the MP4 file itself where the browser allows it (Android Chrome), else a WhatsApp message with the video link. */
+export const ShareVideoWhatsApp = ({ src, title }) => {
+  const [busy, setBusy] = useState(false);
+  const url = new URL(src, process.env.REACT_APP_BACKEND_URL || window.location.origin).href;
+  const go = async () => {
+    setBusy(true);
+    try {
+      if (navigator.canShare) {
+        const blob = await (await fetch(url)).blob();
+        const file = new File([blob], `${(title || "cinereel").replace(/[^\w-]+/g, "_")}.mp4`, { type: "video/mp4" });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: title || "CineReel video" });
+          return;
+        }
+      }
+      openWhatsApp(`${title || "My CineReel video"}\n${url}`);
+    } catch (e) {
+      if (e?.name !== "AbortError") openWhatsApp(`${title || "My CineReel video"}\n${url}`);
+    } finally { setBusy(false); }
+  };
+  return (
+    <button type="button" data-testid="share-video-whatsapp" onClick={go} disabled={busy}
+      className="rounded-full px-4 py-2 text-sm flex items-center gap-2 bg-[#25D366] text-black font-semibold active:scale-95 transition-transform disabled:opacity-60">
+      <MessageCircle className="w-4 h-4" /> {busy ? "Preparing…" : "WhatsApp"}
+    </button>
+  );
+};
+
 export const PasteScriptBox = ({ onUse, testId = "paste-script" }) => {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
