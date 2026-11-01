@@ -51,6 +51,7 @@ InVideo AI + CapCut + Canva AI.
 - ✅ Estimated Credits pricer (`/api/ai/estimate`)
 
 ### Audio Sync
+- ✅ (Jun 2026) Script copy/paste: `components/ScriptClipboard.jsx` (CopyScriptButton full script incl. scenes/hashtags, PasteScriptBox, textToScript parser HOOK/BODY/CTA or sentence split). Wired: ProjectDetail script + each variant card + paste-my-script (PUT project script); ScriptStudio result copy + manual editor Paste/Copy.
 - ✅ (Jun 2026) Android "Share → CineReel" for audio (AI Awaaz etc.): manifest SEND audio/* intent-filter, native `ShareTargetPlugin.java` + MainActivity.handleShare (copies to cache, emits `audioShared`), `components/SharedAudioHandler.jsx` → Voice Studio auto-upload. Needs native rebuild; device test pending.
 - ✅ (Jun 2026) Word-level timing: Whisper `timestamp_granularities=[word,segment]` (stt_service) → captions + audio-sync use real word times (precision "word").
 - ✅ (Jun 2026) Scene count selector 3–12 in ProjectDetail script section (`scene_count` on ScriptRequest/VariantsReq; default 6).

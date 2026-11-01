@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { Sparkles, Loader2, Copy, Film, Edit3, Wand2, Scissors, Type, Languages, Layers, CloudOff, Check } from "lucide-react";
 import { api } from "../lib/api";
 import { toast } from "sonner";
+import { ClipboardPaste } from "lucide-react";
+import { CopyScriptButton } from "../components/ScriptClipboard";
 import { saveDraft, loadDraft, deleteDraft, queueForSync, newLocalDraftId, syncPending } from "../lib/drafts";
 
 const LANGS = ["english", "hindi", "hinglish"];
@@ -223,6 +225,13 @@ export default function ScriptStudio() {
             <span data-testid="ss-scene-count">{sceneCount} SCENES</span>
           </div>
         </div>
+        <div className="flex flex-wrap gap-2 mb-2">
+          <button type="button" data-testid="ss-paste" onClick={async () => {
+            try { const t = await navigator.clipboard.readText(); if (t) { setManualText(t); toast.success("Script pasted"); } else toast("Clipboard khaali hai"); }
+            catch { toast("Textbox me long-press karke Paste karo"); }
+          }} className="surface rounded-full px-3 py-1.5 text-xs flex items-center gap-1.5 hover:border-white/30"><ClipboardPaste className="w-3 h-3" /> Paste</button>
+          {manualText.trim() && <CopyScriptButton script={{ body: manualText }} testId="ss-copy-manual" label="Copy" />}
+        </div>
         <textarea data-testid="ss-manual-text" value={manualText} onChange={(e)=>setManualText(e.target.value)} rows={6}
           className="w-full bg-[#0A0A0B] border border-white/10 rounded-lg px-3 py-3 text-sm outline-none focus:border-white/30 resize-y"
           placeholder="Paste your own script here — Hindi, Hinglish or English. Or start typing…" />
@@ -359,6 +368,7 @@ export default function ScriptStudio() {
           <div className="space-y-5">
             <div className="flex items-center justify-between gap-3 flex-wrap pb-3 border-b border-white/5">
               <div className="label-mono text-[#E2FF3D]">SCRIPT READY</div>
+              <CopyScriptButton script={script} testId="ss-copy-script" />
               <button data-testid="ss-create-video"
                 onClick={createVideoProject} disabled={busyProj}
                 className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
