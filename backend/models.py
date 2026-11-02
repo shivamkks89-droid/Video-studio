@@ -24,6 +24,7 @@ class User(BaseModel):
     credits: int = 100
     plan: Literal["free", "starter", "creator", "studio", "enterprise"] = "free"
     plan_expires_at: Optional[str] = None
+    previous_plan: Optional[str] = None
     unlimited_credits: bool = False
     created_at: datetime = Field(default_factory=utc_now)
 
@@ -37,6 +38,7 @@ class UserPublic(BaseModel):
     credits: int = 0
     plan: str = "free"
     plan_expires_at: Optional[str] = None
+    previous_plan: Optional[str] = None
     unlimited_credits: bool = False
 
 

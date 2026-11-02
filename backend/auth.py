@@ -129,7 +129,23 @@ async def get_current_user(request: Request, db) -> User:
     user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
     if not user_doc:
         raise HTTPException(status_code=401, detail="User not found")
+    await _auto_downgrade(db, user_doc)
     return User(**user_doc)
+
+
+async def _auto_downgrade(db, user_doc: dict):
+    """Expired paid plan → Free. Projects, assets and remaining credits are untouched."""
+    exp = user_doc.get("plan_expires_at")
+    if user_doc.get("plan", "free") == "free" or not exp or user_doc.get("role") == "admin" \
+            or user_doc.get("unlimited_credits"):
+        return
+    if exp > datetime.now(timezone.utc).isoformat():
+        return
+    res = await db.users.update_one({"user_id": user_doc["user_id"], "plan_expires_at": exp},
+                                    {"$set": {"plan": "free", "previous_plan": user_doc["plan"],
+                                              "downgraded_at": datetime.now(timezone.utc).isoformat()}})
+    if res.modified_count:
+        user_doc["previous_plan"], user_doc["plan"] = user_doc["plan"], "free"
 
 
 async def _user_id_from_session(token: str, db) -> Optional[str]:

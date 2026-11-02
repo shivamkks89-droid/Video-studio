@@ -55,6 +55,8 @@ InVideo AI + CapCut + Canva AI.
 
 - ✅ (Jun 2026) Plan expiry reminder: `PlanExpiryBanner` in DashboardLayout (≤3 days left or expired, one-tap Renew via shared `lib/razorpay.js` startRazorpay); `plan_expires_at` exposed in UserPublic.
 
+- ✅ (Jun 2026) Auto downgrade: `auth._auto_downgrade` on every authenticated request — expired paid plan → free (stores previous_plan, downgraded_at); credits/projects untouched; admins/unlimited skipped. Banner shows expired + Renew previous plan.
+
 ### Audio Sync
 - ✅ (Jun 2026) WhatsApp share for finished videos (`ShareVideoWhatsApp` next to Download MP4 in ProjectDetail): shares MP4 file via Web Share where supported, else WhatsApp message with video link.
 - ✅ (Jun 2026) WhatsApp share for scripts (`ShareWhatsAppButton` in ScriptClipboard.jsx; native → whatsapp://send, web → wa.me). On ProjectDetail script + ScriptStudio result.

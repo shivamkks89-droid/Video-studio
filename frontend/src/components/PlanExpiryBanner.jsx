@@ -10,14 +10,15 @@ export const PlanExpiryBanner = () => {
   const { user, refresh } = useAuth();
   const [busy, setBusy] = useState(false);
   const [hidden, setHidden] = useState(() => sessionStorage.getItem("expiry-banner-hidden") === "1");
-  if (!user?.plan_expires_at || user.plan === "free" || user.unlimited_credits || hidden) return null;
+  const renewPlan = user?.plan === "free" ? user?.previous_plan : user?.plan;
+  if (!user?.plan_expires_at || !renewPlan || user.unlimited_credits || hidden) return null;
   const left = (new Date(user.plan_expires_at).getTime() - Date.now()) / DAY;
   if (left > 3) return null;
   const expired = left <= 0;
   const days = Math.max(1, Math.ceil(left));
   const renew = () => {
     setBusy(true);
-    startRazorpay(user.plan, {
+    startRazorpay(renewPlan, {
       onSuccess: async (data) => { await refresh(); toast.success(`Plan renewed · +${data.credits_added || 0} credits`); },
       onDone: () => setBusy(false),
     });
@@ -27,7 +28,7 @@ export const PlanExpiryBanner = () => {
       className={`relative mb-4 rounded-xl pl-4 pr-11 py-3 flex flex-wrap items-center gap-3 border ${expired ? "border-red-400/40 bg-red-500/10" : "border-amber-400/40 bg-amber-400/10"}`}>
       <AlarmClock className={`w-4 h-4 shrink-0 ${expired ? "text-red-400" : "text-amber-400"}`} />
       <div className="flex-1 min-w-[180px] text-sm">
-        <b className="capitalize">{user.plan}</b> plan {expired ? "expire ho gaya hai" : `${days} din me expire hoga`}
+        <b className="capitalize">{renewPlan}</b> plan {expired ? "expire ho gaya — ab aap Free plan pe ho (projects safe hain)" : `${days} din me expire hoga`}
         <span className="text-zinc-400"> · {new Date(user.plan_expires_at).toLocaleDateString("en-IN")}</span>
       </div>
       <button data-testid="plan-renew-btn" onClick={renew} disabled={busy}
