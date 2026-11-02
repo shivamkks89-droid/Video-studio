@@ -22,7 +22,7 @@ class User(BaseModel):
     auth_provider: Literal["google", "email"] = "email"
     role: Literal["user", "admin"] = "user"
     credits: int = 100
-    plan: Literal["free", "creator", "studio", "enterprise"] = "free"
+    plan: Literal["free", "starter", "creator", "studio", "enterprise"] = "free"
     unlimited_credits: bool = False
     created_at: datetime = Field(default_factory=utc_now)
 
@@ -199,7 +199,7 @@ class CreditTransaction(BaseModel):
 
 
 class PlanPurchase(BaseModel):
-    plan: Literal["creator", "studio", "enterprise"]
+    plan: Literal["starter", "creator", "studio", "enterprise"]
 
 
 # ---------- ADMIN ----------

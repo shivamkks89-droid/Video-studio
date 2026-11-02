@@ -13,16 +13,42 @@ export default function Pricing() {
   const [busy, setBusy] = useState(null);
   useEffect(() => { api.get("/catalog/plans").then(({data}) => setPlans(data)); }, []);
 
+  const loadCheckout = () => new Promise((resolve, reject) => {
+    if (window.Razorpay) return resolve();
+    const s = document.createElement("script");
+    s.src = "https://checkout.razorpay.com/v1/checkout.js";
+    s.onload = resolve; s.onerror = () => reject(new Error("Razorpay load failed"));
+    document.body.appendChild(s);
+  });
+
   const buy = async (id) => {
     if (!user) return navigate("/login");
     if (id === "free") return toast.message("You are already on free.");
+    if (busy) return;
     setBusy(id);
     try {
-      await api.post("/billing/purchase", { plan: id });
-      await refresh();
-      toast.success(`Subscribed to ${id}`);
-    } catch (e) { toast.error("Could not subscribe"); }
-    finally { setBusy(null); }
+      await loadCheckout();
+      const { data: o } = await api.post("/billing/razorpay/order", { plan: id });
+      const rzp = new window.Razorpay({
+        key: o.key_id, order_id: o.order_id, amount: o.amount, currency: o.currency,
+        name: "CineReel AI", description: `${o.plan_name} plan · 30 days`,
+        prefill: { name: o.name, email: o.email }, theme: { color: "#E2FF3D" },
+        handler: async (res) => {
+          try {
+            const { data } = await api.post("/billing/razorpay/verify", res);
+            await refresh();
+            toast.success(data.already ? "Payment already applied" : `${o.plan_name} active · +${data.credits_added} credits`);
+          } catch (e) { toast.error(e.response?.data?.detail || "Verification failed — contact support"); }
+          finally { setBusy(null); }
+        },
+        modal: { ondismiss: () => setBusy(null) },
+      });
+      rzp.on("payment.failed", (r) => { toast.error(r.error?.description || "Payment failed"); setBusy(null); });
+      rzp.open();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || e.message || "Could not start payment");
+      setBusy(null);
+    }
   };
 
   return (
@@ -42,14 +68,14 @@ export default function Pricing() {
         <h1 className="text-5xl sm:text-6xl font-semibold tracking-tight max-w-3xl">Pay for renders, not for the editor.</h1>
         <p className="mt-4 text-zinc-400 max-w-2xl">Every plan unlocks the same canvas. Credits scale as your output does.</p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-12">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mt-12">
           {plans.map((p) => (
             <div key={p.id} className={`surface rounded-2xl p-6 flex flex-col ${p.id === "creator" ? "border-[#E2FF3D]" : ""}`}>
               {p.id === "creator" && <div className="label-mono text-[#E2FF3D] mb-2">MOST POPULAR</div>}
               <div className="text-xl font-semibold">{p.name}</div>
               <div className="mt-4 flex items-baseline gap-1">
-                <span className="text-4xl font-semibold">${p.price_usd}</span>
-                <span className="text-sm text-zinc-500">/mo</span>
+                <span className="text-4xl font-semibold">₹{(p.price_inr ?? 0).toLocaleString("en-IN")}</span>
+                <span className="text-sm text-zinc-500">/30 days</span>
               </div>
               <div className="label-mono text-zinc-500 mt-1">{p.credits.toLocaleString()} CREDITS</div>
               <ul className="mt-6 space-y-2 text-sm flex-1">
@@ -59,7 +85,7 @@ export default function Pricing() {
               </ul>
               <button data-testid={`buy-${p.id}`} disabled={busy === p.id} onClick={() => buy(p.id)}
                 className={`mt-6 rounded-full py-2.5 text-sm flex items-center justify-center gap-2 disabled:opacity-60 ${p.id === "creator" ? "btn-volt" : "border border-white/15 hover:border-white/40"}`}>
-                {busy === p.id ? "Processing…" : (p.price_usd === 0 ? "Get started" : "Subscribe")} <ArrowRight className="w-4 h-4" />
+                {busy === p.id ? "Processing…" : (p.price_inr === 0 ? "Get started" : "Pay with Razorpay")} <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           ))}

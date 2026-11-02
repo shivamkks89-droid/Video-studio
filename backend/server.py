@@ -1605,11 +1605,13 @@ async def credits_history(request: Request):
 
 @api.post("/billing/purchase")
 async def purchase_plan(body: PlanPurchase, request: Request):
-    """MVP: simulated Stripe checkout — assigns plan + adds credits."""
+    """Paid plans must go through Razorpay (see payments_razorpay.py); no free credit grants here."""
     user = await _current(request)
     plan = next((p for p in PLANS if p["id"] == body.plan), None)
     if not plan:
         raise HTTPException(status_code=400, detail="Invalid plan")
+    if plan.get("price_inr", 0) > 0 and user.role != "admin":
+        raise HTTPException(status_code=402, detail="Use Razorpay checkout for paid plans")
     new_credits = user.credits + plan["credits"]
     await db.users.update_one({"user_id": user.user_id},
                               {"$set": {"plan": plan["id"], "credits": new_credits}})
@@ -1773,6 +1775,8 @@ studio_router = build_studio_router(db, _current, _charge_credits, _refund)
 app.include_router(studio_router, prefix="/api")
 
 from routes_keys import build_keys_router, load_key_overrides  # noqa: E402
+from payments_razorpay import build_razorpay_router  # noqa: E402
+app.include_router(build_razorpay_router(db, _current, PLANS), prefix="/api")
 app.include_router(build_keys_router(db, _require_admin, _current), prefix="/api")
 
 # Serve files: try local disk first, fallback to object storage (persistent across pod restarts).
