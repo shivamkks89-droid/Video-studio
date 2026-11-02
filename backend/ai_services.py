@@ -183,6 +183,7 @@ You ALWAYS respond with valid JSON only (no markdown, no commentary), in this ex
       "index": 1,
       "duration": 5,
       "voiceover": "what is spoken in this scene",
+      "on_screen_text": "2-4 word punchy animated headline for this scene in Latin letters (English/Hinglish), e.g. 'FRESH EVERY MORNING'; last scene = the CTA",
       "visual_prompt": "cinematic prompt to feed an image generator (subject, environment, mood). NEVER include a fake brand name, logo text, app-store badge or any made-up wordmark in the visual_prompt.",
       "camera": "wide shot / close-up / tracking / dolly-in / drone aerial / etc.",
       "lighting": "golden hour / neon noir / soft daylight / volumetric god rays / etc.",

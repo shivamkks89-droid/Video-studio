@@ -57,6 +57,8 @@ InVideo AI + CapCut + Canva AI.
 
 - ✅ (Jun 2026) Auto downgrade: `auth._auto_downgrade` on every authenticated request — expired paid plan → free (stores previous_plan, downgraded_at); credits/projects untouched; admins/unlimited skipped. Banner shows expired + Renew previous plan.
 
+- ✅ (Jun 2026) Motion graphics + transitions in main render (video_renderer.py): per-scene animated headline (`on_screen_text`, AI script now outputs it) burned via ASS (slide-up + fade, volt box; bundled ffmpeg has no drawtext) + xfade transitions (fade/slideleft/smoothup/circleopen/wipeleft/dissolve, 0.4s) timeline-neutral (scenes padded by overlap → total = sum of scene durations, audio sync intact). Flags motion_text/transitions default True; falls back to concat.
+
 ### Audio Sync
 - ✅ (Jun 2026) WhatsApp share for finished videos (`ShareVideoWhatsApp` next to Download MP4 in ProjectDetail): shares MP4 file via Web Share where supported, else WhatsApp message with video link.
 - ✅ (Jun 2026) WhatsApp share for scripts (`ShareWhatsAppButton` in ScriptClipboard.jsx; native → whatsapp://send, web → wa.me). On ProjectDetail script + ScriptStudio result.

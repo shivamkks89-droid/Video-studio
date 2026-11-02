@@ -22,6 +22,9 @@ STATIC_DIR = Path(__file__).parent / "static" / "videos"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 IMG_DIR = Path(__file__).parent / "static" / "images"
 AUD_DIR = Path(__file__).parent / "static" / "audio"
+FONT_DIR = str(Path(__file__).parent / "fonts")
+XFADE_T = 0.4
+XFADE_TYPES = ["fade", "slideleft", "smoothup", "circleopen", "wipeleft", "dissolve"]
 
 
 def _data_uri_to_bytes(data_uri: str) -> Optional[bytes]:
@@ -90,6 +93,30 @@ def _ass_escape(text: str) -> str:
     return (text or "").replace("{", "").replace("}", "").replace("\n", " ")
 
 
+def _motion_text_ass(texts: List[str], durs: List[float], width: int, height: int):
+    """Animated per-scene headline (slide-up + fade, volt box) as ASS events timed to scene starts."""
+    if not any(t.strip() for t in texts):
+        return None
+    fs = int(min(width, height) * 0.065)
+
+    def ft(sec):
+        cs = int(round(max(0.0, sec) * 100))
+        return f"{cs // 360000:d}:{cs // 6000 % 60:02d}:{cs // 100 % 60:02d}.{cs % 100:02d}"
+
+    style = (f"Style: Motion,FreeSans,{fs},&H000B0A0A,&H000B0A0A,&H003DFFE2,&H003DFFE2,"
+             f"1,0,0,0,100,100,1,0,3,{int(fs * 0.3)},0,8,60,60,0,1")
+    x, y = width // 2, int(height * 0.13)
+    events, start = [], 0.0
+    for t, d in zip(texts, durs):
+        t = _ass_escape(t.strip().upper()[:40])
+        if t:
+            st, en = start + 0.15, start + max(0.8, d - 0.1)
+            events.append(f"Dialogue: 1,{ft(st)},{ft(en)},Motion,,0,0,0,,"
+                          f"{{\\fad(250,250)\\move({x},{y + 70},{x},{y},0,450)\\an8}}{t}")
+        start += d
+    return style, "\n".join(events)
+
+
 def _build_ass_captions(words: List[dict], width: int, height: int,
                          style: dict) -> str:
     """Build an ASS subtitle file with 2-3 word chunks + karaoke-style word
@@ -156,7 +183,9 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                        caption_words: Optional[List[dict]] = None,
                        caption_style: Optional[dict] = None,
                        talking_avatar_url: Optional[str] = None,
-                       talking_avatar_mode: str = "off") -> Optional[str]:
+                       talking_avatar_mode: str = "off",
+                       motion_text: bool = True,
+                       transitions: bool = True) -> Optional[str]:
     """Render an MP4 from a list of scenes.
 
     Each scene can carry either a still `image_url` (rendered with ken-burns) or
@@ -187,7 +216,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
         if clip_url:
             b = await _fetch(clip_url)
             if b:
-                items.append({"type": "clip", "bytes": b,
+                items.append({"type": "clip", "bytes": b, "text": (sc.get("on_screen_text") or "").strip(),
                               "duration": float(sc.get("video_clip_duration") or dur),
                               "caption": sc.get("voiceover") or ""})
                 continue
@@ -197,7 +226,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
             continue
         b = await _fetch(img_url)
         if b:
-            items.append({"type": "image", "bytes": b,
+            items.append({"type": "image", "bytes": b, "text": (sc.get("on_screen_text") or "").strip(),
                           "duration": dur, "caption": sc.get("voiceover") or ""})
     if not items:
         return None
@@ -232,6 +261,15 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
     def _work() -> Optional[str]:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
+            use_xfade = transitions and len(items) > 1
+            base_durs = []
+
+            def _extra(i):
+                # Scenes overlap by XFADE_T so the cross-fade never shifts later scenes off the narration.
+                return XFADE_T if use_xfade and i < len(items) - 1 else 0.0
+
+            def _text_vf(i, dur):
+                return ""  # headlines are burned later via ASS (bundled ffmpeg has no drawtext)
 
             scene_videos = []
             for i, item in enumerate(items):
@@ -240,15 +278,18 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                     src = tmp_path / f"scn_{i:03d}_src.mp4"
                     src.write_bytes(item["bytes"])
                     dur = max(1.0, float(item["duration"]))
+                    base_durs.append(dur)
+                    total = dur + _extra(i)
                     # Normalise the Seedance MP4 into our target canvas + codec so
                     # concat -c copy can splice it seamlessly with ken-burns scenes.
                     vf = (
                         f"scale={w}:{h}:force_original_aspect_ratio=increase,"
-                        f"crop={w}:{h},format=yuv420p"
+                        f"crop={w}:{h},tpad=stop_mode=clone:stop_duration=2,format=yuv420p"
+                        + _text_vf(i, total)
                     )
                     cmd = [
                         FFMPEG_BIN, "-y", "-threads", "1", "-i", str(src),
-                        "-t", f"{dur:.2f}", "-r", str(fps),
+                        "-t", f"{total:.2f}", "-r", str(fps),
                         "-vf", vf,
                         "-c:v", "libx264", "-preset", "ultrafast",
                         "-crf", "20", "-pix_fmt", "yuv420p",
@@ -268,6 +309,8 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                 # Support long-form scenes for 40-60s ads — cap at 12s per still to
                 # keep viewer attention (movement helps). Below 1.5s looks jumpy.
                 dur = max(1.5, min(12.0, item["duration"]))
+                base_durs.append(dur)
+                dur = dur + _extra(i)
                 dur_frames = max(45, int(dur * fps))
                 cw, ch = int(w * 1.3), int(h * 1.3)
                 vf = (
@@ -279,7 +322,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                     f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2,"
                     f"scale={cw}:{ch},"
                     f"zoompan=z='min(zoom+0.0010,1.10)':d={dur_frames}:s={w}x{h}:fps={fps},"
-                    f"format=yuv420p"
+                    f"format=yuv420p" + _text_vf(i, dur)
                 )
                 cmd = [
                     FFMPEG_BIN, "-y", "-threads", "1", "-loop", "1", "-i", str(p),
@@ -295,16 +338,33 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                     return None
                 scene_videos.append(out)
 
-            # 3) concat list
+            # 3) join scenes — cross-fade transitions (timeline-neutral) or plain concat
+            combined = tmp_path / "combined.mp4"
+            joined = False
+            if use_xfade:
+                cmd = [FFMPEG_BIN, "-y", "-threads", "2"]
+                for v in scene_videos:
+                    cmd += ["-i", str(v)]
+                parts, prev, offset = [], "0:v", 0.0
+                for k in range(1, len(scene_videos)):
+                    offset += base_durs[k - 1]
+                    parts.append(f"[{prev}][{k}:v]xfade=transition={XFADE_TYPES[(k - 1) % len(XFADE_TYPES)]}"
+                                 f":duration={XFADE_T}:offset={offset:.2f}[x{k}]")
+                    prev = f"x{k}"
+                cmd += ["-filter_complex", ";".join(parts), "-map", f"[{prev}]",
+                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20", "-pix_fmt", "yuv420p", str(combined)]
+                r = subprocess.run(cmd, capture_output=True, timeout=240)
+                joined = r.returncode == 0
+                if not joined:
+                    print("[render] xfade fail, falling back to concat:", r.stderr.decode()[-300:])
             concat_list = tmp_path / "concat.txt"
             concat_list.write_text("\n".join(f"file '{v}'" for v in scene_videos))
-            combined = tmp_path / "combined.mp4"
             r = subprocess.run(
                 [FFMPEG_BIN, "-y", "-threads", "1", "-f", "concat", "-safe", "0", "-i", str(concat_list),
                  "-c", "copy", str(combined)],
                 capture_output=True, timeout=120,
-            )
-            if r.returncode != 0:
+            ) if not joined else None
+            if r is not None and r.returncode != 0:
                 print("[render] concat fail:", r.stderr.decode()[-300:])
                 return None
 
@@ -374,6 +434,17 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                 subs_path.write_text(_build_ass_captions(
                     caption_words, w, h, caption_style or {}
                 ), encoding="utf-8")
+            motion = _motion_text_ass([it.get("text") or "" for it in items], base_durs, w, h) if motion_text else None
+            if motion:
+                style_line, events = motion
+                if subs_path:
+                    txt = subs_path.read_text(encoding="utf-8").replace("\n\n[Events]", f"\n{style_line}\n\n[Events]", 1)
+                    subs_path.write_text(txt.rstrip("\n") + "\n" + events + "\n", encoding="utf-8")
+                else:
+                    subs_path = tmp_path / "motion.ass"
+                    subs_path.write_text(_build_ass_captions([], w, h, {}).replace(
+                        "\n\n[Events]", f"\n{style_line}\n\n[Events]", 1).rstrip("\n") + "\n" + events + "\n",
+                        encoding="utf-8")
 
             if audio_bytes:
                 audio_path = tmp_path / "voice.mp3"
@@ -411,7 +482,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                     # Burn karaoke captions AND mux audio in one pass.
                     # Note: ffmpeg's `subtitles` filter needs escaped colons in Windows-style
                     # paths but our tmp paths are POSIX so a raw path works.
-                    subs_filter = f"subtitles={subs_path}"
+                    subs_filter = f"subtitles={subs_path}:fontsdir={FONT_DIR}"
                     cmd = [
                         FFMPEG_BIN, "-y", "-threads", "1",
                         "-i", str(combined), "-i", str(audio_path),
@@ -431,7 +502,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
             else:
                 if subs_path and subs_path.exists():
                     cmd = [FFMPEG_BIN, "-y", "-threads", "1", "-i", str(combined),
-                           "-vf", f"subtitles={subs_path}",
+                           "-vf", f"subtitles={subs_path}:fontsdir={FONT_DIR}",
                            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
                            "-pix_fmt", "yuv420p", str(final)]
                 else:
