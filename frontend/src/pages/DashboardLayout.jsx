@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useBackClose } from "../lib/backStack";
+import { PlanExpiryBanner } from "../components/PlanExpiryBanner";
 import {
   LayoutDashboard, FolderKanban, LayoutTemplate, Palette, Library, CreditCard,
   Settings, ShieldCheck, LogOut, Plus, Film, Sparkles, Mic, Image as ImageIcon,
@@ -144,6 +145,7 @@ export default function DashboardLayout() {
           </div>
         </header>
         <main className="flex-1 px-4 pt-4 sm:px-5 lg:p-8 overflow-y-auto pb-[calc(6.5rem+var(--safe-bottom))] lg:pb-8">
+          <PlanExpiryBanner />
           <Outlet />
         </main>
       </div>

@@ -75,6 +75,7 @@ def _doc(model: BaseModel) -> dict:
 def _public(u: User) -> UserPublic:
     return UserPublic(user_id=u.user_id, email=u.email, name=u.name,
                       picture=u.picture, role=u.role, credits=u.credits, plan=u.plan,
+                      plan_expires_at=getattr(u, "plan_expires_at", None),
                       unlimited_credits=getattr(u, "unlimited_credits", False))
 
 

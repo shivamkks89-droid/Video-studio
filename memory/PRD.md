@@ -53,6 +53,8 @@ InVideo AI + CapCut + Canva AI.
 ### Payments
 - ✅ (Jun 2026) Razorpay one-time 30-day plans (INR): Starter ₹499/400cr, Creator ₹1,499/1500cr, Pro(studio) ₹3,999/5000cr, Agency(enterprise) ₹15,999/25000cr. `payments_razorpay.py`: POST /api/billing/razorpay/order, /verify (HMAC signature, atomic idempotent grant), /webhook (active only if RAZORPAY_WEBHOOK_SECRET set), GET /billing/payments. Old /billing/purchase blocks paid plans for non-admins. Pricing.jsx loads checkout.js. Test-mode keys.
 
+- ✅ (Jun 2026) Plan expiry reminder: `PlanExpiryBanner` in DashboardLayout (≤3 days left or expired, one-tap Renew via shared `lib/razorpay.js` startRazorpay); `plan_expires_at` exposed in UserPublic.
+
 ### Audio Sync
 - ✅ (Jun 2026) WhatsApp share for finished videos (`ShareVideoWhatsApp` next to Download MP4 in ProjectDetail): shares MP4 file via Web Share where supported, else WhatsApp message with video link.
 - ✅ (Jun 2026) WhatsApp share for scripts (`ShareWhatsAppButton` in ScriptClipboard.jsx; native → whatsapp://send, web → wa.me). On ProjectDetail script + ScriptStudio result.

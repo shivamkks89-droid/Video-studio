@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { toast } from "sonner";
+import { startRazorpay } from "../lib/razorpay";
 import BrandMark from "../components/BrandMark";
 import { Check, ArrowRight, Film } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
@@ -13,42 +14,15 @@ export default function Pricing() {
   const [busy, setBusy] = useState(null);
   useEffect(() => { api.get("/catalog/plans").then(({data}) => setPlans(data)); }, []);
 
-  const loadCheckout = () => new Promise((resolve, reject) => {
-    if (window.Razorpay) return resolve();
-    const s = document.createElement("script");
-    s.src = "https://checkout.razorpay.com/v1/checkout.js";
-    s.onload = resolve; s.onerror = () => reject(new Error("Razorpay load failed"));
-    document.body.appendChild(s);
-  });
-
   const buy = async (id) => {
     if (!user) return navigate("/login");
     if (id === "free") return toast.message("You are already on free.");
     if (busy) return;
     setBusy(id);
-    try {
-      await loadCheckout();
-      const { data: o } = await api.post("/billing/razorpay/order", { plan: id });
-      const rzp = new window.Razorpay({
-        key: o.key_id, order_id: o.order_id, amount: o.amount, currency: o.currency,
-        name: "CineReel AI", description: `${o.plan_name} plan · 30 days`,
-        prefill: { name: o.name, email: o.email }, theme: { color: "#E2FF3D" },
-        handler: async (res) => {
-          try {
-            const { data } = await api.post("/billing/razorpay/verify", res);
-            await refresh();
-            toast.success(data.already ? "Payment already applied" : `${o.plan_name} active · +${data.credits_added} credits`);
-          } catch (e) { toast.error(e.response?.data?.detail || "Verification failed — contact support"); }
-          finally { setBusy(null); }
-        },
-        modal: { ondismiss: () => setBusy(null) },
-      });
-      rzp.on("payment.failed", (r) => { toast.error(r.error?.description || "Payment failed"); setBusy(null); });
-      rzp.open();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || e.message || "Could not start payment");
-      setBusy(null);
-    }
+    startRazorpay(id, {
+      onSuccess: async (data, o) => { await refresh(); toast.success(data.already ? "Payment already applied" : `${o.plan_name} active · +${data.credits_added} credits`); },
+      onDone: () => setBusy(null),
+    });
   };
 
   return (
