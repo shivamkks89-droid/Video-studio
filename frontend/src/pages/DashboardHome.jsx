@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { assetUrl } from "../lib/assetUrl";
 import { RecentProjects } from "../components/RecentProjects";
 import { FreeVideosCounter } from "../components/FreeVideosCounter";
+import { WelcomeCredits } from "../components/WelcomeCredits";
 
 export default function DashboardHome() {
   const { user } = useAuth();
@@ -93,6 +94,7 @@ export default function DashboardHome() {
 
   return (
     <div data-testid="dashboard-home" className="space-y-6 lg:space-y-10">
+      <WelcomeCredits />
       {/* GREETING */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
         <div className="md:col-span-8 surface rounded-2xl p-5 sm:p-8 relative overflow-hidden grain">

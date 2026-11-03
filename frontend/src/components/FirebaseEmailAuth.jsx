@@ -27,6 +27,7 @@ export const FirebaseEmailAuth = () => {
         toast.info("Verification link email pe bheja — verify karke Login dabao"); setMode("login"); return;
       }
       const { data } = await api.post("/auth/firebase", { id_token: await cred.user.getIdToken(true) });
+      if (data.is_new) localStorage.setItem("cinereel_welcome", data.user.credits);
       login(data.token, data.user); trackEvent("login", { method: "firebase_email" });
       toast.success("Welcome!"); navigate("/dashboard");
     } catch (err) {

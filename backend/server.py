@@ -197,6 +197,7 @@ async def firebase_login(request: Request):
     if not email or not claims.get("email_verified"):
         raise HTTPException(status_code=403, detail="Pehle apna email verify karo (inbox me link bheja gaya hai)")
     doc = await db.users.find_one({"email": email}, {"_id": 0})
+    is_new = not doc
     if doc:
         user = User(**{k: v for k, v in doc.items() if k != "password_hash"})
         await db.users.update_one({"user_id": user.user_id}, {"$set": {"firebase_uid": claims["uid"]}})
@@ -204,7 +205,20 @@ async def firebase_login(request: Request):
         user = User(user_id=gen_user_id(), email=email, name=body.get("name") or email.split("@")[0].title(),
                     auth_provider="email")
         await db.users.insert_one({**_doc(user), "firebase_uid": claims["uid"]})
-    return {"token": issue_jwt(user.user_id), "user": _public(user).model_dump()}
+    return {"token": issue_jwt(user.user_id), "user": _public(user).model_dump(), "is_new": is_new}
+
+
+@api.post("/push/test")
+async def push_test(request: Request):
+    import firebase_service as fb
+    user = await _current(request)
+    tokens = (await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "push_tokens": 1}) or {}).get("push_tokens") or []
+    if not tokens:
+        raise HTTPException(status_code=400, detail="Is account pe koi phone registered nahi — Android app me login karke notification allow karo")
+    dead = await fb.send_push(tokens, "Test alert ✅", "CineReel phone alerts chal rahe hain", {"route": "/dashboard/settings"})
+    if dead:
+        await db.users.update_one({"user_id": user.user_id}, {"$pull": {"push_tokens": {"$in": dead}}})
+    return {"sent": len(tokens) - len(dead), "devices": len(tokens)}
 
 
 @api.post("/push/register")

@@ -33,6 +33,7 @@ export default function Login({ mode = "login" }) {
         cred = await f.signInWithPopup(f.auth, new f.GoogleAuthProvider());
       }
       const { data } = await api.post("/auth/firebase", { id_token: await cred.user.getIdToken(), name: cred.user.displayName });
+      if (data.is_new) localStorage.setItem("cinereel_welcome", data.user.credits);
       login(data.token, data.user);
       toast.success("Welcome!");
       navigate("/dashboard");
@@ -116,6 +117,11 @@ export default function Login({ mode = "login" }) {
             <p className="mt-4 text-zinc-400 max-w-md">
               Hindi · Hinglish · English voiceovers. Cinematic stills. Avatar hosts. All from a single canvas.
             </p>
+          {tab === "login" && (
+            <div data-testid="welcome-back-note" className="mt-4 rounded-lg border border-[#E2FF3D]/20 bg-[#E2FF3D]/5 px-3 py-2 text-xs text-zinc-300">
+              Logout ho gaye? Fikar mat karo — usi Gmail se "Continue with Google" dabao, aapke saare projects aur credits wahin milenge.
+            </div>
+          )}
           </div>
           <div className="label-mono text-zinc-600">© 2026 · BUILT FOR CREATORS</div>
         </div>
