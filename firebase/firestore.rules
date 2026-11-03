@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function owner(uid) { return signedIn() && request.auth.uid == uid; }
+
+    match /users/{uid} {
+      allow read: if owner(uid);
+      allow write: if false;
+    }
+    match /user_profiles/{uid} {
+      allow read, write: if owner(uid) && request.resource.data.keys().hasOnly(['name', 'avatar', 'bio', 'updated_at']);
+    }
+    match /{col}/{docId} {
+      allow read: if signedIn() && col in ['projects', 'scripts', 'project_scenes', 'audio_assets', 'video_assets', 'brand_kits', 'export_history', 'notifications']
+        && resource.data.user_id == request.auth.uid;
+      allow create: if signedIn() && col in ['scripts', 'brand_kits', 'notifications']
+        && request.resource.data.user_id == request.auth.uid;
+      allow update, delete: if signedIn() && col in ['scripts', 'brand_kits']
+        && resource.data.user_id == request.auth.uid && request.resource.data.user_id == request.auth.uid;
+    }
+    match /subscriptions/{id} { allow read: if signedIn() && resource.data.user_id == request.auth.uid; allow write: if false; }
+    match /credit_transactions/{id} { allow read: if signedIn() && resource.data.user_id == request.auth.uid; allow write: if false; }
+    match /admin_settings/{id} { allow read, write: if false; }
+  }
+}

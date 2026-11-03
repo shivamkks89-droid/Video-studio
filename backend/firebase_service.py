@@ -5,7 +5,7 @@ import os
 from typing import Optional
 
 import firebase_admin
-from firebase_admin import auth as fb_auth, credentials, messaging, storage
+from firebase_admin import auth as fb_auth, credentials, db as rtdb, messaging, storage
 
 _app = None
 
@@ -17,7 +17,8 @@ def app():
         if not raw:
             return None
         _app = firebase_admin.initialize_app(credentials.Certificate(json.loads(raw)),
-                                             {"storageBucket": os.environ.get("FIREBASE_STORAGE_BUCKET")})
+                                             {"storageBucket": os.environ.get("FIREBASE_STORAGE_BUCKET"),
+                                              "databaseURL": os.environ.get("FIREBASE_DATABASE_URL")})
     return _app
 
 
@@ -61,3 +62,16 @@ async def download(path: str) -> Optional[bytes]:
         return await asyncio.to_thread(lambda: storage.bucket(app=_app).blob(path).download_as_bytes())
     except Exception:
         return None
+
+
+def custom_token(user_id: str) -> str:
+    return fb_auth.create_custom_token(user_id, app=app()).decode()
+
+
+async def live_set(path: str, value) -> None:
+    if not (app() and os.environ.get("FIREBASE_DATABASE_URL")):
+        return
+    try:
+        await asyncio.to_thread(lambda: rtdb.reference(path, app=_app).set(value))
+    except Exception as e:
+        logging.warning(f"rtdb write failed {path}: {e}")

@@ -1577,6 +1577,7 @@ async def render_project_video(project_id: str, request: Request):
         "error": None,
         "created_at": utc_now().isoformat(),
     })
+    asyncio.create_task(_job_live(user.user_id, job_id, project_id, "queued"))
     asyncio.create_task(_run_render_job(
         job_id=job_id, user_id=user.user_id, project_id=project_id,
         scenes=scenes, audio_url=p.get("audio_url"),
@@ -1587,6 +1588,22 @@ async def render_project_video(project_id: str, request: Request):
         talking_avatar_mode=p.get("talking_avatar_mode") or "off",
     ))
     return {"job_id": job_id, "status": "pending", "credits_left": user.credits}
+
+
+async def _job_live(user_id: str, job_id: str, project_id: str, status: str):
+    import firebase_service as fb
+    await fb.live_set(f"render_status/{user_id}/{job_id}",
+                      {"project_id": project_id, "status": status, "updated_at": utc_now().isoformat()})
+
+
+@api.get("/firebase/token")
+async def firebase_token(request: Request):
+    import firebase_service as fb
+    user = await _current(request)
+    try:
+        return {"token": await asyncio.to_thread(fb.custom_token, user.user_id)}
+    except Exception:
+        raise HTTPException(status_code=503, detail="Firebase not configured")
 
 
 @api.get("/render/jobs/{job_id}")
@@ -1606,6 +1623,7 @@ async def _run_render_job(job_id: str, user_id: str, project_id: str,
                           talking_avatar_url: Optional[str] = None,
                           talking_avatar_mode: str = "off"):
     try:
+        await _job_live(user_id, job_id, project_id, "rendering")
         video_url = await render_video(scenes=scenes, audio_data_uri=audio_url,
                                        aspect_ratio=aspect_ratio, fps=fps,
                                        caption_words=caption_words,
@@ -1623,6 +1641,7 @@ async def _run_render_job(job_id: str, user_id: str, project_id: str,
                 {"job_id": job_id},
                 {"$set": {"status": "failed", "error": "Render failed — check storyboard images."}}
             )
+            await _job_live(user_id, job_id, project_id, "failed")
             return
         await db.projects.update_one(
             {"project_id": project_id, "user_id": user_id},
@@ -1634,8 +1653,10 @@ async def _run_render_job(job_id: str, user_id: str, project_id: str,
             {"$set": {"status": "complete", "video_url": video_url}}
         )
         asyncio.create_task(_push_render_done(user_id, project_id, True))
+        await _job_live(user_id, job_id, project_id, "complete")
     except Exception as e:
         logging.exception("[render job] failed")
+        await _job_live(user_id, job_id, project_id, "failed")
         await db.render_jobs.update_one(
             {"job_id": job_id},
             {"$set": {"status": "failed", "error": str(e)[:200]}}

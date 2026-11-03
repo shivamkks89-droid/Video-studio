@@ -8,6 +8,7 @@ import { Sparkles, Mic, Image as ImageIcon, Download, Share2, Loader2, Film, Vid
 import { assetUrl } from "../lib/assetUrl";
 import { KineticVideoPanel } from "../components/KineticVideoPanel";
 import { trackEvent } from "../lib/firebase";
+import { LiveRenderStatus } from "../components/LiveRenderStatus";
 import { notify, ensureNotifyPermission, hapticSuccess } from "../lib/native";
 
 export default function ProjectDetail() {
@@ -1464,6 +1465,7 @@ export default function ProjectDetail() {
               {busyRender ? <Loader2 className="w-4 h-4 animate-spin" /> : <Video className="w-4 h-4" />}
               {busyRender ? "Rendering…" : videoSrc ? "Re-render video" : "Render video"}
             </button>
+            <LiveRenderStatus userId={project.user_id} projectId={project.project_id} />
             {busyRender && (
               <div data-testid="render-notify-hint"
                 className="mt-3 flex items-center gap-2 text-[11px] text-zinc-500">
