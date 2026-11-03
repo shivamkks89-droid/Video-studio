@@ -356,3 +356,12 @@ adb logcat | grep -i capacitor
 `.env` GitHub me nahi jaata, isliye local `yarn build` me `REACT_APP_BACKEND_URL` undefined ho jaata hai
 (Google login `oauth/undefined` error deta hai). `yarn mobile:sync` → `scripts/mobile-build.js` live URL
 `https://cinemaai.online` set karta hai (Windows pe bhi chalta hai), phir `npx cap sync android`.
+
+## Firebase + Gradle wrapper (local Windows)
+```powershell
+cd frontend\android
+Invoke-WebRequest https://raw.githubusercontent.com/gradle/gradle/v8.11.1/gradle/wrapper/gradle-wrapper.jar -OutFile gradle\wrapper\gradle-wrapper.jar
+(Get-FileHash gradle\wrapper\gradle-wrapper.jar -Algorithm SHA256).Hash   # must be 2DB75C40782F5E8BA1FC278A5574BAB070ADCCB2D21CA5A6E5ED840888448046
+.\gradlew.bat signingReport
+```
+Copy SHA1 + SHA-256 of `Variant: debug` and `Variant: release` → Firebase Console → Project settings → Android app ai.cinereel.app → Add fingerprint. Then re-download google-services.json into `android/app/`.

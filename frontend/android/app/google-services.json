@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "286792275446",
+    "firebase_url": "https://cinereel-b1d2a-default-rtdb.firebaseio.com",
+    "project_id": "cinereel-b1d2a",
+    "storage_bucket": "cinereel-b1d2a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:286792275446:android:fc114febf09015afb763d7",
+        "android_client_info": {
+          "package_name": "ai.cinereel.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "286792275446-jhbau1efuabm7047s9pi8n7smvrkcmc4.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC0y7kFfJ6PfZ87R1TonSt2-A1RYR5zwPA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "286792275446-jhbau1efuabm7047s9pi8n7smvrkcmc4.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
