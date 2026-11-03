@@ -95,3 +95,38 @@ def scene_timings(scene_texts: List[str], segments: list, duration: float, words
         st, et = bounds[i], max(bounds[i + 1], bounds[i] + 1.0)
         out.append({"start": round(st, 2), "end": round(et, 2), "duration": round(et - st, 2)})
     return out
+
+
+def aligned_timings(scene_texts: List[str], words: list, duration: float) -> List[dict]:
+    """Cut scenes exactly where each scene's own words start in the spoken audio (content match, not word share)."""
+    n = len(scene_texts)
+    sw, owner = [], []
+    for i, t in enumerate(scene_texts):
+        ws = _words(t)
+        sw += ws
+        owner += [i] * len(ws)
+    aw = [(_words(w.get("word") or "") or [""])[0] for w in words]
+    m = {}
+    for a, b, size in difflib.SequenceMatcher(None, sw, aw, autojunk=False).get_matching_blocks():
+        for k in range(size):
+            m[a + k] = b + k
+    if n < 2 or len(m) < max(3, len(sw) * 0.3):
+        return []
+    cuts = []
+    for i in range(1, n):
+        idx = [k for k in range(len(sw)) if owner[k] == i and k in m]
+        if idx:
+            j = m[idx[0]]
+            prev_end = float(words[j - 1]["end"]) if j > 0 else 0.0
+            c = (prev_end + float(words[j]["start"])) / 2
+        else:
+            first = owner.index(i) if i in owner else len(sw)
+            c = duration * first / max(1, len(sw))
+        cuts.append(c)
+    bounds, out = [0.0], []
+    for c in cuts:
+        bounds.append(max(c, bounds[-1] + 1.5))
+    bounds.append(max(duration, bounds[-1] + 1.5))
+    for i in range(n):
+        out.append({"start": round(bounds[i], 2), "end": round(bounds[i + 1], 2), "duration": round(bounds[i + 1] - bounds[i], 2)})
+    return out

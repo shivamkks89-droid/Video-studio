@@ -209,25 +209,28 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
         from asset_store import fetch_to_bytes as _f
         return await _f(url)
 
-    items = []
+    items, carry = [], 0.0
     for sc in scenes:
-        dur = float(sc.get("duration") or default_scene_seconds)
+        dur = float(sc.get("duration") or default_scene_seconds) + carry
+        carry = 0.0
         clip_url = sc.get("video_clip_url")
         if clip_url:
             b = await _fetch(clip_url)
             if b:
                 items.append({"type": "clip", "bytes": b, "text": (sc.get("on_screen_text") or "").strip(),
-                              "duration": float(sc.get("video_clip_duration") or dur),
+                              "duration": dur,
                               "caption": sc.get("voiceover") or ""})
                 continue
             # fall through to image if clip fetch fails
         img_url = sc.get("image_url") or ""
-        if not img_url:
-            continue
-        b = await _fetch(img_url)
+        b = await _fetch(img_url) if img_url else None
         if b:
             items.append({"type": "image", "bytes": b, "text": (sc.get("on_screen_text") or "").strip(),
                           "duration": dur, "caption": sc.get("voiceover") or ""})
+        elif items:
+            items[-1]["duration"] += dur  # keep timeline: missing visual extends previous scene
+        else:
+            carry = dur
     if not items:
         return None
 
@@ -284,7 +287,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                     # concat -c copy can splice it seamlessly with ken-burns scenes.
                     vf = (
                         f"scale={w}:{h}:force_original_aspect_ratio=increase,"
-                        f"crop={w}:{h},tpad=stop_mode=clone:stop_duration=2,format=yuv420p"
+                        f"crop={w}:{h},tpad=stop_mode=clone:stop_duration=90,format=yuv420p"
                         + _text_vf(i, total)
                     )
                     cmd = [
@@ -308,7 +311,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                 p.write_bytes(item["bytes"])
                 # Support long-form scenes for 40-60s ads — cap at 12s per still to
                 # keep viewer attention (movement helps). Below 1.5s looks jumpy.
-                dur = max(1.5, min(12.0, item["duration"]))
+                dur = max(1.5, min(90.0, item["duration"]))
                 base_durs.append(dur)
                 dur = dur + _extra(i)
                 dur_frames = max(45, int(dur * fps))

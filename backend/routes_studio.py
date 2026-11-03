@@ -856,7 +856,7 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
                 {"$set": {"audio_url": url, "voice_stale": False,
                           "voice_source": "upload",
                           "duration_sec": max(int(dur), 5) if dur else None,
-                          "word_timing_status": "pending",
+                          "word_timing_status": "pending", "caption_words": [],
                           "updated_at": utc_now().isoformat()}},
             )
             from server import _auto_word_timing
@@ -945,6 +945,7 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
         elif body.audio_url != p.get("audio_url"):
             from server import _auto_word_timing
             update["word_timing_status"] = "pending"
+            update["caption_words"] = []
             asyncio.create_task(_auto_word_timing(project_id, user.user_id, body.audio_url))
         await db.projects.update_one({"project_id": project_id, "user_id": user.user_id}, {"$set": update})
         missing_imgs = sum(1 for s in scenes if not s.get("image_url") and not s.get("video_clip_url"))

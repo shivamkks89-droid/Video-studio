@@ -1359,6 +1359,7 @@ async def update_project(project_id: str, request: Request):
         prev = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}, {"_id": 0, "audio_url": 1})
         if prev and prev.get("audio_url") != body["audio_url"]:
             body["word_timing_status"] = "pending"
+            body["caption_words"] = []
             asyncio.create_task(_auto_word_timing(project_id, user.user_id, body["audio_url"]))
     ops = {"$set": body}
     if inc:
@@ -1380,6 +1381,19 @@ async def _auto_word_timing(project_id: str, user_id: str, url: str):
     except Exception as e:
         logging.warning(f"auto word timing failed {project_id}: {e}")
         await db.projects.update_one(q, {"$set": {"word_timing_status": "failed"}})
+
+
+async def _ensure_word_timing(p: dict, user_id: str) -> dict:
+    q = {"project_id": p["project_id"], "user_id": user_id}
+    for _ in range(30):
+        if p.get("word_timing_status") != "pending":
+            break
+        await asyncio.sleep(2)
+        p = await db.projects.find_one(q, {"_id": 0})
+    if not p.get("caption_words") and p.get("word_timing_status") != "failed":
+        await _auto_word_timing(p["project_id"], user_id, p["audio_url"])
+        p = await db.projects.find_one(q, {"_id": 0})
+    return p
 
 
 @api.delete("/projects/{project_id}")
@@ -1483,9 +1497,21 @@ async def render_project_video(project_id: str, request: Request):
         except Exception as e:
             print(f"[render] voice probe failed: {e}")
     target_dur = float(voice_dur) if voice_dur > 3 else float(int(p.get("duration_sec") or 30))
+    if audio_url and voice_dur > 3:
+        p = await _ensure_word_timing(p, user.user_id)
+    from audio_sync import aligned_timings
+    synced = aligned_timings([s.get("voiceover") or "" for s in scenes], p.get("caption_words") or [], target_dur) \
+        if audio_url and voice_dur > 3 else []
     total_scene_dur = sum(float(s.get("duration") or 0) for s in scenes)
+    if synced:
+        for s, t in zip(scenes, synced):
+            s.update(duration=t["duration"], start=t["start"], end=t["end"])
+        await db.projects.update_one(
+            {"project_id": project_id, "user_id": user.user_id},
+            {"$set": {"scenes": scenes, "updated_at": utc_now().isoformat()}},
+        )
     # Redistribute when scenes drastically disagree with the target (>25% off).
-    if total_scene_dur < target_dur * 0.85 or total_scene_dur > target_dur * 1.15:
+    elif total_scene_dur < target_dur * 0.85 or total_scene_dur > target_dur * 1.15:
         per = round(target_dur / len(scenes), 2)
         for s in scenes:
             s["duration"] = per
