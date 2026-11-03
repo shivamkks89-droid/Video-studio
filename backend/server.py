@@ -1355,12 +1355,31 @@ async def update_project(project_id: str, request: Request):
         )
         if existing and existing.get("voice_id") != body["voice_id"] and existing.get("audio_url"):
             body["voice_stale"] = True
+    if body.get("audio_url"):
+        prev = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}, {"_id": 0, "audio_url": 1})
+        if prev and prev.get("audio_url") != body["audio_url"]:
+            body["word_timing_status"] = "pending"
+            asyncio.create_task(_auto_word_timing(project_id, user.user_id, body["audio_url"]))
     ops = {"$set": body}
     if inc:
         ops["$inc"] = inc
     await db.projects.update_one({"project_id": project_id, "user_id": user.user_id}, ops)
     p = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}, {"_id": 0})
     return p
+
+
+async def _auto_word_timing(project_id: str, user_id: str, url: str):
+    from stt_service import transcribe_audio, stt_words
+    q = {"project_id": project_id, "user_id": user_id, "audio_url": url}
+    try:
+        raw = await fetch_asset_bytes(url)
+        res = await transcribe_audio(raw, "auto") if raw else {"error": "no audio"}
+        if res.get("error"):
+            raise RuntimeError(res["error"])
+        await db.projects.update_one(q, {"$set": {"caption_words": stt_words(res), "word_timing_status": "ready"}})
+    except Exception as e:
+        logging.warning(f"auto word timing failed {project_id}: {e}")
+        await db.projects.update_one(q, {"$set": {"word_timing_status": "failed"}})
 
 
 @api.delete("/projects/{project_id}")

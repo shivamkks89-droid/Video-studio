@@ -134,3 +134,5 @@ InVideo AI + CapCut + Canva AI.
 ## 2026-06 — CinematicTextRenderer
 - `frontend/src/components/CinematicTextRenderer.jsx`: single-file Canvas kinetic text (dark bg, ambient light, particle dust, rAF synced to audio, active-word pop + color, vertical timeline), MediaRecorder 1080x1920 export (MP4, WebM fallback).
 - Test page `/dashboard/kinetic` (`pages/KineticTest.jsx`): script, audio link/file, auto timing, JSON timestamps. Screenshot-tested: recording + MP4 download OK in Chromium.
+- Project Detail "Kinetic Video" button (`components/KineticVideoPanel.jsx`): plays project script + `caption_words` as kinetic text; colour picker, font select, brand-kit apply; WhatsApp share after record (Web Share file or wa.me fallback).
+- Auto exact word timing: on any project audio change (PUT /projects, /media/upload-voice with project_id, audio-sync) backend task `_auto_word_timing` (server.py) transcribes and saves `caption_words` + `word_timing_status` (pending/ready/failed). audio-sync reuses provided words without extra STT. Shared normalizer `stt_words` in stt_service.py.

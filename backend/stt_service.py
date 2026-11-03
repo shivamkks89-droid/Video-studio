@@ -59,3 +59,15 @@ async def transcribe_audio(audio_bytes: bytes, language: str = "auto") -> dict:
         }
     except Exception as e:
         return {"error": f"STT error: {str(e)[:220]}"}
+
+
+def stt_words(result: dict) -> list:
+    words = result.get("words") or []
+    if not words:
+        for seg in (result.get("segments") or []):
+            txt = (seg.get("text") or "").split()
+            s, e = float(seg.get("start", 0)), float(seg.get("end", 0) or seg.get("start", 0) + 1)
+            d = max(0.1, (e - s) / max(1, len(txt)))
+            words += [{"word": w, "start": s + i * d, "end": s + (i + 1) * d} for i, w in enumerate(txt)]
+    return [{"word": w.get("word") or w.get("text"), "start": float(w.get("start", 0)), "end": float(w.get("end", 0))}
+            for w in words if (w.get("word") or w.get("text"))]

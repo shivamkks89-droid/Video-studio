@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { CopyScriptButton, PasteScriptBox, ShareVideoWhatsApp, ShareWhatsAppButton, textToScript } from "../components/ScriptClipboard";
 import { Sparkles, Mic, Image as ImageIcon, Download, Share2, Loader2, Film, Video, Upload, Play, Copy, Megaphone, Layers, User } from "lucide-react";
 import { assetUrl } from "../lib/assetUrl";
+import { KineticVideoPanel } from "../components/KineticVideoPanel";
 import { notify, ensureNotifyPermission, hapticSuccess } from "../lib/native";
 
 export default function ProjectDetail() {
@@ -753,6 +754,7 @@ export default function ProjectDetail() {
             <div className="mt-3">
               <div className="label-mono text-zinc-500 mb-2">VOICEOVER</div>
               <audio data-testid="voice-player" controls src={project.audio_url} className="w-full" />
+              <KineticVideoPanel project={project} onRefresh={load} />
             </div>
           )}
         </div>

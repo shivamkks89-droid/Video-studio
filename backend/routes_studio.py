@@ -33,7 +33,7 @@ from ai_services import (
     refine_script, score_creative, check_pronunciation, analyse_feedback,
     commercial_check as commercial_qa, generate_scene_image,
 )
-from stt_service import transcribe_audio
+from stt_service import transcribe_audio, stt_words
 from music_library import MUSIC_TRACKS, SFX_LIBRARY
 from campaign_pack import build_campaign_zip
 from asset_store import save_audio_data_uri as save_audio_persistent, fetch_to_bytes
@@ -265,23 +265,7 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
         if result.get("error"):
             await refund(user, 4, "captions_error")
             raise HTTPException(status_code=500, detail=result["error"])
-        # Build word-level list. Whisper may return `words` OR only segments.
-        words = result.get("words") or []
-        if not words:
-            # Fallback: split each segment's text uniformly across its duration
-            for seg in (result.get("segments") or []):
-                txt = (seg.get("text") or "").strip().split()
-                if not txt:
-                    continue
-                s = float(seg.get("start", 0))
-                e = float(seg.get("end", s + 1))
-                dur = max(0.1, (e - s) / max(1, len(txt)))
-                for i, w in enumerate(txt):
-                    words.append({"word": w, "start": s + i * dur, "end": s + (i + 1) * dur})
-        # Normalize keys
-        words = [{"word": w.get("word") or w.get("text") or "",
-                   "start": float(w.get("start", 0)),
-                   "end": float(w.get("end", 0))} for w in words if (w.get("word") or w.get("text"))]
+        words = stt_words(result)
         await db.projects.update_one(
             {"project_id": body.project_id, "user_id": user.user_id},
             {"$set": {
@@ -872,8 +856,11 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
                 {"$set": {"audio_url": url, "voice_stale": False,
                           "voice_source": "upload",
                           "duration_sec": max(int(dur), 5) if dur else None,
+                          "word_timing_status": "pending",
                           "updated_at": utc_now().isoformat()}},
             )
+            from server import _auto_word_timing
+            asyncio.create_task(_auto_word_timing(project_id, user.user_id, url))
         return {"audio_url": url, "duration": dur, "source": "upload"}
 
     # ---------- UPLOADED AUDIO ↔ SCRIPT MATCH + SCENE SYNC ----------
@@ -937,6 +924,12 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
             script = dict(p.get("script") or {})
             script.update(hook="", body=body.transcript, cta="")
             update["script"] = script
+        if body.words:
+            update.update(caption_words=stt_words({"words": body.words}), word_timing_status="ready")
+        elif body.audio_url != p.get("audio_url"):
+            from server import _auto_word_timing
+            update["word_timing_status"] = "pending"
+            asyncio.create_task(_auto_word_timing(project_id, user.user_id, body.audio_url))
         await db.projects.update_one({"project_id": project_id, "user_id": user.user_id}, {"$set": update})
         missing_imgs = sum(1 for s in scenes if not s.get("image_url") and not s.get("video_clip_url"))
         return {"scenes": scenes, "precision": update["audio_sync"]["precision"], "missing_visuals": missing_imgs}
