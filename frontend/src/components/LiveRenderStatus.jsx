@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { api } from "../lib/api";
-import { firebaseApp } from "../lib/firebase";
+import { getFirebaseApp } from "../lib/firebase";
 
 let signing = null;
 const ensureSignedIn = async () => {
   const a = await import("firebase/auth");
-  const auth = a.getAuth(firebaseApp);
+  const auth = a.getAuth(await getFirebaseApp());
   if (!signing) signing = api.get("/firebase/token").then(({ data }) => a.signInWithCustomToken(auth, data.token)).catch((e) => { signing = null; throw e; });
   return signing;
 };
@@ -14,13 +14,13 @@ const ensureSignedIn = async () => {
 export const useLiveRenders = (userId) => {
   const [jobs, setJobs] = useState({});
   useEffect(() => {
-    if (!firebaseApp || !userId) return;
+    if (!userId) return;
     let off = () => {};
     (async () => {
       const cred = await ensureSignedIn();
       if (cred.user.uid !== userId) return;
       const d = await import("firebase/database");
-      off = d.onValue(d.ref(d.getDatabase(firebaseApp), `render_status/${userId}`), (s) => setJobs(s.val() || {}));
+      off = d.onValue(d.ref(d.getDatabase(await getFirebaseApp()), `render_status/${userId}`), (s) => setJobs(s.val() || {}));
     })().catch(() => {});
     return () => off();
   }, [userId]);

@@ -1,6 +1,7 @@
 """CineReel AI — FastAPI backend."""
 import asyncio
 import logging
+import json
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -1561,6 +1562,11 @@ async def _job_live(user_id: str, job_id: str, project_id: str, status: str):
     import firebase_service as fb
     await fb.live_set(f"render_status/{user_id}/{job_id}",
                       {"project_id": project_id, "status": status, "updated_at": utc_now().isoformat()})
+
+
+@api.get("/firebase/config")
+async def firebase_web_config():
+    return json.loads(os.environ["FIREBASE_WEB_CONFIG"])
 
 
 @api.get("/firebase/token")

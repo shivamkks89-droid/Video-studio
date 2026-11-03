@@ -2,7 +2,7 @@ import { initializeApp, getApps } from "firebase/app";
 import { getAnalytics, isSupported } from "firebase/analytics";
 
 const env = process.env;
-export const firebaseConfig = {
+const envConfig = {
   apiKey: env.REACT_APP_FIREBASE_API_KEY,
   authDomain: env.REACT_APP_FIREBASE_AUTH_DOMAIN,
   databaseURL: env.REACT_APP_FIREBASE_DATABASE_URL,
@@ -13,23 +13,34 @@ export const firebaseConfig = {
   measurementId: env.REACT_APP_FIREBASE_MEASUREMENT_ID,
 };
 
-export const firebaseApp = firebaseConfig.apiKey ? (getApps()[0] || initializeApp(firebaseConfig)) : null;
+// Builds without .env (e.g. local Android build) load the public web config from the backend.
+let appP = null;
+export const getFirebaseApp = () => {
+  appP = appP || (async () => {
+    const cfg = envConfig.apiKey ? envConfig
+      : await fetch(`${env.REACT_APP_BACKEND_URL}/api/firebase/config`).then((r) => (r.ok ? r.json() : Promise.reject(new Error("Firebase config load nahi hua"))));
+    return getApps()[0] || initializeApp(cfg);
+  })().catch((e) => { appP = null; throw e; });
+  return appP;
+};
+
+const isNative = () => !!window.Capacitor?.isNativePlatform?.();
 
 export const initFirebase = async () => {
-  if (!firebaseApp || window.Capacitor?.isNativePlatform?.()) return firebaseApp;
-  if (firebaseConfig.measurementId && (await isSupported())) getAnalytics(firebaseApp);
-  return firebaseApp;
+  const app = await getFirebaseApp();
+  if (!isNative() && app.options.measurementId && (await isSupported())) getAnalytics(app);
+  return app;
 };
 
 export const trackEvent = async (name, params = {}) => {
-  if (!firebaseApp || window.Capacitor?.isNativePlatform?.() || !(await isSupported())) return;
+  if (isNative() || !(await isSupported())) return;
   const { logEvent } = await import("firebase/analytics");
-  logEvent(getAnalytics(firebaseApp), name, params);
+  logEvent(getAnalytics(await getFirebaseApp()), name, params);
 };
 
 export const fbAuth = async () => {
   const m = await import("firebase/auth");
-  const auth = m.getAuth(firebaseApp);
+  const auth = m.getAuth(await getFirebaseApp());
   await m.setPersistence(auth, m.browserLocalPersistence);
   return { auth, ...m };
 };
