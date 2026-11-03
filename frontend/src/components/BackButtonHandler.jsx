@@ -52,22 +52,5 @@ export const BackButtonHandler = () => {
     return () => { cancelled = true; handle?.remove(); };
   }, [navigate]);
 
-  // Google sign-in return: cinereel://auth#session_id=… → in-app AuthCallback
-  useEffect(() => {
-    if (!isNativeApp()) return undefined;
-    let handle = null;
-    let cancelled = false;
-    (async () => {
-      const { App } = await import("@capacitor/app");
-      const h = await App.addListener("appUrlOpen", ({ url }) => {
-        const m = (url || "").match(/session_id=([^&#]+)/);
-        if (url?.startsWith("cinereel://auth") && m) navigate(`/dashboard#session_id=${m[1]}`, { replace: true });
-      });
-      if (cancelled) h.remove();
-      else handle = h;
-    })();
-    return () => { cancelled = true; handle?.remove(); };
-  }, [navigate]);
-
   return null;
 };

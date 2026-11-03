@@ -85,43 +85,10 @@ async def send_otp_email(email: str, code: str) -> bool:
         return False
 
 
-async def get_session_data_from_emergent(session_id: str) -> Optional[dict]:
-    """Call Emergent auth /session-data with the session_id."""
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(
-                "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
-                headers={"X-Session-ID": session_id},
-            )
-            if r.status_code == 200:
-                return r.json()
-            return None
-    except Exception as e:
-        print(f"[Emergent auth error] {e}")
-        return None
-
-
 async def get_current_user(request: Request, db) -> User:
-    """Resolve current user from cookie session_token (Emergent auth) OR Authorization Bearer (JWT or session_token)."""
-    # 1. session cookie (Emergent OAuth)
-    session_token = request.cookies.get("session_token")
-    # 2. Authorization header
     auth_header = request.headers.get("Authorization", "")
     bearer = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else ""
-
-    user_id: Optional[str] = None
-
-    # Try session_token from cookie first
-    if session_token:
-        user_id = await _user_id_from_session(session_token, db)
-
-    # Fallback: bearer might be session_token
-    if not user_id and bearer:
-        user_id = await _user_id_from_session(bearer, db)
-
-    # Fallback: bearer is JWT
-    if not user_id and bearer:
-        user_id = decode_jwt(bearer)
+    user_id: Optional[str] = decode_jwt(bearer) if bearer else None
 
     if not user_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -146,20 +113,6 @@ async def _auto_downgrade(db, user_doc: dict):
                                               "downgraded_at": datetime.now(timezone.utc).isoformat()}})
     if res.modified_count:
         user_doc["previous_plan"], user_doc["plan"] = user_doc["plan"], "free"
-
-
-async def _user_id_from_session(token: str, db) -> Optional[str]:
-    sess = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
-    if not sess:
-        return None
-    expires_at = sess.get("expires_at")
-    if isinstance(expires_at, str):
-        expires_at = datetime.fromisoformat(expires_at)
-    if expires_at and expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at and expires_at < datetime.now(timezone.utc):
-        return None
-    return sess.get("user_id")
 
 
 async def require_admin(request: Request, db) -> User:

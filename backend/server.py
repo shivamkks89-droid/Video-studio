@@ -26,7 +26,7 @@ from models import (
     StoryboardRequest, TTSRequest, User, UserPublic, new_id, utc_now,
 )
 from auth import (
-    decode_jwt, gen_otp, gen_user_id, get_current_user, get_session_data_from_emergent,
+    decode_jwt, gen_otp, gen_user_id, get_current_user,
     hash_password, issue_jwt, send_otp_email, verify_password,
 )
 from ai_services import (
@@ -185,50 +185,6 @@ async def otp_verify(body: OTPVerify):
     return {"token": token, "user": _public(user).model_dump()}
 
 
-@api.post("/auth/google/session")
-async def google_session(request: Request, response: Response):
-    """Exchange Emergent session_id for a session_token and create/refresh user."""
-    body = await request.json()
-    session_id = body.get("session_id")
-    if not session_id:
-        raise HTTPException(status_code=400, detail="session_id required")
-    data = await get_session_data_from_emergent(session_id)
-    if not data:
-        raise HTTPException(status_code=401, detail="Invalid session")
-
-    email = data["email"].lower()
-    existing = await db.users.find_one({"email": email}, {"_id": 0})
-    if existing:
-        user = User(**{k: v for k, v in existing.items() if k != "password_hash"})
-        # refresh picture/name
-        await db.users.update_one(
-            {"user_id": user.user_id},
-            {"$set": {"name": data.get("name", user.name), "picture": data.get("picture")}}
-        )
-        user.name = data.get("name", user.name)
-        user.picture = data.get("picture")
-    else:
-        user = User(user_id=gen_user_id(), email=email, name=data.get("name", "User"),
-                    picture=data.get("picture"), auth_provider="google")
-        await db.users.insert_one(_doc(user))
-
-    session_token = data["session_token"]
-    expires_at = utc_now() + timedelta(days=7)
-    await db.user_sessions.insert_one({
-        "user_id": user.user_id,
-        "session_token": session_token,
-        "expires_at": expires_at.isoformat(),
-        "created_at": utc_now().isoformat(),
-    })
-    # Set httpOnly cookie
-    response.set_cookie(
-        key="session_token", value=session_token, max_age=7 * 24 * 60 * 60,
-        httponly=True, secure=True, samesite="none", path="/",
-    )
-    # Token also returned so the Android WebView (third-party cookies blocked) can use Bearer auth
-    return {"user": _public(user).model_dump(), "token": session_token}
-
-
 @api.post("/auth/firebase")
 async def firebase_login(request: Request):
     import firebase_service as fb
@@ -283,9 +239,6 @@ async def me(request: Request):
 
 @api.post("/auth/logout")
 async def logout(request: Request, response: Response):
-    token = request.cookies.get("session_token")
-    if token:
-        await db.user_sessions.delete_one({"session_token": token})
     response.delete_cookie("session_token", path="/")
     return {"ok": True}
 

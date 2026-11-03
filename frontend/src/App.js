@@ -5,7 +5,6 @@ import ProtectedRoute from "./lib/ProtectedRoute";
 import ErrorBoundary from "./lib/ErrorBoundary";
 import Landing from "./pages/Landing";
 import Auth from "./pages/Auth";
-import AuthCallback from "./pages/AuthCallback";
 import DashboardLayout from "./pages/DashboardLayout";
 import DashboardHome from "./pages/DashboardHome";
 import NewProject from "./pages/NewProject";
@@ -31,15 +30,9 @@ import SplashGate from "./components/SplashGate";
 import { BackButtonHandler } from "./components/BackButtonHandler";
 import { SharedAudioHandler } from "./components/SharedAudioHandler";
 import { FirebaseTracker } from "./components/FirebaseTracker";
-import AppAuthBridge from "./pages/AppAuthBridge";
 
 function AppRouter() {
   const location = useLocation();
-  if (location.pathname === "/app-auth") return <AppAuthBridge />;
-  // Process OAuth callback synchronously to avoid race conditions
-  if (location.hash?.includes("session_id=")) {
-    return <AuthCallback />;
-  }
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
