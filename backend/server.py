@@ -1403,6 +1403,24 @@ def _probe_audio_duration(audio_bytes: bytes) -> float:
     return 0.0
 
 
+FREE_VIDEO_LIMIT = 2
+
+
+async def _check_free_video_limit(user: User, project_id: str):
+    """Free plan: max 2 distinct videos per account (re-rendering the same project is free)."""
+    if user.plan != "free" or user.role == "admin" or user.unlimited_credits:
+        return
+    doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "video_projects": 1})
+    done = doc.get("video_projects") if doc else None
+    if done is None:
+        # Existing users: count videos they already made, so the limit applies to them too.
+        done = [p["project_id"] async for p in db.projects.find(
+            {"user_id": user.user_id, "video_url": {"$nin": [None, ""]}}, {"_id": 0, "project_id": 1})]
+        await db.users.update_one({"user_id": user.user_id}, {"$set": {"video_projects": done}})
+    if project_id not in done and len(done) >= FREE_VIDEO_LIMIT:
+        raise HTTPException(status_code=402, detail=f"Free plan me sirf {FREE_VIDEO_LIMIT} videos ban sakte hain. Aur videos ke liye plan upgrade karo.")
+
+
 @api.post("/projects/{project_id}/render")
 async def render_project_video(project_id: str, request: Request):
     """Start a background render job. Returns a job_id immediately.
@@ -1414,6 +1432,7 @@ async def render_project_video(project_id: str, request: Request):
     scenes = p.get("scenes") or []
     if not scenes or not any(s.get("image_url") for s in scenes):
         raise HTTPException(status_code=400, detail="Generate the storyboard first.")
+    await _check_free_video_limit(user, project_id)
 
     # ----- Duration alignment -----
     # If a voiceover exists we make the video match the VOICE length (not
@@ -1503,6 +1522,7 @@ async def _run_render_job(job_id: str, user_id: str, project_id: str,
             {"project_id": project_id, "user_id": user_id},
             {"$set": {"video_url": video_url, "status": "complete", "updated_at": utc_now().isoformat()}},
         )
+        await db.users.update_one({"user_id": user_id}, {"$addToSet": {"video_projects": project_id}})
         await db.render_jobs.update_one(
             {"job_id": job_id},
             {"$set": {"status": "complete", "video_url": video_url}}

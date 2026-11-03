@@ -192,7 +192,7 @@ STOCK_ASSETS = {
 
 
 PLANS = [
-    {"id": "free", "name": "Free", "price_usd": 0, "price_inr": 0, "credits": 100, "features": ["5 short videos / mo", "720p export", "Watermark", "Standard voices"]},
+    {"id": "free", "name": "Free", "price_usd": 0, "price_inr": 0, "credits": 100, "features": ["2 videos total", "720p export", "Watermark", "Standard voices"]},
     {"id": "starter", "name": "Starter", "price_usd": 6, "price_inr": 499, "credits": 400, "features": ["12 videos / mo", "1080p export", "No watermark", "Standard voices"]},
     {"id": "creator", "name": "Creator", "price_usd": 19, "price_inr": 1499, "credits": 1500, "features": ["50 videos / mo", "1080p export", "No watermark", "Premium voices", "Brand Kit"]},
     {"id": "studio", "name": "Pro", "price_usd": 49, "price_inr": 3999, "credits": 5000, "features": ["Unlimited drafts", "4K export", "All voices + cloning", "Team workspace", "Priority render"]},

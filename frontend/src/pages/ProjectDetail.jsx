@@ -616,7 +616,11 @@ export default function ProjectDetail() {
       };
       poll();
     } catch (err) {
-      toast.error(err.response?.data?.detail || err.response?.data?.error || "Render failed");
+      if (err.response?.status === 402) {
+        toast.error(err.response.data.detail, { duration: 8000, action: { label: "Upgrade", onClick: () => { window.location.href = "/pricing"; } } });
+      } else {
+        toast.error(err.response?.data?.detail || err.response?.data?.error || "Render failed");
+      }
       setBusyRender(false);
     }
   };
