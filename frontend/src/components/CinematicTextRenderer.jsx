@@ -109,7 +109,7 @@ export const CinematicTextRenderer = ({ text = "", timestamps = [], audioSrc = "
       r.onstop = () => {
         a.pause(); setRecording(false);
         const ext = mime.startsWith("video/mp4") ? "mp4" : "webm";
-        const f = new File(chunks, `cinereel-kinetic.${ext}`, { type: mime.split(";")[0] }); setFile(f); onRecorded?.(f);
+        const f = new File(chunks, `cinereel-kinetic.${ext}`, { type: mime.split(";")[0] }); setFile(f); onRecorded?.(f); import("../lib/firebase").then((m) => m.trackEvent("kinetic_record", { ext }));
         const el = Object.assign(document.createElement("a"), { href: URL.createObjectURL(f), download: f.name });
         el.click(); setMsg(ext === "mp4" ? "MP4 download ho gaya" : "Is browser me MP4 support nahi, WebM download hua");
       };

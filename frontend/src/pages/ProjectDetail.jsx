@@ -7,6 +7,7 @@ import { CopyScriptButton, PasteScriptBox, ShareVideoWhatsApp, ShareWhatsAppButt
 import { Sparkles, Mic, Image as ImageIcon, Download, Share2, Loader2, Film, Video, Upload, Play, Copy, Megaphone, Layers, User } from "lucide-react";
 import { assetUrl } from "../lib/assetUrl";
 import { KineticVideoPanel } from "../components/KineticVideoPanel";
+import { trackEvent } from "../lib/firebase";
 import { notify, ensureNotifyPermission, hapticSuccess } from "../lib/native";
 
 export default function ProjectDetail() {
@@ -536,6 +537,7 @@ export default function ProjectDetail() {
     ensureNotifyPermission();
     try {
       const { data } = await api.post(`/projects/${id}/render`);
+      trackEvent("render_video", { aspect: project.aspect_ratio });
       if (data.error) { toast.error(data.error); setBusyRender(false); return; }
       const jobId = data.job_id;
       if (!jobId) {

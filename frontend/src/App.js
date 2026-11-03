@@ -30,6 +30,7 @@ import KineticTest from "./pages/KineticTest";
 import SplashGate from "./components/SplashGate";
 import { BackButtonHandler } from "./components/BackButtonHandler";
 import { SharedAudioHandler } from "./components/SharedAudioHandler";
+import { FirebaseTracker } from "./components/FirebaseTracker";
 import AppAuthBridge from "./pages/AppAuthBridge";
 
 function AppRouter() {
@@ -88,6 +89,7 @@ export default function App() {
           <ErrorBoundary>
             <BackButtonHandler />
             <SharedAudioHandler />
+            <FirebaseTracker />
             <AppRouter />
           </ErrorBoundary>
         </SplashGate>

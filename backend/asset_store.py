@@ -73,6 +73,10 @@ async def _save_bytes(kind: str, raw: bytes, ext: str, mime: str, local_dir: Pat
         (local_dir / fname).write_bytes(raw)
     except Exception:
         pass
+    if kind in ("audio", "videos"):
+        import firebase_service as fb
+        if fb.storage_on() and await fb.upload(f"cinereel/{kind}/{fname}", raw, mime):
+            return f"/api/files/{kind}/{fname}"
     # push to object storage in background
     await put_object(path, raw, mime)
     return f"/api/files/{kind}/{fname}"
@@ -116,6 +120,10 @@ async def fetch_to_bytes(url: str) -> Optional[bytes]:
     # fallback to object store
     fid, ext = fname.rsplit(".", 1)
     obj = await get_object(build_path(kind, ext, fid))
+    if not obj and kind in ("audio", "videos"):
+        import firebase_service as fb
+        data = await fb.download(f"cinereel/{kind}/{fname}") if fb.storage_on() else None
+        obj = (data, None) if data else None
     if obj:
         data, _ct = obj
         # mirror locally for next time so ffmpeg/render is fast

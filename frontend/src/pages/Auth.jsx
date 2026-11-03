@@ -6,6 +6,7 @@ import { useAuth } from "../lib/auth";
 import { toast } from "sonner";
 import BrandMark from "../components/BrandMark";
 import { isNativeApp } from "../lib/native";
+import { FirebaseEmailAuth } from "../components/FirebaseEmailAuth";
 
 export default function Login({ mode = "login" }) {
   const navigate = useNavigate();
@@ -131,11 +132,11 @@ export default function Login({ mode = "login" }) {
             {tab === "signup" ? "100 free credits to start." : tab === "otp" ? "We'll email you a 6-digit code." : "Continue with email or Google."}
           </p>
 
-          <div className="mt-6 grid grid-cols-3 gap-1 surface !p-1 rounded-full !border-0 bg-[#1C1C1F]">
-            {["login", "signup", "otp"].map((t) => (
+          <div className="mt-6 grid grid-cols-4 gap-1 surface !p-1 rounded-full !border-0 bg-[#1C1C1F]">
+            {["login", "signup", "otp", "firebase"].map((t) => (
               <button key={t} data-testid={`tab-${t}`} onClick={() => setTab(t)}
                 className={`text-xs label-mono py-2 rounded-full transition ${tab === t ? "bg-[#E2FF3D] text-black" : "text-zinc-400 hover:text-white"}`}>
-                {t === "login" ? "LOGIN" : t === "signup" ? "SIGNUP" : "EMAIL OTP"}
+                {t === "login" ? "LOGIN" : t === "signup" ? "SIGNUP" : t === "otp" ? "EMAIL OTP" : "FIREBASE"}
               </button>
             ))}
           </div>
@@ -160,6 +161,8 @@ export default function Login({ mode = "login" }) {
               </button>
             </form>
           )}
+
+          {tab === "firebase" && <FirebaseEmailAuth />}
 
           {tab === "otp" && (
             <form onSubmit={otpRequested ? onOtpVerify : onOtpRequest} className="mt-6 space-y-4">

@@ -229,6 +229,52 @@ async def google_session(request: Request, response: Response):
     return {"user": _public(user).model_dump(), "token": session_token}
 
 
+@api.post("/auth/firebase")
+async def firebase_login(request: Request):
+    import firebase_service as fb
+    body = await request.json()
+    try:
+        claims = await asyncio.to_thread(fb.verify_id_token, body.get("id_token") or "")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Firebase login invalid ya expire ho gaya")
+    email = (claims.get("email") or "").lower()
+    if not email or not claims.get("email_verified"):
+        raise HTTPException(status_code=403, detail="Pehle apna email verify karo (inbox me link bheja gaya hai)")
+    doc = await db.users.find_one({"email": email}, {"_id": 0})
+    if doc:
+        user = User(**{k: v for k, v in doc.items() if k != "password_hash"})
+        await db.users.update_one({"user_id": user.user_id}, {"$set": {"firebase_uid": claims["uid"]}})
+    else:
+        user = User(user_id=gen_user_id(), email=email, name=body.get("name") or email.split("@")[0].title(),
+                    auth_provider="email")
+        await db.users.insert_one({**_doc(user), "firebase_uid": claims["uid"]})
+    return {"token": issue_jwt(user.user_id), "user": _public(user).model_dump()}
+
+
+@api.post("/push/register")
+async def push_register(request: Request):
+    user = await _current(request)
+    token = ((await request.json()).get("token") or "").strip()
+    if not token or len(token) > 4096:
+        raise HTTPException(status_code=400, detail="token required")
+    await db.users.update_many({"push_tokens": token, "user_id": {"$ne": user.user_id}}, {"$pull": {"push_tokens": token}})
+    await db.users.update_one({"user_id": user.user_id}, {"$addToSet": {"push_tokens": token}})
+    return {"ok": True}
+
+
+async def _push_render_done(user_id: str, project_id: str, ok: bool):
+    import firebase_service as fb
+    u = await db.users.find_one({"user_id": user_id}, {"_id": 0, "push_tokens": 1})
+    p = await db.projects.find_one({"project_id": project_id}, {"_id": 0, "title": 1})
+    title = (p or {}).get("title") or "Your video"
+    dead = await fb.send_push((u or {}).get("push_tokens") or [],
+                              "Video ready hai 🎬" if ok else "Render fail hua",
+                              f"{title} — dekhne ke liye tap karo" if ok else f"{title} — dobara try karo",
+                              {"route": f"/dashboard/projects/{project_id}"})
+    if dead:
+        await db.users.update_one({"user_id": user_id}, {"$pull": {"push_tokens": {"$in": dead}}})
+
+
 @api.get("/auth/me")
 async def me(request: Request):
     user = await _current(request)
@@ -1587,6 +1633,7 @@ async def _run_render_job(job_id: str, user_id: str, project_id: str,
             {"job_id": job_id},
             {"$set": {"status": "complete", "video_url": video_url}}
         )
+        asyncio.create_task(_push_render_done(user_id, project_id, True))
     except Exception as e:
         logging.exception("[render job] failed")
         await db.render_jobs.update_one(

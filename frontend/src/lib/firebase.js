@@ -20,3 +20,16 @@ export const initFirebase = async () => {
   if (firebaseConfig.measurementId && (await isSupported())) getAnalytics(firebaseApp);
   return firebaseApp;
 };
+
+export const trackEvent = async (name, params = {}) => {
+  if (!firebaseApp || window.Capacitor?.isNativePlatform?.() || !(await isSupported())) return;
+  const { logEvent } = await import("firebase/analytics");
+  logEvent(getAnalytics(firebaseApp), name, params);
+};
+
+export const fbAuth = async () => {
+  const m = await import("firebase/auth");
+  const auth = m.getAuth(firebaseApp);
+  await m.setPersistence(auth, m.browserLocalPersistence);
+  return { auth, ...m };
+};
