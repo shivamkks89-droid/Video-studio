@@ -27,7 +27,7 @@ export default function Login({ mode = "login" }) {
       let cred;
       if (isNativeApp()) {
         const { FirebaseAuthentication } = await import("@capacitor-firebase/authentication");
-        const r = await FirebaseAuthentication.signInWithGoogle();
+        const r = await FirebaseAuthentication.signInWithGoogle({ useCredentialManager: false });
         cred = await f.signInWithCredential(f.auth, f.GoogleAuthProvider.credential(r.credential?.idToken));
       } else {
         cred = await f.signInWithPopup(f.auth, new f.GoogleAuthProvider());
