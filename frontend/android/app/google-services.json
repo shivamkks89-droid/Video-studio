@@ -15,6 +15,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "286792275446-34fup5l8e66fp3qehtk0kphk94hdas04.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "ai.cinereel.app",
+            "certificate_hash": "54c5bfd2cb40d923d609e6d7cabee9eb14bc185a"
+          }
+        },
+        {
           "client_id": "286792275446-jhbau1efuabm7047s9pi8n7smvrkcmc4.apps.googleusercontent.com",
           "client_type": 3
         }
