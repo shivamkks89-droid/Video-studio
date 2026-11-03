@@ -200,7 +200,7 @@ export default function Login({ mode = "login" }) {
           </button>
 
           <p className="mt-6 text-center text-xs text-zinc-500">
-            By continuing you agree to CineReel's Terms & Privacy.
+            By continuing you agree to CineReel's Terms & <a href="/privacy" data-testid="auth-privacy-link" className="underline">Privacy</a>.
           </p>
         </div>
       </div>
