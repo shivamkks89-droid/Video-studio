@@ -26,6 +26,7 @@ import AdStudio from "./pages/AdStudio";
 import Workspaces from "./pages/Workspaces";
 import AvatarStudio from "./pages/AvatarStudio";
 import PlayStoreAssets from "./pages/PlayStoreAssets";
+import KineticTest from "./pages/KineticTest";
 import SplashGate from "./components/SplashGate";
 import { BackButtonHandler } from "./components/BackButtonHandler";
 import { SharedAudioHandler } from "./components/SharedAudioHandler";
@@ -58,6 +59,7 @@ function AppRouter() {
         <Route path="scene" element={<SceneStudio />} />
         <Route path="avatars" element={<AvatarStudio />} />
         <Route path="playstore" element={<PlayStoreAssets />} />
+        <Route path="kinetic" element={<KineticTest />} />
         <Route path="ad-studio" element={<AdStudio />} />
         <Route path="workspaces" element={<Workspaces />} />
         <Route path="templates" element={<Templates />} />

@@ -130,3 +130,7 @@ InVideo AI + CapCut + Canva AI.
   - Music & SFX library + Client Workspaces + Version history + Campaign Pack ZIP
   - Manual Script Editor with 6 AI refine actions
   - TTS fallback restored so voiceover never dies even with invalid ElevenLabs key
+
+## 2026-06 — CinematicTextRenderer
+- `frontend/src/components/CinematicTextRenderer.jsx`: single-file Canvas kinetic text (dark bg, ambient light, particle dust, rAF synced to audio, active-word pop + color, vertical timeline), MediaRecorder 1080x1920 export (MP4, WebM fallback).
+- Test page `/dashboard/kinetic` (`pages/KineticTest.jsx`): script, audio link/file, auto timing, JSON timestamps. Screenshot-tested: recording + MP4 download OK in Chromium.
