@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import BrandMark from "../components/BrandMark";
 import { isNativeApp } from "../lib/native";
 import { FirebaseEmailAuth } from "../components/FirebaseEmailAuth";
+import { fbAuth } from "../lib/firebase";
 
 export default function Login({ mode = "login" }) {
   const navigate = useNavigate();
@@ -19,19 +20,25 @@ export default function Login({ mode = "login" }) {
   const [otpRequested, setOtpRequested] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
-  const googleLogin = () => {
-    const webUrl = process.env.REACT_APP_BACKEND_URL;
-    if (isNativeApp() && !/^https:\/\//.test(webUrl || "")) {
-      toast.error("App build me website URL missing hai — REACT_APP_BACKEND_URL set karke dobara build karo");
-      return;
-    }
-    // Android app: Google blocks sign-in inside WebViews, so it runs in the system browser and
-    // returns via the public web page /app-auth, which hands the session back to the app.
-    const redirectUrl = isNativeApp()
-      ? process.env.REACT_APP_BACKEND_URL + "/app-auth"
-      : window.location.origin + "/dashboard";
-    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+  const googleLogin = async () => {
+    setLoading(true);
+    try {
+      const f = await fbAuth();
+      let cred;
+      if (isNativeApp()) {
+        const { FirebaseAuthentication } = await import("@capacitor-firebase/authentication");
+        const r = await FirebaseAuthentication.signInWithGoogle();
+        cred = await f.signInWithCredential(f.auth, f.GoogleAuthProvider.credential(r.credential?.idToken));
+      } else {
+        cred = await f.signInWithPopup(f.auth, new f.GoogleAuthProvider());
+      }
+      const { data } = await api.post("/auth/firebase", { id_token: await cred.user.getIdToken(), name: cred.user.displayName });
+      login(data.token, data.user);
+      toast.success("Welcome!");
+      navigate("/dashboard");
+    } catch (err) {
+      if (!/cancel|closed-by-user/i.test(err.code || err.message || "")) toast.error(err.response?.data?.detail || err.message || "Google login fail hua");
+    } finally { setLoading(false); }
   };
 
   const onLogin = async (e) => {

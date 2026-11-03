@@ -22,6 +22,10 @@
       "useDialog": false
     },
     "Haptics": {},
+    "FirebaseAuthentication": {
+      "skipNativeAuth": true,
+      "providers": ["google.com"]
+    },
     "StatusBar": {
       "style": "DARK",
       "backgroundColor": "#0A0A0B"
