@@ -38,7 +38,15 @@ export default function Login({ mode = "login" }) {
       toast.success("Welcome!");
       navigate("/dashboard");
     } catch (err) {
-      if (!/cancel|closed-by-user/i.test(err.code || err.message || "")) toast.error(err.response?.data?.detail || err.message || "Google login fail hua");
+      const c = `${err.code || ""} ${err.message || ""}`;
+      if (/cancel|closed-by-user/i.test(c)) return;
+      const help = err.response?.data?.detail
+        || (/network|offline/i.test(c) ? "Internet connection check karo aur dobara try karo."
+        : /popup-blocked/i.test(c) ? "Browser ne popup rok diya — popup allow karke dobara dabao."
+        : /unauthorized-domain/i.test(c) ? "Ye website Google login ke liye allowed nahi hai — admin ko batao."
+        : /DEVELOPER_ERROR|10:|no credential|not implemented/i.test(c) ? "Is app version me Google login abhi set nahi hai — app update karo, tab tak Email login ya FIREBASE tab use karo."
+        : "Google login nahi ho paya. Thodi der baad try karo, ya Email login / FIREBASE tab use karo.");
+      toast.error(help, { duration: 7000 });
     } finally { setLoading(false); }
   };
 
@@ -200,7 +208,7 @@ export default function Login({ mode = "login" }) {
           </button>
 
           <p className="mt-6 text-center text-xs text-zinc-500">
-            By continuing you agree to CineReel's Terms & <a href="/privacy" data-testid="auth-privacy-link" className="underline">Privacy</a>.
+            By continuing you agree to CineReel's <a href="/terms" data-testid="auth-terms-link" className="underline">Terms</a> & <a href="/privacy" data-testid="auth-privacy-link" className="underline">Privacy</a>.
           </p>
         </div>
       </div>

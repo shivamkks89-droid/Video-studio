@@ -247,6 +247,7 @@ export default function Landing() {
             <Link to="/login">Log in</Link>
             <Link to="/signup">Sign up</Link>
             <Link to="/privacy" data-testid="footer-privacy-link">Privacy</Link>
+            <Link to="/terms" data-testid="footer-terms-link">Terms</Link>
           </div>
         </div>
       </footer>

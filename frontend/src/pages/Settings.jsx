@@ -3,6 +3,37 @@ import { toast } from "sonner";
 import { BellRing } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "../components/ui/alert-dialog";
+
+function DeleteAccount() {
+  const { logout } = useAuth();
+  const del = async () => {
+    try {
+      await api.post("/account/delete");
+      toast.success("Account 7 din me delete ho jayega. Wapas chahiye to 7 din ke andar login kar lo.");
+      logout();
+    } catch (e) { toast.error(e.response?.data?.detail || "Delete request fail hua"); }
+  };
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <button data-testid="delete-account-btn" className="block text-sm text-red-400 underline">Delete my account</button>
+      </AlertDialogTrigger>
+      <AlertDialogContent data-testid="delete-account-dialog">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Account delete karein?</AlertDialogTitle>
+          <AlertDialogDescription>
+            7 din baad aapka account, saare projects, videos, brand kits aur bache credits hamesha ke liye mit jayenge. 7 din ke andar dobara login karoge to account wapas aa jayega.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel data-testid="delete-account-cancel">Cancel</AlertDialogCancel>
+          <AlertDialogAction data-testid="delete-account-confirm" onClick={del} className="bg-red-600 hover:bg-red-700">Haan, delete karo</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
 
 export default function Settings() {
   const { user } = useAuth();
@@ -20,6 +51,7 @@ export default function Settings() {
         <Row label="Credits" value={user?.credits} />
       </div>
       <PushTest />
+      <DeleteAccount />
     </div>
   );
 }

@@ -27,6 +27,7 @@ import AvatarStudio from "./pages/AvatarStudio";
 import PlayStoreAssets from "./pages/PlayStoreAssets";
 import KineticTest from "./pages/KineticTest";
 import Privacy from "./pages/Privacy";
+import Terms from "./pages/Terms";
 import SplashGate from "./components/SplashGate";
 import { BackButtonHandler } from "./components/BackButtonHandler";
 import { SharedAudioHandler } from "./components/SharedAudioHandler";
@@ -39,6 +40,7 @@ function AppRouter() {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Auth mode="login" />} />
       <Route path="/privacy" element={<Privacy />} />
+      <Route path="/terms" element={<Terms />} />
       <Route path="/signup" element={<Auth mode="signup" />} />
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/share/:id" element={<SharePage />} />

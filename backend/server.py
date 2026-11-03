@@ -130,6 +130,7 @@ async def signup(body: SignupRequest):
 
 @api.post("/auth/login")
 async def login(body: LoginRequest):
+    asyncio.create_task(purge_deleted_accounts())
     doc = await db.users.find_one({"email": body.email.lower()}, {"_id": 0})
     if not doc or not verify_password(body.password, doc.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -220,6 +221,35 @@ async def push_test(request: Request):
     if dead:
         await db.users.update_one({"user_id": user.user_id}, {"$pull": {"push_tokens": {"$in": dead}}})
     return {"sent": len(tokens) - len(dead), "devices": len(tokens)}
+
+
+@api.post("/account/delete")
+async def request_account_delete(request: Request):
+    user = await _current(request)
+    if user.role == "admin":
+        raise HTTPException(status_code=400, detail="Admin account delete nahi ho sakta")
+    when = (utc_now() + timedelta(days=7)).isoformat()
+    await db.users.update_one({"user_id": user.user_id}, {"$set": {"delete_after": when}})
+    return {"delete_after": when}
+
+
+async def purge_deleted_accounts():
+    import firebase_service as fb
+    now = utc_now().isoformat()
+    async for u in db.users.find({"delete_after": {"$lte": now}}, {"_id": 0, "user_id": 1, "firebase_uid": 1}):
+        uid = u["user_id"]
+        for col in ("projects", "render_jobs", "brand_kits", "workspaces", "avatars", "playstore_shots",
+                    "playstore_assets", "project_versions", "feedback"):
+            await db[col].delete_many({"user_id": uid})
+        await db.credit_transactions.update_many({"user_id": uid}, {"$set": {"user_id": "deleted_user"}})
+        await fb.live_set(f"render_status/{uid}", None)
+        if u.get("firebase_uid") and fb.app():
+            try:
+                await asyncio.to_thread(fb.fb_auth.delete_user, u["firebase_uid"], app=fb._app)
+            except Exception:
+                pass
+        await db.users.delete_one({"user_id": uid})
+        logging.info(f"purged deleted account {uid}")
 
 
 @api.post("/push/register")
@@ -1800,6 +1830,7 @@ async def admin_analytics(request: Request):
 # ---------- STARTUP: ensure admin + indexes ----------
 @app.on_event("startup")
 async def on_startup():
+    asyncio.create_task(purge_deleted_accounts())
     from routes_keys import load_key_overrides as _load_keys
     await _load_keys(db)
     # default admin
