@@ -46,7 +46,7 @@ export default function Login({ mode = "login" }) {
         : /unauthorized-domain/i.test(c) ? "Ye website Google login ke liye allowed nahi hai — admin ko batao."
         : /DEVELOPER_ERROR|10:|no credential|not implemented/i.test(c) ? "Is app version me Google login abhi set nahi hai — app update karo, tab tak Email login ya FIREBASE tab use karo."
         : "Google login nahi ho paya. Thodi der baad try karo, ya Email login / FIREBASE tab use karo.");
-      toast.error(help, { duration: 7000 });
+      toast.error(`${help}\n[${(err.code || err.message || "unknown").toString().slice(0, 80)}]`, { duration: 9000 });
     } finally { setLoading(false); }
   };
 
