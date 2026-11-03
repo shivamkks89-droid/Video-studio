@@ -1406,10 +1406,7 @@ def _probe_audio_duration(audio_bytes: bytes) -> float:
 FREE_VIDEO_LIMIT = 2
 
 
-async def _check_free_video_limit(user: User, project_id: str):
-    """Free plan: max 2 distinct videos per account (re-rendering the same project is free)."""
-    if user.plan != "free" or user.role == "admin" or user.unlimited_credits:
-        return
+async def _free_video_projects(user: User) -> list:
     doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "video_projects": 1})
     done = doc.get("video_projects") if doc else None
     if done is None:
@@ -1417,6 +1414,24 @@ async def _check_free_video_limit(user: User, project_id: str):
         done = [p["project_id"] async for p in db.projects.find(
             {"user_id": user.user_id, "video_url": {"$nin": [None, ""]}}, {"_id": 0, "project_id": 1})]
         await db.users.update_one({"user_id": user.user_id}, {"$set": {"video_projects": done}})
+    return done
+
+
+@api.get("/me/free-videos")
+async def free_videos(request: Request):
+    user = await _current(request)
+    if user.plan != "free" or user.role == "admin" or user.unlimited_credits:
+        return {"limited": False}
+    used = len(await _free_video_projects(user))
+    return {"limited": True, "used": min(used, FREE_VIDEO_LIMIT), "limit": FREE_VIDEO_LIMIT,
+            "left": max(0, FREE_VIDEO_LIMIT - used)}
+
+
+async def _check_free_video_limit(user: User, project_id: str):
+    """Free plan: max 2 distinct videos per account (re-rendering the same project is free)."""
+    if user.plan != "free" or user.role == "admin" or user.unlimited_credits:
+        return
+    done = await _free_video_projects(user)
     if project_id not in done and len(done) >= FREE_VIDEO_LIMIT:
         raise HTTPException(status_code=402, detail=f"Free plan me sirf {FREE_VIDEO_LIMIT} videos ban sakte hain. Aur videos ke liye plan upgrade karo.")
 

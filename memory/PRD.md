@@ -61,6 +61,8 @@ InVideo AI + CapCut + Canva AI.
 
 - ✅ (Jun 2026) Free plan limit: max 2 distinct videos per account (`_check_free_video_limit` in render endpoint, `users.video_projects` addToSet on success; existing users baselined from projects with video_url; re-render same project allowed; admins/unlimited/paid exempt). 402 → Upgrade toast. Free plan feature text "2 videos total".
 
+- ✅ (Jun 2026) Free videos counter on Dashboard (`GET /api/me/free-videos`, `FreeVideosCounter.jsx`: "X of 2 free videos left" + progress + Upgrade).
+
 ### Audio Sync
 - ✅ (Jun 2026) WhatsApp share for finished videos (`ShareVideoWhatsApp` next to Download MP4 in ProjectDetail): shares MP4 file via Web Share where supported, else WhatsApp message with video link.
 - ✅ (Jun 2026) WhatsApp share for scripts (`ShareWhatsAppButton` in ScriptClipboard.jsx; native → whatsapp://send, web → wa.me). On ProjectDetail script + ScriptStudio result.

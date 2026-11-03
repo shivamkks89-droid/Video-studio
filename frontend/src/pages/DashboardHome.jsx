@@ -6,6 +6,7 @@ import { ArrowRight, Film, Layers, Loader2, Sparkles, Mic, Image as ImageIcon, P
 import { toast } from "sonner";
 import { assetUrl } from "../lib/assetUrl";
 import { RecentProjects } from "../components/RecentProjects";
+import { FreeVideosCounter } from "../components/FreeVideosCounter";
 
 export default function DashboardHome() {
   const { user } = useAuth();
@@ -153,6 +154,7 @@ export default function DashboardHome() {
         </div>
       </div>
 
+      <FreeVideosCounter />
       <RecentProjects />
 
       {/* QUICK ACTIONS */}
