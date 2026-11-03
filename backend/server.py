@@ -1594,6 +1594,15 @@ async def _job_live(user_id: str, job_id: str, project_id: str, status: str):
                       {"project_id": project_id, "status": status, "updated_at": utc_now().isoformat()})
 
 
+@api.get("/playstore-kit.zip")
+async def playstore_kit_zip():
+    from fastapi.responses import FileResponse
+    p = Path(__file__).parent / "static" / "kit" / "cinereel-playstore-kit.zip"
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="Kit abhi bana nahi")
+    return FileResponse(p, media_type="application/zip", filename="cinereel-playstore-kit.zip")
+
+
 @api.get("/firebase/config")
 async def firebase_web_config():
     return json.loads(os.environ["FIREBASE_WEB_CONFIG"])

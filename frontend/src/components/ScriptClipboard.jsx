@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Check, ClipboardPaste, Copy, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 
-export const scriptToText = (s = {}) => {
+export const scriptToText = (raw) => {
+  const s = raw || {};
   const scenes = (s.scenes || []).map((sc, i) => sc.voiceover && `Scene ${i + 1}: ${sc.voiceover}`).filter(Boolean);
   return [s.title && `${s.title}\n`, s.hook && `HOOK: ${s.hook}`, s.body && `BODY: ${s.body}`, s.cta && `CTA: ${s.cta}`,
     scenes.length && `\n${scenes.join("\n")}`, s.hashtags?.length && `\n${s.hashtags.join(" ")}`].filter(Boolean).join("\n");

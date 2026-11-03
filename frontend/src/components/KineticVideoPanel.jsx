@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { CinematicTextRenderer } from "./CinematicTextRenderer";
 
 const FONTS = { "Cinematic Serif": "Georgia, serif", Outfit: "Outfit, sans-serif", Bold: "Impact, 'Arial Black', sans-serif", Mono: "'Courier New', monospace", Clean: "Helvetica, Arial, sans-serif" };
-const scriptText = (s = {}) => [s.hook, s.body, s.cta].filter(Boolean).join(" ") || (s.scenes || []).map((x) => x.voiceover).join(" ");
+const scriptText = (s) => [s?.hook, s?.body, s?.cta].filter(Boolean).join(" ") || (s?.scenes || []).map((x) => x.voiceover).join(" ");
 const evenSplit = (text, dur) => {
   const w = text.split(/\s+/).filter(Boolean), d = dur / (w.length || 1);
   return w.map((word, i) => ({ word, start_time: i * d, end_time: (i + 1) * d }));
