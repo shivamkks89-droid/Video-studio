@@ -1851,7 +1851,7 @@ async def serve_file(kind: str, filename: str):
     media_type = {
         "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp",
         "mp3": "audio/mpeg", "wav": "audio/wav", "ogg": "audio/ogg",
-        "mp4": "video/mp4", "mov": "video/quicktime",
+        "mp4": "video/mp4", "mov": "video/quicktime", "webm": "video/webm",
     }.get(ext, "application/octet-stream")
     return Response(content=data, media_type=media_type,
                     headers={"Cache-Control": "public, max-age=86400"})

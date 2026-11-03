@@ -863,6 +863,22 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
             asyncio.create_task(_auto_word_timing(project_id, user.user_id, url))
         return {"audio_url": url, "duration": dur, "source": "upload"}
 
+    # ---------- KINETIC VIDEO SAVE ----------
+    @router.post("/projects/{project_id}/kinetic-videos")
+    async def save_kinetic_video(project_id: str, request: Request, file: UploadFile = File(...)):
+        user = await current_user_dep(request)
+        await _own_project(project_id, user.user_id)
+        raw = await file.read()
+        if not raw or len(raw) > 80 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Video empty ya 80 MB se bada hai")
+        from asset_store import _save_bytes, VID_DIR
+        webm = "webm" in (file.content_type or "")
+        url = await _save_bytes("videos", raw, "webm" if webm else "mp4", "video/webm" if webm else "video/mp4", VID_DIR)
+        item = {"url": url, "created_at": utc_now().isoformat()}
+        await db.projects.update_one({"project_id": project_id, "user_id": user.user_id},
+                                     {"$push": {"kinetic_videos": {"$each": [item], "$position": 0, "$slice": 20}}})
+        return item
+
     # ---------- UPLOADED AUDIO ↔ SCRIPT MATCH + SCENE SYNC ----------
     class AudioMatchReq(BaseModel):
         transcript: str = ""

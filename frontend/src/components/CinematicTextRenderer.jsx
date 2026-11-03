@@ -7,7 +7,7 @@ const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
 
 const rgb = (h) => (h.replace("#", "").match(/../g) || ["ff", "b0", "40"]).map((x) => parseInt(x, 16));
 
-export const CinematicTextRenderer = ({ text = "", timestamps = [], audioSrc = "", color = "#FFB040", font = "Georgia, serif", title = "CineReel video" }) => {
+export const CinematicTextRenderer = ({ text = "", timestamps = [], audioSrc = "", color = "#FFB040", font = "Georgia, serif", title = "CineReel video", anim = "pop", images = [], logo = "", onRecorded }) => {
   const accent = rgb(color);
   const cv = useRef(null), au = useRef(null), ac = useRef(null), dest = useRef(null), rec = useRef(null);
   const ts = useRef(timestamps);
@@ -15,6 +15,11 @@ export const CinematicTextRenderer = ({ text = "", timestamps = [], audioSrc = "
   const [msg, setMsg] = useState("");
   const [file, setFile] = useState(null);
   ts.current = timestamps;
+  const bg = useRef([]), lg = useRef(null);
+  const load = (u) => new Promise((r) => { const im = new Image(); im.crossOrigin = "anonymous"; im.onload = () => r(im); im.onerror = () => r(null); im.src = u; });
+  const imgKey = images.map((x) => x.url).join("|");
+  useEffect(() => { Promise.all(images.map((x) => load(x.url).then((im) => im && { ...x, im }))).then((a) => { bg.current = a.filter(Boolean); }); }, [imgKey]); // eslint-disable-line
+  useEffect(() => { lg.current = null; if (logo) load(logo).then((im) => { lg.current = im; }); }, [logo]);
 
   useEffect(() => {
     const ctx = cv.current.getContext("2d");
@@ -23,6 +28,19 @@ export const CinematicTextRenderer = ({ text = "", timestamps = [], audioSrc = "
     const draw = (now) => {
       const t = au.current?.currentTime || 0, k = now / 1000;
       ctx.fillStyle = "#06060a"; ctx.fillRect(0, 0, W, H);
+      const B = bg.current;
+      if (B.length) {
+        let n = B.findIndex((b) => t < b.end); if (n < 0) n = B.length - 1;
+        const b = B[n], pz = clamp((t - b.start) / Math.max(0.5, b.end - b.start)), fade = clamp((t - b.start) / 0.6);
+        const prev = B[n - 1];
+        const cover = (im, z, al) => {
+          const sc = Math.max(W / im.width, H / im.height) * z, w = im.width * sc, h = im.height * sc;
+          ctx.globalAlpha = al; ctx.drawImage(im, (W - w) / 2, (H - h) / 2, w, h); ctx.globalAlpha = 1;
+        };
+        if (prev && fade < 1) cover(prev.im, 1.12, 1);
+        cover(b.im, 1 + 0.12 * pz, prev ? fade : 1);
+        ctx.fillStyle = "rgba(4,4,8,0.58)"; ctx.fillRect(0, 0, W, H);
+      }
       const gx = W / 2 + Math.sin(k * 0.3) * 220, gy = H / 2 + Math.cos(k * 0.22) * 320;
       const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, 900);
       g.addColorStop(0, `rgba(${accent.join(",")},0.16)`); g.addColorStop(1, "rgba(0,0,0,0)");
@@ -46,22 +64,32 @@ export const CinematicTextRenderer = ({ text = "", timestamps = [], audioSrc = "
           const off = j - shift + 1 - (on ? 0 : 1);
           const y = H / 2 + (j === 0 ? 0 : off * 150 + Math.sign(j) * 60);
           if (j === 0) {
-            const s = on ? 0.6 + 0.4 * ease(clamp((t - cur.start_time) / 0.22)) : 0.75;
-            ctx.save(); ctx.translate(W / 2, y); ctx.scale(s, s);
+            const e = on ? ease(clamp((t - cur.start_time) / 0.22)) : 0;
+            const s = anim === "pop" ? (on ? 0.6 + 0.4 * e : 0.75) : 1;
+            ctx.save(); ctx.translate(W / 2 + (anim === "slide" ? (1 - e) * 260 : 0), y); ctx.scale(s, s);
+            if (anim === "slide") ctx.globalAlpha = on ? clamp(e + 0.2) : 0.3;
             ctx.fillStyle = `rgb(${mix([255, 255, 255], accent, on ? clamp(pr * 1.5) : 0).join(",")})`;
             ctx.shadowColor = `rgba(${accent.join(",")},0.6)`; ctx.shadowBlur = 40;
-            ctx.font = `800 150px ${font}`; ctx.fillText(w.word, 0, 0); ctx.restore();
+            ctx.font = `800 150px ${font}`;
+            const shown = anim === "type" ? w.word.slice(0, on ? Math.max(1, Math.ceil(w.word.length * clamp(pr * 2))) : 0) : w.word;
+            if (anim === "type") { ctx.textAlign = "left"; ctx.fillText(shown, -ctx.measureText(w.word).width / 2, 0); ctx.textAlign = "center"; }
+            else ctx.fillText(shown, 0, 0);
+            ctx.restore();
           } else {
             ctx.fillStyle = `rgba(150,150,160,${clamp(0.55 - Math.abs(j) * 0.11)})`;
             ctx.font = `500 ${64 - Math.abs(j) * 6}px ${font}`; ctx.fillText(w.word, W / 2, y);
           }
         }
       }
+      if (lg.current) {
+        const lw = 160, lh = lw * lg.current.height / lg.current.width;
+        ctx.globalAlpha = 0.85; ctx.drawImage(lg.current, W - lw - 60, 80, lw, lh); ctx.globalAlpha = 1;
+      }
       raf = requestAnimationFrame(draw);
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [text, color, font]);
+  }, [text, color, font, anim]);
 
   const record = async () => {
     if (recording) return rec.current?.stop();
@@ -81,7 +109,7 @@ export const CinematicTextRenderer = ({ text = "", timestamps = [], audioSrc = "
       r.onstop = () => {
         a.pause(); setRecording(false);
         const ext = mime.startsWith("video/mp4") ? "mp4" : "webm";
-        const f = new File(chunks, `cinereel-kinetic.${ext}`, { type: mime.split(";")[0] }); setFile(f);
+        const f = new File(chunks, `cinereel-kinetic.${ext}`, { type: mime.split(";")[0] }); setFile(f); onRecorded?.(f);
         const el = Object.assign(document.createElement("a"), { href: URL.createObjectURL(f), download: f.name });
         el.click(); setMsg(ext === "mp4" ? "MP4 download ho gaya" : "Is browser me MP4 support nahi, WebM download hua");
       };
