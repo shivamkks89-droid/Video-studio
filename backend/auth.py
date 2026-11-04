@@ -97,6 +97,8 @@ async def get_current_user(request: Request, db) -> User:
     if not user_doc:
         raise HTTPException(status_code=401, detail="User not found")
     await _auto_downgrade(db, user_doc)
+    if user_doc.get("blocked"):
+        raise HTTPException(status_code=403, detail="Account suspend kar diya gaya hai. Support se sampark karein.")
     if user_doc.get("delete_after"):
         await db.users.update_one({"user_id": user_id}, {"$unset": {"delete_after": ""}})
     return User(**user_doc)

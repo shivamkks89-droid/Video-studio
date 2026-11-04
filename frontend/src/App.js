@@ -32,6 +32,7 @@ import SplashGate from "./components/SplashGate";
 import { BackButtonHandler } from "./components/BackButtonHandler";
 import { SharedAudioHandler } from "./components/SharedAudioHandler";
 import { FirebaseTracker } from "./components/FirebaseTracker";
+import { AppUpdatePrompt } from "./components/AppUpdatePrompt";
 
 function AppRouter() {
   const location = useLocation();
@@ -87,6 +88,7 @@ export default function App() {
             <BackButtonHandler />
             <SharedAudioHandler />
             <FirebaseTracker />
+            <AppUpdatePrompt />
             <AppRouter />
           </ErrorBoundary>
         </SplashGate>

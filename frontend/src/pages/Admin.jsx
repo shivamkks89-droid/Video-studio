@@ -5,6 +5,8 @@ import { Link } from "react-router-dom";
 import { Trash2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { AdminKeys } from "../components/admin/AdminKeys";
+import { AdminFraud } from "../components/admin/AdminFraud";
+import { AdminAppSettings } from "../components/admin/AdminAppSettings";
 
 export default function Admin() {
   const { user } = useAuth();
@@ -36,6 +38,8 @@ export default function Admin() {
       </header>
       <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-8">
         <AdminKeys />
+        <AdminFraud />
+        <AdminAppSettings />
         {stats && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <Stat title="Users" value={stats.users} testid="admin-stat-users"/>
@@ -74,8 +78,12 @@ export default function Admin() {
                         onBlur={(e)=>update(u.user_id, { credits: Number(e.target.value) })}
                         className="bg-[#0A0A0B] border border-white/10 rounded-md px-2 py-1 text-xs w-24 text-right" />
                     </td>
-                    <td className="p-3 text-right">
-                      <button onClick={() => del(u.user_id)} className="text-zinc-500 hover:text-red-400"><Trash2 className="w-4 h-4" /></button>
+                    <td className="p-3 text-right whitespace-nowrap">
+                      <button data-testid={`admin-block-${u.user_id}`} onClick={async () => {
+                        try { await api.post(`/admin/users/${u.user_id}/block`, { blocked: !u.blocked }); toast.success(u.blocked ? "Unblocked" : "Blocked"); load(); }
+                        catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+                      }} className={`text-xs mr-3 ${u.blocked ? "text-emerald-400" : "text-zinc-500 hover:text-red-400"}`}>{u.blocked ? "Unblock" : "Block"}</button>
+                      <button data-testid={`admin-delete-${u.user_id}`} onClick={() => del(u.user_id)} className="text-zinc-500 hover:text-red-400"><Trash2 className="w-4 h-4" /></button>
                     </td>
                   </tr>
                 ))}

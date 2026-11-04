@@ -3,6 +3,7 @@ import asyncio
 import logging
 import json
 import os
+import fraud
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -116,7 +117,7 @@ async def root():
 
 # ---------- AUTH: signup / login / OTP / google-session ----------
 @api.post("/auth/signup")
-async def signup(body: SignupRequest):
+async def signup(body: SignupRequest, request: Request):
     existing = await db.users.find_one({"email": body.email.lower()}, {"_id": 0})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -124,6 +125,7 @@ async def signup(body: SignupRequest):
     doc = _doc(user)
     doc["password_hash"] = hash_password(body.password)
     await db.users.insert_one(doc)
+    await fraud.on_signup(db, request, user.user_id, user.email)
     token = issue_jwt(user.user_id)
     return {"token": token, "user": _public(user).model_dump()}
 
@@ -161,7 +163,7 @@ async def otp_request(body: OTPRequest):
 
 
 @api.post("/auth/otp/verify")
-async def otp_verify(body: OTPVerify):
+async def otp_verify(body: OTPVerify, request: Request):
     rec = await db.email_otps.find_one({"email": body.email.lower()}, {"_id": 0})
     if not rec:
         raise HTTPException(status_code=400, detail="No OTP requested")
@@ -180,6 +182,7 @@ async def otp_verify(body: OTPVerify):
         user = User(user_id=gen_user_id(), email=body.email.lower(),
                     name=body.email.split("@")[0].title(), auth_provider="email")
         await db.users.insert_one(_doc(user))
+        await fraud.on_signup(db, request, user.user_id, user.email)
     else:
         user = User(**{k: v for k, v in udoc.items() if k != "password_hash"})
     await db.email_otps.delete_one({"email": body.email.lower()})
@@ -207,6 +210,7 @@ async def firebase_login(request: Request):
         user = User(user_id=gen_user_id(), email=email, name=body.get("name") or email.split("@")[0].title(),
                     auth_provider="email")
         await db.users.insert_one({**_doc(user), "firebase_uid": claims["uid"]})
+        await fraud.on_signup(db, request, user.user_id, email)
     return {"token": issue_jwt(user.user_id), "user": _public(user).model_dump(), "is_new": is_new}
 
 
@@ -1575,6 +1579,7 @@ async def render_project_video(project_id: str, request: Request):
         "error": None,
         "created_at": utc_now().isoformat(),
     })
+    asyncio.create_task(fraud.on_render(db, user.user_id))
     asyncio.create_task(_job_live(user.user_id, job_id, project_id, "queued"))
     asyncio.create_task(_run_render_job(
         job_id=job_id, user_id=user.user_id, project_id=project_id,
@@ -1592,6 +1597,56 @@ async def _job_live(user_id: str, job_id: str, project_id: str, status: str):
     import firebase_service as fb
     await fb.live_set(f"render_status/{user_id}/{job_id}",
                       {"project_id": project_id, "status": status, "updated_at": utc_now().isoformat()})
+
+
+# ---------- ADMIN: FRAUD + APP SETTINGS ----------
+@api.get("/admin/fraud")
+async def admin_fraud(request: Request, status: str = "open"):
+    await _require_admin(request)
+    rows = await db.fraud_alerts.find({"status": status}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    emails = {u["user_id"]: u for u in await db.users.find(
+        {"user_id": {"$in": list({r["user_id"] for r in rows})}}, {"_id": 0, "user_id": 1, "email": 1, "blocked": 1}).to_list(200)}
+    for r in rows:
+        r["email"] = emails.get(r["user_id"], {}).get("email", "deleted")
+        r["blocked"] = bool(emails.get(r["user_id"], {}).get("blocked"))
+    return rows
+
+
+@api.post("/admin/fraud/{alert_id}/resolve")
+async def admin_fraud_resolve(alert_id: str, request: Request):
+    await _require_admin(request)
+    await db.fraud_alerts.update_one({"alert_id": alert_id}, {"$set": {"status": "resolved"}})
+    return {"ok": True}
+
+
+@api.post("/admin/users/{user_id}/block")
+async def admin_block(user_id: str, request: Request):
+    admin = await _require_admin(request)
+    blocked = bool((await request.json()).get("blocked"))
+    if user_id == admin.user_id:
+        raise HTTPException(status_code=400, detail="Apne aap ko block nahi kar sakte")
+    await db.users.update_one({"user_id": user_id}, {"$set": {"blocked": blocked}})
+    return {"ok": True, "blocked": blocked}
+
+
+APP_SETTINGS_KEYS = ("latest_version_code", "latest_version_name", "update_message", "store_url")
+
+
+@api.get("/app/version")
+async def app_version():
+    doc = await db.admin_settings.find_one({"key": "app"}, {"_id": 0}) or {}
+    return {k: doc.get(k) for k in APP_SETTINGS_KEYS}
+
+
+@api.put("/admin/app-settings")
+async def admin_app_settings(request: Request):
+    await _require_admin(request)
+    body = await request.json()
+    upd = {k: body[k] for k in APP_SETTINGS_KEYS if k in body}
+    if "latest_version_code" in upd:
+        upd["latest_version_code"] = int(upd["latest_version_code"] or 0)
+    await db.admin_settings.update_one({"key": "app"}, {"$set": upd}, upsert=True)
+    return await app_version()
 
 
 @api.get("/playstore-kit.zip")

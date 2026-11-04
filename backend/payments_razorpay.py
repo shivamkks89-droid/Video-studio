@@ -23,6 +23,9 @@ class VerifyReq(BaseModel):
     razorpay_signature: str
 
 
+import fraud  # noqa: E402
+
+
 def build_razorpay_router(db, current_user, plans):
     router = APIRouter()
 
@@ -76,7 +79,20 @@ def build_razorpay_router(db, current_user, plans):
                 "razorpay_order_id": body.razorpay_order_id, "razorpay_payment_id": body.razorpay_payment_id,
                 "razorpay_signature": body.razorpay_signature})
         except Exception:
+            await fraud.alert(db, "payment_bad_signature", user.user_id, f"Invalid signature for order {body.razorpay_order_id}")
             raise HTTPException(status_code=400, detail="Payment verification failed")
+        reused = await db.payments.find_one({"payment_id": body.razorpay_payment_id, "order_id": {"$ne": body.razorpay_order_id}})
+        if reused:
+            await fraud.alert(db, "payment_reuse", user.user_id, f"Payment {body.razorpay_payment_id} reused for a second order")
+            raise HTTPException(status_code=400, detail="Payment already used")
+        try:
+            rp = _client().payment.fetch(body.razorpay_payment_id)
+        except Exception:
+            rp = None
+        if rp and (int(rp.get("amount", 0)) != int(pay["amount"]) or rp.get("order_id") != body.razorpay_order_id):
+            await fraud.alert(db, "payment_mismatch", user.user_id,
+                              f"Paid {rp.get('amount')} for order of {pay['amount']} (order {body.razorpay_order_id})")
+            raise HTTPException(status_code=400, detail="Payment amount mismatch")
         return await _grant(body.razorpay_order_id, body.razorpay_payment_id)
 
     @router.post("/billing/razorpay/webhook")
