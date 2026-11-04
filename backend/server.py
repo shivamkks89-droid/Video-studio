@@ -154,12 +154,9 @@ async def otp_request(body: OTPRequest):
         }},
         upsert=True,
     )
-    sent = await send_otp_email(body.email, code)
-    # In dev / if email key missing, return the code so users can still test
-    payload = {"sent": sent}
-    if not sent or os.environ.get("EXPOSE_OTP", "1") == "1":
-        payload["dev_code"] = code
-    return payload
+    if not await send_otp_email(body.email, code):
+        raise HTTPException(status_code=503, detail="Code email nahi ho paya. Thodi der baad try karo ya password se login karo.")
+    return {"sent": True}
 
 
 @api.post("/auth/otp/verify")
@@ -174,8 +171,12 @@ async def otp_verify(body: OTPVerify, request: Request):
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     if expires_at < utc_now():
         raise HTTPException(status_code=400, detail="OTP expired")
-    if rec["code"] != body.code:
-        raise HTTPException(status_code=400, detail="Invalid code")
+    if rec.get("attempts", 0) >= 5:
+        await db.email_otps.delete_one({"email": body.email.lower()})
+        raise HTTPException(status_code=400, detail="Bahut galat try ho gaye, naya code mangao")
+    if rec["code"] != body.code.strip():
+        await db.email_otps.update_one({"email": body.email.lower()}, {"$inc": {"attempts": 1}})
+        raise HTTPException(status_code=400, detail=f"Galat code ({4 - rec.get('attempts', 0)} try baaki)")
     # find or create user
     udoc = await db.users.find_one({"email": body.email.lower()}, {"_id": 0})
     if not udoc:

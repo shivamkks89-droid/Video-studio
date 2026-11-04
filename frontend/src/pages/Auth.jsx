@@ -82,10 +82,9 @@ export default function Login({ mode = "login" }) {
     e.preventDefault();
     setLoading(true);
     try {
-      const { data } = await api.post("/auth/otp/request", { email });
+      await api.post("/auth/otp/request", { email });
       setOtpRequested(true);
-      if (data.dev_code) toast.message(`Dev code: ${data.dev_code}`);
-      else toast.success("Check your inbox for the code.");
+      toast.success("Code email par bhej diya — inbox check karo (10 min valid).");
     } catch (err) {
       toast.error(err.response?.data?.detail || "Could not send code");
     } finally { setLoading(false); }

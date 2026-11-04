@@ -168,5 +168,5 @@ InVideo AI + CapCut + Canva AI.
 - POST /api/auth/password/forgot (no user enumeration, bcrypt-hashed 6-digit code, 10 min) and POST /api/auth/password/reset (5 wrong tries max, sets password_changed_at → old JWTs 401, returns fresh token). Collection: password_resets.
 - Login screen "Password bhool gaye?" → components/ForgotPassword.jsx (testids forgot-*). Auth tabs fit 390px mobile. Settings email no longer capitalized.
 - Verified: curl full flow + mobile (390px) light/dark screenshots of Login/Forgot, Dashboard, Voice Studio, Settings, Pricing.
-- SECURITY TODO: /api/auth/otp/request returns dev_code when EXPOSE_OTP is unset (default "1") → OTP login account takeover risk. Set EXPOSE_OTP=0 / change default.
+- FIXED (2026-06): /api/auth/otp/request never returns the code (503 if email fails); /auth/otp/verify locks after 5 wrong tries.
 - Email limit: Resend test mode only delivers to the account-owner address until a domain is verified.
