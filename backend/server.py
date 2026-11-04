@@ -1972,10 +1972,12 @@ async def serve_file(kind: str, filename: str):
     return Response(content=data, media_type=media_type,
                     headers={"Cache-Control": "public, max-age=86400"})
 
+_cors = os.environ.get("CORS_ORIGINS", "*").strip()
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    # "*" can't be combined with credentials in browsers/WebViews — echo the caller's origin instead.
+    **({"allow_origin_regex": ".*"} if _cors == "*" else {"allow_origins": _cors.split(",")}),
     allow_methods=["*"],
     allow_headers=["*"],
 )

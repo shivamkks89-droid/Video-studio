@@ -152,3 +152,4 @@ InVideo AI + CapCut + Canva AI.
 - 2026-06 Android Google 'No credentials available' fix: signInWithGoogle({ useCredentialManager: false }) → classic Google account picker.
 - 2026-06 Promo video 1920x1080 29.4s (8 english phone shots, zoom + slide transitions, synthesized original music) at backend/static/kit/cinereel-promo-30s.mp4, served GET /api/promo-video.mp4.
 - 2026-06 Release signing: app/build.gradle loads android/key.properties (gitignored, with *.jks/*.keystore) → signingConfigs.release; explicit debug config. Template android/key.properties.example. Not Gradle-verified in cloud (no Android SDK).
+- 2026-06 Fix Android ERR_NETWORK: CORS '*' + credentials returned 'Access-Control-Allow-Origin: *' on non-cookie requests (WebView rejects with withCredentials). Now allow_origin_regex='.*' echoes origin when CORS_ORIGINS='*'. Needs deploy.
