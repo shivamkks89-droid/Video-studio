@@ -1,0 +1,6 @@
+# Copy to key.properties (same folder) and fill real values. Never commit key.properties or the .jks.
+# storeFile: absolute path with forward slashes, or a path relative to this android/ folder
+storeFile=C:/Users/YOUR_NAME/keystores/cinereel-upload.jks
+storePassword=YOUR_STORE_PASSWORD
+keyAlias=upload
+keyPassword=YOUR_KEY_PASSWORD

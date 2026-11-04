@@ -151,3 +151,4 @@ InVideo AI + CapCut + Canva AI.
 - 2026-06 Fix: Android Google login 'not implemented' — native plugins (firebase-authentication, push-notifications) were not registered in android/capacitor.settings.gradle & app/capacitor.build.gradle; ran 'npx cap update android'. Auth toast now shows raw error code. google-services.json still lacks Android OAuth client (SHA not added).
 - 2026-06 Android Google 'No credentials available' fix: signInWithGoogle({ useCredentialManager: false }) → classic Google account picker.
 - 2026-06 Promo video 1920x1080 29.4s (8 english phone shots, zoom + slide transitions, synthesized original music) at backend/static/kit/cinereel-promo-30s.mp4, served GET /api/promo-video.mp4.
+- 2026-06 Release signing: app/build.gradle loads android/key.properties (gitignored, with *.jks/*.keystore) → signingConfigs.release; explicit debug config. Template android/key.properties.example. Not Gradle-verified in cloud (no Android SDK).
