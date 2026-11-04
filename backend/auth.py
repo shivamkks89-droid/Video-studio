@@ -33,7 +33,7 @@ def issue_jwt(user_id: str) -> str:
     payload = {
         "user_id": user_id,
         "exp": datetime.now(timezone.utc) + timedelta(days=JWT_EXP_DAYS),
-        "iat": datetime.now(timezone.utc),
+        "iat": int(datetime.now(timezone.utc).timestamp()),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
 
@@ -96,6 +96,11 @@ async def get_current_user(request: Request, db) -> User:
     user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
     if not user_doc:
         raise HTTPException(status_code=401, detail="User not found")
+    pwd_at = user_doc.get("password_changed_at")
+    if pwd_at:
+        iat = jwt.decode(bearer, JWT_SECRET, algorithms=[JWT_ALGO]).get("iat", 0)
+        if iat < pwd_at:
+            raise HTTPException(status_code=401, detail="Password badal gaya hai, dobara login karein")
     await _auto_downgrade(db, user_doc)
     if user_doc.get("blocked"):
         raise HTTPException(status_code=403, detail="Account suspend kar diya gaya hai. Support se sampark karein.")

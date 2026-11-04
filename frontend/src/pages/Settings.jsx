@@ -2,6 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { BellRing } from "lucide-react";
 import { useAuth } from "../lib/auth";
+import { ThemeToggle } from "../components/ThemeToggle";
 import { api } from "../lib/api";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "../components/ui/alert-dialog";
 
@@ -50,6 +51,7 @@ export default function Settings() {
         <Row label="Role" value={user?.role} />
         <Row label="Credits" value={user?.credits} />
       </div>
+      <div className="flex items-center gap-3"><span className="label-mono text-zinc-500">THEME</span><ThemeToggle /></div>
       <PushTest />
       <DeleteAccount />
     </div>

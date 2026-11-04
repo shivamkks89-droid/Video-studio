@@ -85,7 +85,7 @@ export default function Landing() {
       </header>
 
       {/* HERO */}
-      <section className="relative overflow-hidden grain">
+      <section className="relative overflow-hidden grain keep-dark">
         <div
           className="absolute inset-0 opacity-20 sm:opacity-30 bg-cover bg-center"
           style={{ backgroundImage: `url(${HERO_BG})` }}

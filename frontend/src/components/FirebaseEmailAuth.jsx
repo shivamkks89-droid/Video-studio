@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { fbAuth, trackEvent } from "../lib/firebase";
+import { PasswordInput } from "./PasswordInput";
 
 const inp = "w-full surface rounded-lg px-3 py-2.5 bg-transparent text-sm outline-none";
 const ERR = { "auth/invalid-credential": "Email ya password galat hai", "auth/email-already-in-use": "Ye email pehle se Firebase me hai — Login karo", "auth/weak-password": "Password kam se kam 6 characters ka ho", "auth/too-many-requests": "Bahut zyada try — thodi der baad karo" };
@@ -45,7 +46,7 @@ export const FirebaseEmailAuth = () => {
         ))}
       </div>
       <input data-testid="firebase-email-input" type="email" required placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className={inp} />
-      {mode !== "reset" && <input data-testid="firebase-password-input" type="password" required minLength={6} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className={inp} />}
+      {mode !== "reset" && <PasswordInput testid="firebase-password-input" required minLength={6} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className={inp} />}
       <button data-testid="firebase-auth-submit" disabled={busy} className="btn-volt w-full rounded-full py-3 disabled:opacity-60">
         {busy ? "Please wait…" : mode === "reset" ? "Send reset link" : mode === "signup" ? "Create & verify email" : "Log in with Firebase"}
       </button>

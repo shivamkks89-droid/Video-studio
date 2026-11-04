@@ -8,6 +8,7 @@ import BrandMark from "../components/BrandMark";
 import { isNativeApp } from "../lib/native";
 import { FirebaseEmailAuth } from "../components/FirebaseEmailAuth";
 import { fbAuth } from "../lib/firebase";
+import { PasswordInput } from "../components/PasswordInput";
 
 export default function Login({ mode = "login" }) {
   const navigate = useNavigate();
@@ -105,7 +106,7 @@ export default function Login({ mode = "login" }) {
   return (
     <div data-testid="auth-page" className="min-h-screen bg-[#0A0A0B] grain relative grid lg:grid-cols-2">
       {/* left visual */}
-      <div className="hidden lg:block relative overflow-hidden">
+      <div className="hidden lg:block relative overflow-hidden keep-dark">
         <img className="absolute inset-0 w-full h-full object-cover opacity-50"
              src="https://images.pexels.com/photos/13812458/pexels-photo-13812458.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=900&w=1200"
              alt="cinema" />
@@ -222,9 +223,14 @@ function Field({ icon: Icon, type, label, value, onChange, testid }) {
       <div className="label-mono text-zinc-500 mb-1.5">{label}</div>
       <div className="flex items-center gap-2 surface rounded-lg px-3 py-2.5">
         <Icon className="w-4 h-4 text-zinc-500" />
-        <input data-testid={testid} type={type} value={value}
-               onChange={(e) => onChange(e.target.value)}
-               className="bg-transparent outline-none w-full text-sm placeholder:text-zinc-600" required />
+        {type === "password" ? (
+          <PasswordInput testid={testid} value={value} onChange={(e) => onChange(e.target.value)} required
+                         className="bg-transparent outline-none w-full text-sm placeholder:text-zinc-600" />
+        ) : (
+          <input data-testid={testid} type={type} value={value}
+                 onChange={(e) => onChange(e.target.value)}
+                 className="bg-transparent outline-none w-full text-sm placeholder:text-zinc-600" required />
+        )}
       </div>
     </label>
   );

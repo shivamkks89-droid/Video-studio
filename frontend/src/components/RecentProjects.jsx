@@ -32,7 +32,7 @@ export const RecentProjects = () => {
             <div className="h-40 sm:h-44 bg-[#141416] grid place-items-center">
               {p.thumbnail ? <img src={assetUrl(p.thumbnail)} alt="" className="w-full h-full object-cover" /> : <Film className="w-5 h-5 text-zinc-600" />}
             </div>
-            <div className="p-2">
+            <div className="p-2 relative bg-[#141416]">
               <div className="text-xs font-medium truncate">{p.title || "Untitled"}</div>
               <div className="text-[10px] text-zinc-500">{ago(p.last_opened_at || p.updated_at)}</div>
             </div>

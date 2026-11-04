@@ -1968,6 +1968,26 @@ async def _require_admin(request: Request) -> User:
     return user
 
 
+class AdminPasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@api.post("/admin/change-password")
+async def admin_change_password(body: AdminPasswordChange, request: Request):
+    admin = await _require_admin(request)
+    doc = await db.users.find_one({"user_id": admin.user_id}, {"_id": 0, "password_hash": 1})
+    if not verify_password(body.current_password, (doc or {}).get("password_hash", "")):
+        raise HTTPException(status_code=400, detail="Purana password galat hai")
+    if len(body.new_password) < 8 or body.new_password == body.current_password:
+        raise HTTPException(status_code=400, detail="Naya password kam se kam 8 characters ka aur purane se alag hona chahiye")
+    now = int(datetime.now(timezone.utc).timestamp())
+    await db.users.update_one({"user_id": admin.user_id},
+                              {"$set": {"password_hash": hash_password(body.new_password), "password_changed_at": now}})
+    await db.user_sessions.delete_many({"user_id": admin.user_id})
+    return {"ok": True, "token": issue_jwt(admin.user_id)}
+
+
 @api.get("/admin/users")
 async def admin_users(request: Request):
     await _require_admin(request)

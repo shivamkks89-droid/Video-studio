@@ -1,3 +1,4 @@
+import { PasswordInput } from "../PasswordInput";
 import { useEffect, useState } from "react";
 import { KeyRound, Loader2, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
@@ -22,8 +23,8 @@ const KeyRow = ({ k, onDone }) => {
         <div className="text-sm font-medium">{k.label}</div>
         <div className="text-[11px] text-zinc-500 font-mono">{k.name} · {k.masked || "—"} · {SOURCE[k.source]}</div>
       </div>
-      <input data-testid={`key-input-${k.name}`} type="password" autoComplete="off" value={val} onChange={(e) => setVal(e.target.value)}
-        placeholder="Paste new key" className="md:col-span-5 bg-[#0A0A0B] border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-white/30" />
+      <PasswordInput testid={`key-input-${k.name}`} autoComplete="off" value={val} onChange={(e) => setVal(e.target.value)}
+        placeholder="Paste new key" wrapperClassName="md:col-span-5" className="w-full bg-[#0A0A0B] border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-white/30" />
       <div className="md:col-span-3 flex gap-2">
         <button data-testid={`key-save-${k.name}`} disabled={busy || !val.trim()} onClick={() => save(val)}
           className="btn-volt rounded-full px-4 py-2 text-xs flex items-center gap-1 disabled:opacity-50">

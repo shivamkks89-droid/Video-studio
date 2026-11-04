@@ -4,6 +4,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "@/index.css";
 import App from "@/App";
 import { initFirebase } from "@/lib/firebase";
+import { initTheme } from "@/lib/theme";
+import "@/theme-light.css";
+
+initTheme();
 
 initFirebase().catch(() => {});
 
