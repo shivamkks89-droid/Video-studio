@@ -61,7 +61,7 @@ function Row({ label, value }) {
   return (
     <div className="flex items-center justify-between border-b border-white/5 pb-3">
       <div className="label-mono text-zinc-500">{label}</div>
-      <div className="text-sm capitalize">{value}</div>
+      <div className={`text-sm ${label === "Email" ? "" : "capitalize"}`}>{value}</div>
     </div>
   );
 }

@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, Requ
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from starlette.middleware.cors import CORSMiddleware
 
 ROOT_DIR = Path(__file__).parent
@@ -188,6 +188,53 @@ async def otp_verify(body: OTPVerify, request: Request):
     await db.email_otps.delete_one({"email": body.email.lower()})
     token = issue_jwt(user.user_id)
     return {"token": token, "user": _public(user).model_dump()}
+
+
+class PasswordForgot(BaseModel):
+    email: EmailStr
+
+
+class PasswordReset(BaseModel):
+    email: EmailStr
+    code: str
+    new_password: str
+
+
+@api.post("/auth/password/forgot")
+async def password_forgot(body: PasswordForgot):
+    email = body.email.lower()
+    if await db.users.find_one({"email": email}, {"_id": 1}):
+        code = gen_otp()
+        await db.password_resets.update_one({"email": email}, {"$set": {
+            "email": email, "code_hash": hash_password(code), "attempts": 0,
+            "expires_at": (utc_now() + timedelta(minutes=10)).isoformat()}}, upsert=True)
+        await send_otp_email(email, code)
+    return {"ok": True}
+
+
+@api.post("/auth/password/reset")
+async def password_reset(body: PasswordReset):
+    email = body.email.lower()
+    rec = await db.password_resets.find_one({"email": email}, {"_id": 0})
+    if not rec or rec["expires_at"] < utc_now().isoformat():
+        raise HTTPException(status_code=400, detail="Code expire ho gaya, naya code mangao")
+    if rec.get("attempts", 0) >= 5:
+        await db.password_resets.delete_one({"email": email})
+        raise HTTPException(status_code=400, detail="Bahut galat try ho gaye, naya code mangao")
+    if not verify_password(body.code.strip(), rec["code_hash"]):
+        await db.password_resets.update_one({"email": email}, {"$inc": {"attempts": 1}})
+        raise HTTPException(status_code=400, detail=f"Galat code ({4 - rec.get('attempts', 0)} try baaki)")
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Naya password kam se kam 8 characters ka ho")
+    doc = await db.users.find_one({"email": email}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=400, detail="Account nahi mila")
+    await db.users.update_one({"email": email}, {"$set": {
+        "password_hash": hash_password(body.new_password),
+        "password_changed_at": int(datetime.now(timezone.utc).timestamp())}})
+    await db.password_resets.delete_one({"email": email})
+    user = User(**{k: v for k, v in doc.items() if k != "password_hash"})
+    return {"token": issue_jwt(user.user_id), "user": _public(user).model_dump()}
 
 
 @api.post("/auth/firebase")

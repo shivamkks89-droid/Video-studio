@@ -163,3 +163,10 @@ InVideo AI + CapCut + Canva AI.
 - POST /api/admin/change-password (current + new ≥8 chars). Sets password_changed_at; JWTs issued before that are rejected (other devices logout). Returns fresh token.
 - Admin panel → "/ ADMIN PASSWORD" card (components/admin/AdminPassword.jsx), with show/hide eyes.
 - Tested: curl (wrong/short/success/old-token 401/new-token 200/revert), light-mode screenshots of Dashboard + Admin.
+
+## 2026-06 — Forgot password + mobile theme check
+- POST /api/auth/password/forgot (no user enumeration, bcrypt-hashed 6-digit code, 10 min) and POST /api/auth/password/reset (5 wrong tries max, sets password_changed_at → old JWTs 401, returns fresh token). Collection: password_resets.
+- Login screen "Password bhool gaye?" → components/ForgotPassword.jsx (testids forgot-*). Auth tabs fit 390px mobile. Settings email no longer capitalized.
+- Verified: curl full flow + mobile (390px) light/dark screenshots of Login/Forgot, Dashboard, Voice Studio, Settings, Pricing.
+- SECURITY TODO: /api/auth/otp/request returns dev_code when EXPOSE_OTP is unset (default "1") → OTP login account takeover risk. Set EXPOSE_OTP=0 / change default.
+- Email limit: Resend test mode only delivers to the account-owner address until a domain is verified.

@@ -9,6 +9,7 @@ import { isNativeApp } from "../lib/native";
 import { FirebaseEmailAuth } from "../components/FirebaseEmailAuth";
 import { fbAuth } from "../lib/firebase";
 import { PasswordInput } from "../components/PasswordInput";
+import { ForgotPassword } from "../components/ForgotPassword";
 
 export default function Login({ mode = "login" }) {
   const navigate = useNavigate();
@@ -148,16 +149,16 @@ export default function Login({ mode = "login" }) {
             </Link>
           </div>
           <h1 className="text-3xl font-semibold tracking-tight" data-testid="auth-heading">
-            {tab === "signup" ? "Create your account" : tab === "otp" ? "Sign in with code" : "Welcome back"}
+            {tab === "signup" ? "Create your account" : tab === "otp" ? "Sign in with code" : tab === "forgot" ? "Reset password" : "Welcome back"}
           </h1>
           <p className="text-sm text-zinc-400 mt-2">
-            {tab === "signup" ? "100 free credits to start." : tab === "otp" ? "We'll email you a 6-digit code." : "Continue with email or Google."}
+            {tab === "signup" ? "100 free credits to start." : tab === "otp" ? "We'll email you a 6-digit code." : tab === "forgot" ? "Email par 6-digit code aayega (10 min valid)." : "Continue with email or Google."}
           </p>
 
           <div className="mt-6 grid grid-cols-4 gap-1 surface !p-1 rounded-full !border-0 bg-[#1C1C1F]">
             {["login", "signup", "otp", "firebase"].map((t) => (
               <button key={t} data-testid={`tab-${t}`} onClick={() => setTab(t)}
-                className={`text-xs label-mono py-2 rounded-full transition ${tab === t ? "bg-[#E2FF3D] text-black" : "text-zinc-400 hover:text-white"}`}>
+                className={`text-[10px] sm:text-xs !tracking-normal sm:!tracking-[0.2em] label-mono py-2 rounded-full transition ${tab === t ? "bg-[#E2FF3D] text-black" : "text-zinc-400 hover:text-white"}`}>
                 {t === "login" ? "LOGIN" : t === "signup" ? "SIGNUP" : t === "otp" ? "EMAIL OTP" : "FIREBASE"}
               </button>
             ))}
@@ -170,7 +171,14 @@ export default function Login({ mode = "login" }) {
               <button data-testid="login-submit" disabled={loading} className="btn-volt w-full rounded-full py-3 flex items-center justify-center gap-2 disabled:opacity-60">
                 Log in <ArrowRight className="w-4 h-4" />
               </button>
+              <button type="button" data-testid="forgot-password-link" onClick={() => setTab("forgot")}
+                className="block mx-auto text-xs text-zinc-400 hover:text-white underline">Password bhool gaye?</button>
             </form>
+          )}
+
+          {tab === "forgot" && (
+            <ForgotPassword email={email} setEmail={setEmail} onBack={() => setTab("login")}
+              onDone={(data) => { login(data.token, data.user); navigate("/dashboard"); }} />
           )}
 
           {tab === "signup" && (
