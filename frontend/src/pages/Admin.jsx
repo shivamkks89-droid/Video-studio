@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import { AdminKeys } from "../components/admin/AdminKeys";
 import { AdminFraud } from "../components/admin/AdminFraud";
 import { AdminAppSettings } from "../components/admin/AdminAppSettings";
+import { AdminFraudSettings } from "../components/admin/AdminFraudSettings";
+import { AdminRevenue } from "../components/admin/AdminRevenue";
 
 export default function Admin() {
   const { user } = useAuth();
@@ -38,7 +40,11 @@ export default function Admin() {
       </header>
       <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-8">
         <AdminKeys />
-        <AdminFraud />
+        <AdminRevenue />
+        <div>
+          <AdminFraudSettings />
+          <AdminFraud />
+        </div>
         <AdminAppSettings />
         {stats && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

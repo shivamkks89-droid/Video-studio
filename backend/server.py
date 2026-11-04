@@ -1629,6 +1629,42 @@ async def admin_block(user_id: str, request: Request):
     return {"ok": True, "blocked": blocked}
 
 
+@api.get("/admin/fraud-settings")
+async def admin_fraud_settings(request: Request):
+    await _require_admin(request)
+    return await fraud.settings(db)
+
+
+@api.put("/admin/fraud-settings")
+async def admin_fraud_settings_save(request: Request):
+    await _require_admin(request)
+    b = await request.json()
+    upd = {"alert_email": str(b.get("alert_email", "")).strip()[:120], "auto_block": bool(b.get("auto_block")),
+           "auto_block_accounts": max(2, int(b.get("auto_block_accounts") or 5))}
+    await db.admin_settings.update_one({"key": "fraud"}, {"$set": upd}, upsert=True)
+    return await fraud.settings(db)
+
+
+@api.get("/admin/revenue")
+async def admin_revenue(request: Request):
+    await _require_admin(request)
+    months, seen = {}, set()
+    async for p in db.payments.find({"status": "paid"}, {"_id": 0}).sort("paid_at", 1):
+        m = (p.get("paid_at") or p.get("created_at") or "")[:7]
+        row = months.setdefault(m, {"month": m, "revenue_inr": 0, "payments": 0, "new": 0, "renewals": 0})
+        row["revenue_inr"] += p.get("amount", 0) / 100
+        row["payments"] += 1
+        row["renewals" if p["user_id"] in seen else "new"] += 1
+        seen.add(p["user_id"])
+    now = utc_now().isoformat()
+    active = {}
+    async for u in db.users.find({"plan": {"$nin": ["free", None]}, "role": {"$ne": "admin"},
+                                  "plan_expires_at": {"$gt": now}}, {"_id": 0, "plan": 1}):
+        active[u["plan"]] = active.get(u["plan"], 0) + 1
+    rows = sorted(months.values(), key=lambda r: r["month"], reverse=True)
+    return {"months": rows, "active_plans": active, "total_inr": sum(r["revenue_inr"] for r in rows)}
+
+
 APP_SETTINGS_KEYS = ("latest_version_code", "latest_version_name", "update_message", "store_url")
 
 
@@ -1657,6 +1693,11 @@ async def playstore_kit_zip():
 @api.get("/promo-video.mp4")
 async def playstore_promo_video():
     return await _kit_file("cinereel-promo-30s.mp4", "video/mp4")
+
+
+@api.get("/promo-video-hinglish.mp4")
+async def playstore_promo_video_hi():
+    return await _kit_file("cinereel-promo-hinglish-30s.mp4", "video/mp4")
 
 
 async def _kit_file(name: str, mime: str):

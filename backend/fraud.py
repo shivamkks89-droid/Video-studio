@@ -1,4 +1,8 @@
+import logging
+import os
 import uuid
+
+import httpx
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Request
@@ -30,6 +34,32 @@ async def alert(db, kind: str, user_id: str, detail: str, dedupe_hours: int = 6)
         return
     await db.fraud_alerts.insert_one({"alert_id": f"fa_{uuid.uuid4().hex[:12]}", "kind": kind, "user_id": user_id,
                                       "detail": detail, "status": "open", "created_at": _now().isoformat()})
+    cfg = await settings(db)
+    u = await db.users.find_one({"user_id": user_id}, {"_id": 0, "email": 1}) or {}
+    await _email(cfg["alert_email"], f"Fraud alert: {kind}", f"<p><b>{kind}</b> — {u.get('email', user_id)}</p><p>{detail}</p>"
+                 "<p>Admin panel → Fraud alerts me Block / Resolve karein.</p>")
+
+
+DEFAULTS = {"alert_email": "Shivamkks986@gmail.com", "auto_block": False, "auto_block_accounts": 5}
+
+
+async def settings(db) -> dict:
+    doc = await db.admin_settings.find_one({"key": "fraud"}, {"_id": 0}) or {}
+    return {k: doc.get(k, v) for k, v in DEFAULTS.items()}
+
+
+async def _email(to: str, subject: str, html: str):
+    key = os.environ.get("RESEND_API_KEY")
+    if not (key and to):
+        return
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.post("https://api.resend.com/emails", headers={"Authorization": f"Bearer {key}"},
+                             json={"from": "CineReel AI <onboarding@resend.dev>", "to": [to], "subject": subject, "html": html})
+            if r.status_code >= 300:
+                logging.warning(f"fraud email failed {r.status_code}: {r.text[:120]}")
+    except Exception as e:
+        logging.warning(f"fraud email error: {e}")
 
 
 async def on_signup(db, request: Request, user_id: str, email: str):
@@ -42,8 +72,13 @@ async def on_signup(db, request: Request, user_id: str, email: str):
         if not val:
             continue
         n = await db.users.count_documents({field: val})
-        if n > MAX_ACCOUNTS_PER_SOURCE:
-            await alert(db, f"multi_account_{label.lower()}", user_id, f"{n} accounts from the same {label} ({val})")
+        cfg = await settings(db)
+        auto = field == "signup_device" and cfg["auto_block"] and n >= int(cfg["auto_block_accounts"])
+        if n > MAX_ACCOUNTS_PER_SOURCE or auto:
+            if auto:
+                await db.users.update_one({"user_id": user_id}, {"$set": {"blocked": True}})
+            await alert(db, f"multi_account_{label.lower()}", user_id,
+                        f"{n} accounts from the same {label} ({val})" + (" — AUTO-BLOCKED" if auto else ""))
 
 
 async def on_render(db, user_id: str):
