@@ -1596,11 +1596,20 @@ async def _job_live(user_id: str, job_id: str, project_id: str, status: str):
 
 @api.get("/playstore-kit.zip")
 async def playstore_kit_zip():
+    return await _kit_file("cinereel-playstore-kit.zip", "application/zip")
+
+
+@api.get("/promo-video.mp4")
+async def playstore_promo_video():
+    return await _kit_file("cinereel-promo-30s.mp4", "video/mp4")
+
+
+async def _kit_file(name: str, mime: str):
     from fastapi.responses import FileResponse
-    p = Path(__file__).parent / "static" / "kit" / "cinereel-playstore-kit.zip"
+    p = Path(__file__).parent / "static" / "kit" / name
     if not p.exists():
         raise HTTPException(status_code=404, detail="Kit abhi bana nahi")
-    return FileResponse(p, media_type="application/zip", filename="cinereel-playstore-kit.zip")
+    return FileResponse(p, media_type=mime, filename=name)
 
 
 @api.get("/firebase/config")
