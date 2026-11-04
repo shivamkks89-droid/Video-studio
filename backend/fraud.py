@@ -51,15 +51,17 @@ async def settings(db) -> dict:
 async def _email(to: str, subject: str, html: str):
     key = os.environ.get("RESEND_API_KEY")
     if not (key and to):
-        return
+        return False
     try:
         async with httpx.AsyncClient(timeout=10) as c:
             r = await c.post("https://api.resend.com/emails", headers={"Authorization": f"Bearer {key}"},
                              json={"from": "CineReel AI <onboarding@resend.dev>", "to": [to], "subject": subject, "html": html})
             if r.status_code >= 300:
                 logging.warning(f"fraud email failed {r.status_code}: {r.text[:120]}")
+            return r.status_code < 300
     except Exception as e:
         logging.warning(f"fraud email error: {e}")
+        return False
 
 
 async def on_signup(db, request: Request, user_id: str, email: str):

@@ -1629,6 +1629,78 @@ async def admin_block(user_id: str, request: Request):
     return {"ok": True, "blocked": blocked}
 
 
+@api.post("/cron/fraud-summary")
+async def cron_fraud_summary(request: Request):
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    import hmac
+    auth = request.headers.get("authorization", "")
+    secret = os.environ.get("WEBHOOK_CRON_SECRET", "")
+    if not (secret and auth.startswith("Bearer ") and hmac.compare_digest(auth[7:], secret)):
+        raise HTTPException(status_code=401, detail="unauthorized")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid body")
+    run_id = request.headers.get("x-webhook-id") or (body or {}).get("run_id") or utc_now().isoformat()
+    if await db.cron_runs.find_one({"run_id": run_id}):
+        return {"ok": True, "duplicate": True}
+    await db.cron_runs.insert_one({"run_id": run_id, "name": "fraud-summary", "at": utc_now().isoformat()})
+    asyncio.create_task(_send_fraud_summary())
+    return {"ok": True}
+
+
+async def _send_fraud_summary():
+    since = (utc_now() - timedelta(days=1)).isoformat()
+    alerts = await db.fraud_alerts.find({"created_at": {"$gte": since}}, {"_id": 0}).to_list(500)
+    kinds = {}
+    for a in alerts:
+        kinds[a["kind"]] = kinds.get(a["kind"], 0) + 1
+    auto_blocked = sum(1 for a in alerts if "AUTO-BLOCKED" in a.get("detail", ""))
+    signups = await db.users.count_documents({"created_at": {"$gte": since}})
+    blocked_total = await db.users.count_documents({"blocked": True})
+    rows = "".join(f"<li>{k}: <b>{v}</b></li>" for k, v in kinds.items()) or "<li>Koi alert nahi 🎉</li>"
+    cfg = await fraud.settings(db)
+    await fraud._email(cfg["alert_email"], f"CineReel daily summary: {len(alerts)} fraud alerts, {signups} signups",
+                       f"<h3>Pichhle 24 ghante</h3><p>New signups: <b>{signups}</b></p><p>Fraud alerts: <b>{len(alerts)}</b></p>"
+                       f"<ul>{rows}</ul><p>Auto-blocked: <b>{auto_blocked}</b> · Total blocked users: <b>{blocked_total}</b></p>"
+                       "<p>Admin panel → Fraud alerts me details dekhein.</p>")
+
+
+@api.get("/admin/churn")
+async def admin_churn(request: Request):
+    await _require_admin(request)
+    now = utc_now()
+    last = {}
+    async for p in db.payments.find({"status": "paid"}, {"_id": 0}).sort("paid_at", 1):
+        last[p["user_id"]] = p
+    out = []
+    for uid, p in last.items():
+        paid = datetime.fromisoformat(p["paid_at"])
+        expired = paid + timedelta(days=30)
+        if now - timedelta(days=30) <= expired <= now:
+            u = await db.users.find_one({"user_id": uid}, {"_id": 0, "email": 1, "name": 1, "winback_at": 1})
+            if u:
+                out.append({"user_id": uid, "email": u["email"], "name": u.get("name"), "plan": p["plan"],
+                            "amount_inr": p.get("amount", 0) / 100, "expired_at": expired.isoformat(),
+                            "days_ago": (now - expired).days, "winback_at": u.get("winback_at")})
+    return sorted(out, key=lambda r: r["days_ago"])
+
+
+@api.post("/admin/churn/{user_id}/winback")
+async def admin_winback(user_id: str, request: Request):
+    await _require_admin(request)
+    u = await db.users.find_one({"user_id": user_id}, {"_id": 0, "email": 1, "name": 1})
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+    ok = await fraud._email(u["email"], "Aapka CineReel plan khatam ho gaya — wapas aao 🎬",
+                            f"<p>Hi {u.get('name') or ''},</p><p>Aapka CineReel AI plan khatam ho gaya hai. Aapke saare projects safe hain.</p>"
+                            "<p>Plan renew karke phir se unlimited reels aur ads banao: <a href='https://cinemaai.online/pricing'>Renew now</a></p>")
+    if not ok:
+        raise HTTPException(status_code=502, detail="Email nahi gaya (Resend test mode — domain verify karein)")
+    await db.users.update_one({"user_id": user_id}, {"$set": {"winback_at": utc_now().isoformat()}})
+    return {"ok": True}
+
+
 @api.get("/admin/fraud-settings")
 async def admin_fraud_settings(request: Request):
     await _require_admin(request)
