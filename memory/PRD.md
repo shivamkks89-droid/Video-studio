@@ -170,3 +170,4 @@ InVideo AI + CapCut + Canva AI.
 - Verified: curl full flow + mobile (390px) light/dark screenshots of Login/Forgot, Dashboard, Voice Studio, Settings, Pricing.
 - FIXED (2026-06): /api/auth/otp/request never returns the code (503 if email fails); /auth/otp/verify locks after 5 wrong tries.
 - Email limit: Resend test mode only delivers to the account-owner address until a domain is verified.
+- 2026-06: Android minSdkVersion 23 → 24 (variables.gradle).
