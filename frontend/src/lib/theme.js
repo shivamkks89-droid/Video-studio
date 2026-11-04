@@ -1,3 +1,5 @@
+import { Capacitor, registerPlugin } from "@capacitor/core";
+
 const KEY = "cinereel_theme";
 const mq = window.matchMedia("(prefers-color-scheme: light)");
 
@@ -9,6 +11,7 @@ const apply = () => {
   document.documentElement.classList.toggle("light", light);
   document.documentElement.classList.toggle("dark", !light);
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", light ? "#F6F6F3" : "#0A0A0B");
+  if (Capacitor.isNativePlatform()) registerPlugin("ShareTarget").setSystemBars({ light }).catch(() => {});
 };
 
 export const setThemePref = (p) => { localStorage.setItem(KEY, p); apply(); };

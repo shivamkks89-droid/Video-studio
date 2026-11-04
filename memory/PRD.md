@@ -172,3 +172,4 @@ InVideo AI + CapCut + Canva AI.
 - Email limit: Resend test mode only delivers to the account-owner address until a domain is verified.
 - 2026-06: Android minSdkVersion 23 → 24 (variables.gradle).
 - 2026-06: targetSdk/compileSdk 35 → 36, AGP 8.7.2 → 8.10.1 (Gradle 8.11.1 unchanged).
+- 2026-06: System bars follow app theme on Android (ShareTargetPlugin.setSystemBars called from theme.js). Edge-to-edge insets already handled in MainActivity.

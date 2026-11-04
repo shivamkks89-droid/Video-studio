@@ -21,6 +21,23 @@ public class ShareTargetPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void setSystemBars(PluginCall call) {
+        boolean light = Boolean.TRUE.equals(call.getBoolean("light", false));
+        getActivity().runOnUiThread(() -> {
+            android.view.Window w = getActivity().getWindow();
+            int bg = android.graphics.Color.parseColor(light ? "#F6F6F3" : "#0A0A0B");
+            w.getDecorView().setBackgroundColor(bg);
+            w.setStatusBarColor(bg);
+            w.setNavigationBarColor(bg);
+            androidx.core.view.WindowInsetsControllerCompat c =
+                androidx.core.view.WindowCompat.getInsetsController(w, w.getDecorView());
+            c.setAppearanceLightStatusBars(light);
+            c.setAppearanceLightNavigationBars(light);
+            call.resolve();
+        });
+    }
+
+    @PluginMethod
     public void getPending(PluginCall call) {
         JSObject r = pending != null ? pending : new JSObject();
         pending = null;
