@@ -1,3 +1,4 @@
+import random
 import time
 import re
 """CineReel AI — FastAPI backend."""
@@ -465,6 +466,24 @@ async def ai_script(body: ScriptRequest, request: Request):
             "\n\nUSE THE FOLLOWING REAL BRAND INFO. Use the ACTUAL brand name everywhere. "
             "Do NOT invent any other brand name.\n" + "\n".join(ctx_lines)
         )
+    prev, pdoc = [], None
+    if body.project_id:
+        pdoc = await db.projects.find_one({"project_id": body.project_id, "user_id": user.user_id},
+                                          {"_id": 0, "script": 1, "script_history": 1})
+        if pdoc:
+            prev = [h.get("script") or {} for h in (pdoc.get("script_history") or [])]
+            if pdoc.get("script") and not prev:
+                prev = [pdoc["script"]]
+    angles = ["relatable problem → solution", "surprising stat / fact", "funny everyday situation",
+              "before vs after", "customer testimonial voice", "myth vs truth", "quick 3-step how-to",
+              "emotional story", "challenge / dare", "behind-the-scenes"]
+    used = [h.get("angle") for h in (pdoc.get("script_history") or [])] if body.project_id and pdoc else []
+    angle = random.choice([a for a in angles if a not in used[-9:]] or angles)
+    avoid = [f"- {(h.get('title') or '')[:60]} | hook: {(h.get('hook') or '')[:120]}" for h in prev[-10:] if h]
+    payload["extra_notes"] = (payload.get("extra_notes") or "") + (
+        f"\n\nCREATIVE ANGLE FOR THIS VERSION: {angle}. Write a FRESH script with a new hook, new scenes and new wording."
+        + ("\nIt MUST be clearly different from these earlier scripts (do not reuse their hook, lines or structure):\n"
+           + "\n".join(avoid) if avoid else ""))
     try:
         script = await generate_script(payload)
     except AIServiceError as e:
@@ -489,7 +508,9 @@ async def ai_script(body: ScriptRequest, request: Request):
             }
         await db.projects.update_one(
             {"project_id": body.project_id, "user_id": user.user_id},
-            {"$set": update, "$inc": {"script_version": 1}},
+            {"$set": update, "$inc": {"script_version": 1},
+             "$push": {"script_history": {"$each": [{"script": script, "angle": angle,
+                                                      "created_at": utc_now().isoformat()}], "$slice": -10}}},
         )
     return {"script": script, "credits_left": user.credits,
             "source_assets": scraped if scraped.get("ok") else None,
@@ -582,6 +603,19 @@ VARIANT_ORDER = {
 
 class VariantsReq(ScriptRequest):
     axis: Optional[str] = "gender"  # gender | age | region
+
+
+@api.post("/projects/{project_id}/script/restore/{idx}")
+async def restore_script(project_id: str, idx: int, request: Request):
+    user = await _current(request)
+    p = await db.projects.find_one({"project_id": project_id, "user_id": user.user_id}, {"_id": 0, "script_history": 1})
+    hist = (p or {}).get("script_history") or []
+    if not 0 <= idx < len(hist):
+        raise HTTPException(status_code=404, detail="Script nahi mila")
+    script = hist[idx]["script"]
+    await db.projects.update_one({"project_id": project_id}, {"$set": {
+        "script": script, "voice_stale": True, "updated_at": utc_now().isoformat()}})
+    return {"script": script}
 
 
 @api.post("/ai/script/variants")

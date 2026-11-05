@@ -1,3 +1,4 @@
+import { ScriptHistory } from "../components/ScriptHistory";
 import { ordinal } from "./RenderQueue";
 import { useBackClose, setExitGuard } from "../lib/backStack";
 import { useEffect, useRef, useState } from "react";
@@ -1005,6 +1006,7 @@ export default function ProjectDetail() {
                 </div>
               </div>
             )}
+            <ScriptHistory project={project} onRestored={(script) => setProject({ ...project, script, voice_stale: true })} />
             {project.script?.hook && (
               <div className="mt-4 space-y-2 text-sm" data-testid="pd-script-out">
                 <div className="flex justify-end gap-2"><ShareWhatsAppButton script={project.script} testId="pd-share-whatsapp" /><CopyScriptButton script={project.script} testId="pd-copy-script" /></div>
