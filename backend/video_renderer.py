@@ -225,8 +225,10 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
         img_url = sc.get("image_url") or ""
         b = await _fetch(img_url) if img_url else None
         if b:
+            phone = sc.get("phone_screen_url")
             items.append({"type": "image", "bytes": b, "text": (sc.get("on_screen_text") or "").strip(),
-                          "duration": dur, "caption": sc.get("voiceover") or ""})
+                          "duration": dur, "caption": sc.get("voiceover") or "",
+                          "source": sc.get("source"), "phone": await _fetch(phone) if phone else None})
         elif items:
             items[-1]["duration"] += dur  # keep timeline: missing visual extends previous scene
         else:
@@ -261,6 +263,16 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
             print(f"[render] talking-avatar fetch failed: {e}")
             talking_bytes = None
 
+    total_s = sum(float(it["duration"]) for it in items)
+    run_t = int(120 + total_s * 6)
+
+    def _run(cmd, capture_output=True, timeout=None):
+        try:
+            return subprocess.run(cmd, capture_output=True, timeout=max(timeout or 0, run_t))
+        except subprocess.TimeoutExpired:
+            print(f"[render] ffmpeg timeout after {run_t}s: {' '.join(map(str, cmd[:6]))}")
+            return subprocess.CompletedProcess(cmd, 124, b"", b"timeout")
+
     def _work() -> Optional[str]:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -291,7 +303,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                         + _text_vf(i, total)
                     )
                     cmd = [
-                        FFMPEG_BIN, "-y", "-threads", "1", "-i", str(src),
+                        FFMPEG_BIN, "-y", "-threads", "0", "-i", str(src),
                         "-t", f"{total:.2f}", "-r", str(fps),
                         "-vf", vf,
                         "-c:v", "libx264", "-preset", "ultrafast",
@@ -299,23 +311,33 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                         "-an", "-threads", "1",
                         str(out),
                     ]
-                    r = subprocess.run(cmd, capture_output=True, timeout=120)
+                    r = _run(cmd, capture_output=True, timeout=120)
                     if r.returncode != 0:
-                        print("[render] clip normalise fail:", r.stderr.decode()[-400:])
+                        print("[render] clip normalise fail:", r.stderr.decode(errors="ignore")[-1500:])
                         return None
                     scene_videos.append(out)
                     continue
 
                 # --- Still image → ken-burns ---
                 p = tmp_path / f"scn_{i:03d}.png"
-                p.write_bytes(item["bytes"])
+                img_bytes = item["bytes"]
+                try:
+                    from phone_mockup import overlay_phone, screenshot_scene
+                    if item.get("source") == "real":
+                        img_bytes = screenshot_scene(img_bytes, w, h)
+                    elif item.get("phone"):
+                        img_bytes = overlay_phone(img_bytes, item["phone"], w, h)
+                except Exception as e:
+                    print(f"[render] phone mockup skipped scene {i}: {e}")
+                p.write_bytes(img_bytes)
                 # Support long-form scenes for 40-60s ads — cap at 12s per still to
                 # keep viewer attention (movement helps). Below 1.5s looks jumpy.
                 dur = max(1.5, min(90.0, item["duration"]))
                 base_durs.append(dur)
                 dur = dur + _extra(i)
                 dur_frames = max(45, int(dur * fps))
-                cw, ch = int(w * 1.3), int(h * 1.3)
+                cw, ch = int(w * 1.1) // 2 * 2, int(h * 1.1) // 2 * 2
+                pan_y = f"(ih-oh)*n/{dur_frames}" if i % 2 == 0 else f"(ih-oh)*(1-n/{dur_frames})"
                 vf = (
                     f"[0:v]split=2[fg][bg];"
                     f"[bg]scale={w}:{h}:force_original_aspect_ratio=increase,"
@@ -323,21 +345,22 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                     f"eq=brightness=-0.15[bgb];"
                     f"[fg]scale={w}:{h}:force_original_aspect_ratio=decrease[fgs];"
                     f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2,"
-                    f"scale={cw}:{ch},"
-                    f"zoompan=z='min(zoom+0.0010,1.10)':d={dur_frames}:s={w}x{h}:fps={fps},"
+                    f"scale={cw}:{ch},loop=loop={dur_frames - 1}:size=1:start=0,setpts=N/{fps}/TB,"
+                    f"crop={w}:{h}:x='(iw-ow)/2':y='{pan_y}',"
                     f"format=yuv420p" + _text_vf(i, dur)
                 )
+                # Single input frame: blur/scale run once, zoompan emits all frames (CPU-light on small pods).
                 cmd = [
-                    FFMPEG_BIN, "-y", "-threads", "1", "-loop", "1", "-i", str(p),
-                    "-t", f"{dur:.2f}", "-r", str(fps),
+                    FFMPEG_BIN, "-y", "-threads", "0", "-i", str(p),
+                    "-frames:v", str(dur_frames), "-r", str(fps),
                     "-filter_complex", vf,
                     "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
-                    "-crf", "20", "-pix_fmt", "yuv420p", "-threads", "1",
+                    "-crf", "20", "-pix_fmt", "yuv420p", "-threads", "0",
                     str(out),
                 ]
-                r = subprocess.run(cmd, capture_output=True, timeout=120)
+                r = _run(cmd, capture_output=True, timeout=120)
                 if r.returncode != 0:
-                    print("[render] scene fail:", r.stderr.decode()[-400:])
+                    print("[render] scene fail:", r.stderr.decode(errors="ignore")[-1500:])
                     return None
                 scene_videos.append(out)
 
@@ -345,7 +368,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
             combined = tmp_path / "combined.mp4"
             joined = False
             if use_xfade:
-                cmd = [FFMPEG_BIN, "-y", "-threads", "2"]
+                cmd = [FFMPEG_BIN, "-y", "-threads", "0"]
                 for v in scene_videos:
                     cmd += ["-i", str(v)]
                 parts, prev, offset = [], "0:v", 0.0
@@ -356,19 +379,19 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                     prev = f"x{k}"
                 cmd += ["-filter_complex", ";".join(parts), "-map", f"[{prev}]",
                         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20", "-pix_fmt", "yuv420p", str(combined)]
-                r = subprocess.run(cmd, capture_output=True, timeout=240)
+                r = _run(cmd, capture_output=True, timeout=240)
                 joined = r.returncode == 0
                 if not joined:
-                    print("[render] xfade fail, falling back to concat:", r.stderr.decode()[-300:])
+                    print("[render] xfade fail, falling back to concat:", r.stderr.decode(errors="ignore")[-1500:])
             concat_list = tmp_path / "concat.txt"
             concat_list.write_text("\n".join(f"file '{v}'" for v in scene_videos))
-            r = subprocess.run(
-                [FFMPEG_BIN, "-y", "-threads", "1", "-f", "concat", "-safe", "0", "-i", str(concat_list),
+            r = _run(
+                [FFMPEG_BIN, "-y", "-threads", "0", "-f", "concat", "-safe", "0", "-i", str(concat_list),
                  "-c", "copy", str(combined)],
                 capture_output=True, timeout=120,
             ) if not joined else None
             if r is not None and r.returncode != 0:
-                print("[render] concat fail:", r.stderr.decode()[-300:])
+                print("[render] concat fail:", r.stderr.decode(errors="ignore")[-1500:])
                 return None
 
             # 3b) Talking-avatar composition (fullscreen replace OR PiP overlay).
@@ -383,15 +406,15 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                         f"scale={w}:{h}:force_original_aspect_ratio=increase,"
                         f"crop={w}:{h},setsar=1,fps={fps},format=yuv420p"
                     )
-                    cmd = [FFMPEG_BIN, "-y", "-threads", "1",
+                    cmd = [FFMPEG_BIN, "-y", "-threads", "0",
                            "-i", str(tsrc), "-vf", vf,
                            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
                            "-pix_fmt", "yuv420p", "-an", str(tout)]
-                    r = subprocess.run(cmd, capture_output=True, timeout=180)
+                    r = _run(cmd, capture_output=True, timeout=180)
                     if r.returncode == 0:
                         combined = tout
                     else:
-                        print("[render] talking fullscreen fail:", r.stderr.decode()[-400:])
+                        print("[render] talking fullscreen fail:", r.stderr.decode(errors="ignore")[-1500:])
                 elif talking_avatar_mode in ("pip_br", "pip_bl", "pip_tr", "pip_tl"):
                     # PiP: 30% of canvas width, safe-zone margin, lime border.
                     pip_w = max(200, int(w * 0.30))
@@ -412,17 +435,17 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                         f"pad={pip_w + 8}:{pip_h + 8}:4:4:color=0xE2FF3D@0.9[pip];"
                         f"[0:v][pip]overlay={x_expr}:{y_expr}:shortest=1,format=yuv420p"
                     )
-                    cmd = [FFMPEG_BIN, "-y", "-threads", "1",
+                    cmd = [FFMPEG_BIN, "-y", "-threads", "0",
                            "-i", str(combined),
                            "-stream_loop", "-1", "-i", str(tsrc),
                            "-filter_complex", fc,
                            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
                            "-pix_fmt", "yuv420p", "-an", str(tout)]
-                    r = subprocess.run(cmd, capture_output=True, timeout=240)
+                    r = _run(cmd, capture_output=True, timeout=240)
                     if r.returncode == 0:
                         combined = tout
                     else:
-                        print("[render] talking pip fail:", r.stderr.decode()[-400:])
+                        print("[render] talking pip fail:", r.stderr.decode(errors="ignore")[-1500:])
 
             # 4) add audio if available. Auto-tighten voiceover pacing when it
             # exceeds the total video length (else `-shortest` would cut off the
@@ -456,7 +479,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                 # Measure both durations quickly.
                 def _probe(path: Path) -> float:
                     try:
-                        pr = subprocess.run(
+                        pr = _run(
                             [FFMPEG_BIN, "-i", str(path)],
                             capture_output=True, timeout=15,
                         )
@@ -471,49 +494,33 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
 
                 video_dur = _probe(combined)
                 voice_dur = _probe(audio_path)
-                atempo = 1.0
-                if video_dur > 0 and voice_dur > video_dur * 1.03:
-                    atempo = min(1.35, voice_dur / video_dur)
-                    print(f"[render] auto-tightening voice: {voice_dur:.2f}s > "
-                          f"video {video_dur:.2f}s, atempo={atempo:.2f}x")
-
-                audio_filter_args = []
-                if atempo > 1.001:
-                    audio_filter_args = ["-filter:a", f"atempo={atempo:.3f}"]
-
+                # Final length == voice length. Original audio is never sped up; if the
+                # voice runs longer, the last frame is held (tpad) so no dialogue is cut.
+                vf = []
                 if subs_path and subs_path.exists():
-                    # Burn karaoke captions AND mux audio in one pass.
-                    # Note: ffmpeg's `subtitles` filter needs escaped colons in Windows-style
-                    # paths but our tmp paths are POSIX so a raw path works.
-                    subs_filter = f"subtitles={subs_path}:fontsdir={FONT_DIR}"
-                    cmd = [
-                        FFMPEG_BIN, "-y", "-threads", "1",
-                        "-i", str(combined), "-i", str(audio_path),
-                        "-vf", subs_filter,
-                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20", "-pix_fmt", "yuv420p",
-                        "-c:a", "aac", "-b:a", "128k",
-                        *audio_filter_args,
-                        "-shortest", str(final),
-                    ]
-                else:
-                    cmd = [
-                        FFMPEG_BIN, "-y", "-threads", "1", "-i", str(combined), "-i", str(audio_path),
-                        "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
-                        *audio_filter_args,
-                        "-shortest", str(final),
-                    ]
+                    vf.append(f"subtitles={subs_path}:fontsdir={FONT_DIR}")
+                pad = voice_dur - video_dur if video_dur > 0 and voice_dur > 0 else 0
+                if pad > 0.05:
+                    vf.append(f"tpad=stop_mode=clone:stop_duration={pad + 0.2:.2f}")
+                print(f"[render] voice {voice_dur:.2f}s, video {video_dur:.2f}s, pad {max(pad, 0):.2f}s")
+                vargs = (["-vf", ",".join(vf), "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
+                          "-pix_fmt", "yuv420p"] if vf else ["-c:v", "copy"])
+                dur_args = ["-t", f"{voice_dur:.3f}"] if voice_dur > 0 else ["-shortest"]
+                cmd = [FFMPEG_BIN, "-y", "-threads", "0", "-i", str(combined), "-i", str(audio_path),
+                       "-map", "0:v:0", "-map", "1:a:0", *vargs,
+                       "-c:a", "aac", "-b:a", "192k", *dur_args, "-movflags", "+faststart", str(final)]
             else:
                 if subs_path and subs_path.exists():
-                    cmd = [FFMPEG_BIN, "-y", "-threads", "1", "-i", str(combined),
+                    cmd = [FFMPEG_BIN, "-y", "-threads", "0", "-i", str(combined),
                            "-vf", f"subtitles={subs_path}:fontsdir={FONT_DIR}",
                            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
                            "-pix_fmt", "yuv420p", str(final)]
                 else:
-                    cmd = [FFMPEG_BIN, "-y", "-threads", "1", "-i", str(combined),
+                    cmd = [FFMPEG_BIN, "-y", "-threads", "0", "-i", str(combined),
                            "-c", "copy", str(final)]
-            r = subprocess.run(cmd, capture_output=True, timeout=120)
+            r = _run(cmd, capture_output=True, timeout=120)
             if r.returncode != 0:
-                print("[render] mux fail:", r.stderr.decode()[-300:])
+                print("[render] mux fail:", r.stderr.decode(errors="ignore")[-1500:])
                 return None
 
             return f"/api/files/videos/{job_id}.mp4"

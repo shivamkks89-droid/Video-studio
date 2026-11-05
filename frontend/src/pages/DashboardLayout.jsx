@@ -122,7 +122,7 @@ export default function DashboardLayout() {
 
       {/* MAIN */}
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="sticky top-0 z-30 glass safe-top h-14 px-3 sm:px-4 lg:px-8 flex items-center justify-between border-b border-white/5 gap-2">
+        <header data-testid="app-header" className="sticky top-0 z-30 glass safe-top box-content h-14 px-3 sm:px-4 lg:px-8 flex items-center justify-between border-b border-white/10 shadow-[0_1px_0_rgba(226,255,61,0.08)] gap-2">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
             <button data-testid="mobile-menu-btn" onClick={() => setMobileOpen(true)}
               aria-label="Open menu"

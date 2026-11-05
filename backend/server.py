@@ -1,3 +1,4 @@
+import re
 """CineReel AI — FastAPI backend."""
 import asyncio
 import logging
@@ -1307,6 +1308,7 @@ async def ai_storyboard(body: StoryboardRequest, request: Request):
         user = await _charge_credits(user, 3, "storyboard_scene")
         img: Optional[str] = None
         source_tag = None
+        phone_shot = None
         plan = per_scene_plan[i] if i < len(per_scene_plan) else "ai"
 
         # 1. Logo slot → real app icon
@@ -1331,6 +1333,10 @@ async def ai_storyboard(body: StoryboardRequest, request: Request):
             camera = sc.get("camera", "")
             lighting = sc.get("lighting", "")
             motion = sc.get("motion", "")
+            if real_assets and re.search(r"\b(phone|mobile|smartphone|screen|app)\b", prompt, re.I):
+                phone_shot = real_assets[i % len(real_assets)]
+                prompt += (". The person holds the phone naturally with its screen facing away from the camera "
+                           "(screen not visible); leave the lower-right area of the frame uncluttered")
             full = (
                 f"{prompt}. Camera: {camera}. Lighting: {lighting}. Motion: {motion}. "
                 f"Do not include any text, logo, wordmark or app-store badge in this image."
@@ -1353,7 +1359,8 @@ async def ai_storyboard(body: StoryboardRequest, request: Request):
             await _refund(user, 3, "storyboard_scene")
         else:
             succeeded += 1
-        out.append({**sc, "image_url": img, "source": source_tag})
+        extra = {"phone_screen_url": phone_shot} if source_tag == "ai" and phone_shot else {}
+        out.append({**sc, "image_url": img, "source": source_tag, **extra})
 
     if body.project_id and succeeded > 0:
         thumb = next((s["image_url"] for s in out if s["image_url"]), None)
@@ -1846,10 +1853,27 @@ async def firebase_token(request: Request):
 @api.get("/render/jobs/{job_id}")
 async def render_job_status(job_id: str, request: Request):
     user = await _current(request)
-    job = await db.render_jobs.find_one({"job_id": job_id, "user_id": user.user_id}, {"_id": 0})
+    job = await db.render_jobs.find_one({"job_id": job_id, "user_id": user.user_id}, {"_id": 0, "error_detail": 0})
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    if job["status"] in ("pending", "rendering") and job["created_at"] < (utc_now() - timedelta(minutes=30)).isoformat():
+        await _render_failed(job_id, user.user_id, job["project_id"],
+                             "Render beech me ruk gaya (server restart). Credits wapas kar diye gaye — dobara try karo.")
+        job = await db.render_jobs.find_one({"job_id": job_id}, {"_id": 0, "error_detail": 0})
     return job
+
+
+async def _render_failed(job_id: str, user_id: str, project_id: str, msg: str, detail: str = ""):
+    job = await db.render_jobs.find_one_and_update(
+        {"job_id": job_id, "status": {"$ne": "failed"}},
+        {"$set": {"status": "failed", "error": msg, "error_detail": detail}})
+    if job and not job.get("refunded"):
+        udoc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+        if udoc:
+            from models import User as _U
+            await _refund(_U(**{k: v for k, v in udoc.items() if k != "password_hash"}), 10, "video_render", project_id)
+        await db.render_jobs.update_one({"job_id": job_id}, {"$set": {"refunded": True}})
+    await _job_live(user_id, job_id, project_id, "failed")
 
 
 async def _run_render_job(job_id: str, user_id: str, project_id: str,
@@ -1868,17 +1892,8 @@ async def _run_render_job(job_id: str, user_id: str, project_id: str,
                                        talking_avatar_url=talking_avatar_url,
                                        talking_avatar_mode=talking_avatar_mode)
         if not video_url:
-            # Refund and mark failed
-            udoc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
-            if udoc:
-                from models import User as _U
-                await _refund(_U(**{k: v for k, v in udoc.items() if k != "password_hash"}),
-                              10, "video_render", project_id)
-            await db.render_jobs.update_one(
-                {"job_id": job_id},
-                {"$set": {"status": "failed", "error": "Render failed — check storyboard images."}}
-            )
-            await _job_live(user_id, job_id, project_id, "failed")
+            await _render_failed(job_id, user_id, project_id,
+                                 "Video ban nahi paya — storyboard images ya voiceover check karke dobara try karo. Credits wapas kar diye gaye.")
             return
         await db.projects.update_one(
             {"project_id": project_id, "user_id": user_id},
@@ -1893,11 +1908,8 @@ async def _run_render_job(job_id: str, user_id: str, project_id: str,
         await _job_live(user_id, job_id, project_id, "complete")
     except Exception as e:
         logging.exception("[render job] failed")
-        await _job_live(user_id, job_id, project_id, "failed")
-        await db.render_jobs.update_one(
-            {"job_id": job_id},
-            {"$set": {"status": "failed", "error": str(e)[:200]}}
-        )
+        await _render_failed(job_id, user_id, project_id,
+                             "Render me technical dikkat aayi. Credits wapas kar diye gaye — dobara try karo.", str(e)[:2000])
 
 
 class QuickProjectFromScript(BaseModel):

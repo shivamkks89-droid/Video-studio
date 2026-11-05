@@ -25,7 +25,7 @@ public class ShareTargetPlugin extends Plugin {
         boolean light = Boolean.TRUE.equals(call.getBoolean("light", false));
         getActivity().runOnUiThread(() -> {
             android.view.Window w = getActivity().getWindow();
-            int bg = android.graphics.Color.parseColor(light ? "#F6F6F3" : "#0A0A0B");
+            int bg = android.graphics.Color.parseColor(light ? "#E4E4DF" : "#000000");
             w.getDecorView().setBackgroundColor(bg);
             w.setStatusBarColor(bg);
             w.setNavigationBarColor(bg);

@@ -52,6 +52,7 @@ export default function ProjectDetail() {
   const [busyVoice, setBusyVoice] = useState(false);
   const [busyScenes, setBusyScenes] = useState(false);
   const [busyRender, setBusyRender] = useState(false);
+  const [renderError, setRenderError] = useState(null);
   useEffect(() => { setExitGuard("render", busyRender); return () => setExitGuard("render", false); }, [busyRender]);
   const [brandOpen, setBrandOpen] = useState(false);
   const [brandName, setBrandName] = useState("");
@@ -534,6 +535,7 @@ export default function ProjectDetail() {
       if (!proceed) return;
     }
     setBusyRender(true);
+    setRenderError(null);
     // Ask for notification permission the first time a render starts.
     ensureNotifyPermission();
     try {
@@ -550,7 +552,7 @@ export default function ProjectDetail() {
         setBusyRender(false);
         return;
       }
-      toast.message("Rendering started — this takes 30-90 seconds…");
+      toast.message("Rendering shuru — lambi video me kuch minute lag sakte hain. Aap app band bhi kar sakte ho, ready hone par notification aayega.");
       // Poll job status — tolerate transient network failures (Cloudflare 524s during
       // ffmpeg CPU bursts are common). Fall back to reading the project directly
       // when the job endpoint stalls.
@@ -575,7 +577,9 @@ export default function ProjectDetail() {
             return;
           }
           if (job.status === "failed") {
-            toast.error(job.error || "Render failed");
+            setRenderError(job.error || "Render failed — credits wapas kar diye gaye.");
+            toast.error(job.error || "Render failed — credits wapas kar diye gaye.", {
+              duration: 12000, action: { label: "Retry", onClick: () => renderVideo() } });
             notify({
               title: "Render failed",
               body: job.error || "Something went wrong. Open the project to retry.",
@@ -611,7 +615,7 @@ export default function ProjectDetail() {
             return;
           }
         }
-        if (Date.now() - start > 8 * 60 * 1000) {
+        if (Date.now() - start > 25 * 60 * 1000) {
           toast.message("Render is still working — refresh this page shortly.");
           setBusyRender(false);
           return;
@@ -726,7 +730,7 @@ export default function ProjectDetail() {
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div>
           <div className="label-mono text-zinc-500 mb-1">/ {project.video_type?.replace("_", " ").toUpperCase()}</div>
-          <h1 className="text-3xl font-semibold tracking-tight">{project.title}</h1>
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight break-words">{project.title}</h1>
           <div className="label-mono text-zinc-500 mt-2">{project.aspect_ratio} · {project.resolution} · {project.fps}fps · {project.duration_sec}s · {project.language}</div>
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -746,12 +750,28 @@ export default function ProjectDetail() {
         {/* PREVIEW */}
         <div className="lg:col-span-5">
           <div className={`surface rounded-2xl overflow-hidden relative mx-auto w-full ${project.aspect_ratio === "16:9" ? "ar-169" : project.aspect_ratio === "1:1" ? "ar-11 max-w-[340px] lg:max-w-none" : "ar-916 max-w-[260px] sm:max-w-[300px] lg:max-w-none"}`}>
-            {project.thumbnail ? (
+            {videoSrc && !busyRender ? (
+              <video data-testid="final-video-player" key={videoSrc} src={videoSrc} poster={project.thumbnail || undefined}
+                controls playsInline preload="metadata" className="absolute inset-0 w-full h-full object-contain bg-black" />
+            ) : project.thumbnail ? (
               <img src={project.thumbnail} alt="" className="absolute inset-0 w-full h-full object-cover" />
             ) : (
               <div className="absolute inset-0 grid place-items-center text-zinc-700"><Film className="w-12 h-12" /></div>
             )}
-            <div className="absolute top-3 right-3 glass rounded-full px-3 py-1 label-mono text-[10px]">{project.aspect_ratio}</div>
+            {busyRender && (
+              <div data-testid="render-overlay" className="absolute inset-0 keep-dark bg-black/70 grid place-items-center text-center p-4">
+                <div><Loader2 className="w-8 h-8 animate-spin text-[#E2FF3D] mx-auto" />
+                  <div className="mt-2 text-sm text-white">Video ban raha hai…</div>
+                  <div className="text-[11px] text-zinc-400">Lambi video me kuch minute lagte hain</div></div>
+              </div>
+            )}
+            {renderError && !busyRender && (
+              <div data-testid="render-error-overlay" className="absolute inset-x-0 bottom-0 keep-dark bg-black/85 p-3 text-center">
+                <div className="text-xs text-red-300">{renderError}</div>
+                <button data-testid="render-retry" onClick={() => renderVideo()} className="mt-2 btn-volt rounded-full px-4 py-1.5 text-xs">Dobara try karo</button>
+              </div>
+            )}
+            {!(videoSrc && !busyRender) && <div className="absolute top-3 right-3 glass rounded-full px-3 py-1 label-mono text-[10px]">{project.aspect_ratio}</div>}
           </div>
           {project.audio_url && (
             <div className="mt-3">
@@ -1359,7 +1379,7 @@ export default function ProjectDetail() {
           <div className="surface rounded-xl p-4 sm:p-5">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2"><ImageIcon className="w-4 h-4 text-[#E2FF3D]" /><div className="font-medium">Cinematic Storyboard</div></div>
-              <span className="label-mono text-zinc-500">3 CR / scene</span>
+              <span className="label-mono text-zinc-500 whitespace-nowrap">3 CR / scene</span>
             </div>
             <button data-testid="gen-scenes" onClick={() => genScenes(false)} disabled={busyScenes || !project.script}
               className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
@@ -1398,7 +1418,7 @@ export default function ProjectDetail() {
                         </div>
                       )}
                       {!s.video_clip_url && s.source === "ai" && (
-                        <div className="absolute top-1.5 right-1.5 glass label-mono text-[9px] px-1.5 py-0.5 rounded">AI</div>
+                        <div className="absolute top-1.5 right-1.5 glass label-mono text-[9px] px-1.5 py-0.5 rounded">{s.phone_screen_url ? "AI + REAL SCREEN" : "AI"}</div>
                       )}
                     </div>
                     <div className="p-2 text-[11px] text-zinc-400 leading-snug line-clamp-2">{s.voiceover || s.visual_prompt}</div>

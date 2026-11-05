@@ -173,3 +173,11 @@ InVideo AI + CapCut + Canva AI.
 - 2026-06: Android minSdkVersion 23 → 24 (variables.gradle).
 - 2026-06: targetSdk/compileSdk 35 → 36, AGP 8.7.2 → 8.10.1 (Gradle 8.11.1 unchanged).
 - 2026-06: System bars follow app theme on Android (ShareTargetPlugin.setSystemBars called from theme.js). Edge-to-edge insets already handled in MainActivity.
+
+## 2026-11 — Render failure + sync + phone screen + mobile header
+- ROOT CAUSE (prod, deployer RCA): ffmpeg subprocess TimeoutExpired (120s) on a 44.6s still scene under 250m CPU (tier_0). Fix: timeouts scale with video length (120 + 6×total s), cheaper still-scene motion (single-frame + loop + crop pan instead of per-frame zoompan, ~40% less CPU), -threads 0. Timeout no longer raises; logged server-side.
+- Failed renders: _render_failed() → friendly Hinglish error, refund 10 CR exactly once, error_detail kept server-only; stale pending jobs >30 min auto-failed+refunded. Frontend: Retry action + overlay, in-app final video player, rendering overlay, 25-min poll window.
+- Sync: final MP4 length = voice length (-t voice_dur); no more atempo speed-up of original voice; if voice longer, last frame held (tpad). Verified 33.03s video vs 33.04s voice.
+- Phone accuracy: phone_mockup.py composites REAL screenshots in a phone frame (real scenes) and overlays a real-screen phone on AI scenes whose prompt mentions phone/app (prompt asks AI to keep its phone screen hidden). Storyboard sets scene.phone_screen_url. No extra AI calls.
+- Android: status/nav bar colour distinct from header (#000 dark / #E4E4DF light), header box-content + stronger border.
+- Limitation: tier_0 CPU is slow; long (60s) renders may take several minutes. Upgrade tier in Deployment → Resources for faster renders.

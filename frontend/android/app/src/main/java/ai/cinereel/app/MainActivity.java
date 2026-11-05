@@ -20,7 +20,7 @@ import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
-    private static final int APP_BG = Color.parseColor("#0A0A0B");
+    private static final int APP_BG = Color.parseColor("#000000");
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
