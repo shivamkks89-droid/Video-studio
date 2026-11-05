@@ -182,3 +182,4 @@ InVideo AI + CapCut + Canva AI.
 - Android: status/nav bar colour distinct from header (#000 dark / #E4E4DF light), header box-content + stronger border.
 - Limitation: tier_0 CPU is slow; long (60s) renders may take several minutes. Upgrade tier in Deployment → Resources for faster renders.
 - 2026-11: Status bar icon contrast fix — removed Capacitor StatusBar DARK config + splash immersive (they reset icons to white); MainActivity.applyBars() single source, re-applied onResume/focus/after splash hide.
+- 2026-11: Render speed — xfade transitions now encoded in the same final pass as captions/tpad/audio (_single_pass in video_renderer.py), removing one full-length encode. Talking-avatar renders keep the old 2-pass path.

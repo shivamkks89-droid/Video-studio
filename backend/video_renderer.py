@@ -273,6 +273,35 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
             print(f"[render] ffmpeg timeout after {run_t}s: {' '.join(map(str, cmd[:6]))}")
             return subprocess.CompletedProcess(cmd, 124, b"", b"timeout")
 
+    def _single_pass(cmd, xf_graph, scene_videos):
+        """Rewrite a final cmd (input 0 = combined video) to read scene clips + xfade directly."""
+        graph, last = xf_graph
+        n = len(scene_videos)
+        rest = cmd[cmd.index("-i", cmd.index("-i") + 1):] if cmd.count("-i") > 1 else cmd[cmd.index("-i") + 2:]
+        extra_inputs, tail = [], rest
+        if cmd.count("-i") > 1:
+            extra_inputs, tail = rest[:2], rest[2:]
+        vf = None
+        if "-vf" in tail:
+            j = tail.index("-vf"); vf = tail[j + 1]; tail = tail[:j] + tail[j + 2:]
+        tail = [t for t in tail]
+        # drop existing maps / video codec copy; we re-map below
+        out, k = [], 0
+        while k < len(tail):
+            if tail[k] == "-map" or (tail[k] in ("-c:v", "-c") and tail[k + 1] == "copy"):
+                k += 2; continue
+            out.append(tail[k]); k += 1
+        fc = graph + f";[{last}]" + (vf + "," if vf else "") + "format=yuv420p[vout]"
+        new = [FFMPEG_BIN, "-y", "-threads", "0"]
+        for v in scene_videos:
+            new += ["-i", str(v)]
+        new += extra_inputs + ["-filter_complex", fc, "-map", "[vout]"]
+        if extra_inputs:
+            new += ["-map", f"{n}:a:0"]
+        if "-c:v" not in out:
+            new += ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "20", "-pix_fmt", "yuv420p"]
+        return new + out
+
     def _work() -> Optional[str]:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -367,7 +396,19 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
             # 3) join scenes — cross-fade transitions (timeline-neutral) or plain concat
             combined = tmp_path / "combined.mp4"
             joined = False
-            if use_xfade:
+            # Fast path: build the xfade graph now but encode it together with captions + audio
+            # in the final pass (one full-length encode instead of two).
+            xf_graph = None
+            if use_xfade and not talking_bytes:
+                parts, prev, offset = [], "0:v", 0.0
+                for k in range(1, len(scene_videos)):
+                    offset += base_durs[k - 1]
+                    parts.append(f"[{prev}][{k}:v]xfade=transition={XFADE_TYPES[(k - 1) % len(XFADE_TYPES)]}"
+                                 f":duration={XFADE_T}:offset={offset:.2f}[x{k}]")
+                    prev = f"x{k}"
+                xf_graph = (";".join(parts), prev)
+                joined = True
+            elif use_xfade:
                 cmd = [FFMPEG_BIN, "-y", "-threads", "0"]
                 for v in scene_videos:
                     cmd += ["-i", str(v)]
@@ -492,7 +533,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                         return 0.0
                     return 0.0
 
-                video_dur = _probe(combined)
+                video_dur = sum(base_durs) if xf_graph else _probe(combined)
                 voice_dur = _probe(audio_path)
                 # Final length == voice length. Original audio is never sped up; if the
                 # voice runs longer, the last frame is held (tpad) so no dialogue is cut.
@@ -518,6 +559,8 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                 else:
                     cmd = [FFMPEG_BIN, "-y", "-threads", "0", "-i", str(combined),
                            "-c", "copy", str(final)]
+            if xf_graph:
+                cmd = _single_pass(cmd, xf_graph, scene_videos)
             r = _run(cmd, capture_output=True, timeout=120)
             if r.returncode != 0:
                 print("[render] mux fail:", r.stderr.decode(errors="ignore")[-1500:])
