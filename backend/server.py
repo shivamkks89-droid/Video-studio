@@ -2235,6 +2235,8 @@ async def on_startup():
         doc["password_hash"] = hash_password("admin12345")
         await db.users.insert_one(doc)
         logging.info("Default admin created: admin@cinereel.ai / admin12345")
+    # Owner-approved admin accounts (promoted on every startup if the account exists)
+    await db.users.update_many({"email": {"$in": ["shivamkks545@gmail.com"]}}, {"$set": {"role": "admin"}})
     await db.projects.create_index("user_id")
     await db.user_sessions.create_index("session_token", unique=True)
     # Initialize object storage (non-fatal)
