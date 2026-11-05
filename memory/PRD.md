@@ -190,3 +190,4 @@ InVideo AI + CapCut + Canva AI.
 - 2026-11: Render Queue page (/dashboard/queue, sidebar link) via GET /api/render/queue (active + last 24h, with position). Job status returns position; ProjectDetail overlay shows 'Aapki video line me Nth number par hai'.
 - 2026-11: Script variety + history — /ai/script picks an unused creative angle and tells the LLM to avoid previous hooks; project.script_history keeps last 10 ($slice); POST /api/projects/{id}/script/restore/{idx}; ScriptHistory.jsx in ProjectDetail.
 - 2026-11: shivamkks545@gmail.com promoted to admin (server startup update_many in server.py; preview done, live after next deploy).
+- 2026-11: shivamkks545@gmail.com unlimited_credits=True (startup update_many).
