@@ -185,7 +185,8 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                        talking_avatar_url: Optional[str] = None,
                        talking_avatar_mode: str = "off",
                        motion_text: bool = True,
-                       transitions: bool = True) -> Optional[str]:
+                       transitions: bool = True,
+                       progress_cb=None) -> Optional[str]:
     """Render an MP4 from a list of scenes.
 
     Each scene can carry either a still `image_url` (rendered with ken-burns) or
@@ -266,12 +267,44 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
     total_s = sum(float(it["duration"]) for it in items)
     run_t = int(120 + total_s * 6)
 
-    def _run(cmd, capture_output=True, timeout=None):
-        try:
-            return subprocess.run(cmd, capture_output=True, timeout=max(timeout or 0, run_t))
-        except subprocess.TimeoutExpired:
-            print(f"[render] ffmpeg timeout after {run_t}s: {' '.join(map(str, cmd[:6]))}")
-            return subprocess.CompletedProcess(cmd, 124, b"", b"timeout")
+    done_s = [0.0]
+
+    def _report(extra_s=0.0):
+        # scenes ≈ 55% of work, final pass ≈ 45% (both proportional to video seconds)
+        if progress_cb and total_s > 0:
+            try:
+                progress_cb(min(99, int((done_s[0] + extra_s) / (total_s * 2) * 100 * 0.98)))
+            except Exception:
+                pass
+
+    def _run(cmd, capture_output=True, timeout=None, track=False):
+        limit = max(timeout or 0, run_t)
+        if not (track and progress_cb):
+            try:
+                return subprocess.run(cmd, capture_output=True, timeout=limit)
+            except subprocess.TimeoutExpired:
+                print(f"[render] ffmpeg timeout after {limit}s: {' '.join(map(str, cmd[:6]))}")
+                return subprocess.CompletedProcess(cmd, 124, b"", b"timeout")
+        import threading, time as _t
+        full = [cmd[0], "-progress", "pipe:1", "-nostats", *cmd[1:]]
+        pr = subprocess.Popen(full, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        err = []
+        threading.Thread(target=lambda: err.append(pr.stderr.read()), daemon=True).start()
+        start, last = _t.time(), 0.0
+        for line in iter(pr.stdout.readline, b""):
+            if line.startswith(b"out_time_us=") or line.startswith(b"out_time_ms="):
+                try:
+                    sec = int(line.split(b"=")[1]) / 1e6
+                    if sec - last >= 1:
+                        last = sec; _report(sec)
+                except ValueError:
+                    pass
+            if _t.time() - start > limit:
+                pr.kill(); print(f"[render] ffmpeg timeout after {limit}s (final)")
+                break
+        rc = pr.wait()
+        _t.sleep(0.05)
+        return subprocess.CompletedProcess(full, rc, b"", err[0] if err else b"")
 
     def _single_pass(cmd, xf_graph, scene_videos):
         """Rewrite a final cmd (input 0 = combined video) to read scene clips + xfade directly."""
@@ -345,6 +378,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                         print("[render] clip normalise fail:", r.stderr.decode(errors="ignore")[-1500:])
                         return None
                     scene_videos.append(out)
+                    done_s[0] += float(item["duration"]); _report()
                     continue
 
                 # --- Still image → ken-burns ---
@@ -392,6 +426,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                     print("[render] scene fail:", r.stderr.decode(errors="ignore")[-1500:])
                     return None
                 scene_videos.append(out)
+                done_s[0] += float(item["duration"]); _report()
 
             # 3) join scenes — cross-fade transitions (timeline-neutral) or plain concat
             combined = tmp_path / "combined.mp4"
@@ -561,7 +596,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                            "-c", "copy", str(final)]
             if xf_graph:
                 cmd = _single_pass(cmd, xf_graph, scene_videos)
-            r = _run(cmd, capture_output=True, timeout=120)
+            r = _run(cmd, capture_output=True, timeout=120, track=True)
             if r.returncode != 0:
                 print("[render] mux fail:", r.stderr.decode(errors="ignore")[-1500:])
                 return None

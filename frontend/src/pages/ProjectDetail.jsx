@@ -53,6 +53,9 @@ export default function ProjectDetail() {
   const [busyScenes, setBusyScenes] = useState(false);
   const [busyRender, setBusyRender] = useState(false);
   const [renderError, setRenderError] = useState(null);
+  const [renderProgress, setRenderProgress] = useState({ pct: 0, eta: null });
+  const playerRef = useRef(null);
+  const autoPlay = new URLSearchParams(window.location.search).get("play") === "1";
   useEffect(() => { setExitGuard("render", busyRender); return () => setExitGuard("render", false); }, [busyRender]);
   const [brandOpen, setBrandOpen] = useState(false);
   const [brandName, setBrandName] = useState("");
@@ -536,6 +539,7 @@ export default function ProjectDetail() {
     }
     setBusyRender(true);
     setRenderError(null);
+    setRenderProgress({ pct: 0, eta: null });
     // Ask for notification permission the first time a render starts.
     ensureNotifyPermission();
     try {
@@ -564,6 +568,7 @@ export default function ProjectDetail() {
           const { data: job } = await api.get(`/render/jobs/${jobId}`);
           consecutiveErrors = 0;
           pollInterval = 4000;
+          setRenderProgress({ pct: job.progress || 0, eta: job.eta_s ?? null });
           if (job.status === "complete" && job.video_url) {
             setProject({ ...project, video_url: job.video_url, status: "complete" });
             toast.success("Video rendered — play or download below");
@@ -571,7 +576,7 @@ export default function ProjectDetail() {
             notify({
               title: "Your reel is ready 🎬",
               body: `"${project.title || "Your video"}" finished rendering. Tap to preview.`,
-              url: `/dashboard/projects/${id}`,
+              url: `/dashboard/projects/${id}?play=1`,
             });
             setBusyRender(false);
             return;
@@ -751,7 +756,8 @@ export default function ProjectDetail() {
         <div className="lg:col-span-5">
           <div className={`surface rounded-2xl overflow-hidden relative mx-auto w-full ${project.aspect_ratio === "16:9" ? "ar-169" : project.aspect_ratio === "1:1" ? "ar-11 max-w-[340px] lg:max-w-none" : "ar-916 max-w-[260px] sm:max-w-[300px] lg:max-w-none"}`}>
             {videoSrc && !busyRender ? (
-              <video data-testid="final-video-player" key={videoSrc} src={videoSrc} poster={project.thumbnail || undefined}
+              <video data-testid="final-video-player" ref={playerRef} key={videoSrc} src={videoSrc} poster={project.thumbnail || undefined}
+                autoPlay={autoPlay} onLoadedData={(e) => autoPlay && e.currentTarget.play().catch(() => {})}
                 controls playsInline preload="metadata" className="absolute inset-0 w-full h-full object-contain bg-black" />
             ) : project.thumbnail ? (
               <img src={project.thumbnail} alt="" className="absolute inset-0 w-full h-full object-cover" />
@@ -760,9 +766,14 @@ export default function ProjectDetail() {
             )}
             {busyRender && (
               <div data-testid="render-overlay" className="absolute inset-0 keep-dark bg-black/70 grid place-items-center text-center p-4">
-                <div><Loader2 className="w-8 h-8 animate-spin text-[#E2FF3D] mx-auto" />
-                  <div className="mt-2 text-sm text-white">Video ban raha hai…</div>
-                  <div className="text-[11px] text-zinc-400">Lambi video me kuch minute lagte hain</div></div>
+                <div className="w-full max-w-[220px]"><Loader2 className="w-8 h-8 animate-spin text-[#E2FF3D] mx-auto" />
+                  <div className="mt-2 text-sm text-white">Video ban raha hai… <span data-testid="render-progress-pct" className="text-[#E2FF3D] font-semibold">{renderProgress.pct}%</span></div>
+                  <div className="mt-2 h-1.5 rounded-full bg-white/15 overflow-hidden">
+                    <div data-testid="render-progress-bar" className="h-full bg-[#E2FF3D] transition-[width] duration-700" style={{ width: `${renderProgress.pct}%` }} />
+                  </div>
+                  <div data-testid="render-progress-eta" className="mt-1.5 text-[11px] text-zinc-400">
+                    {renderProgress.eta != null ? `Lagbhag ${renderProgress.eta >= 60 ? `${Math.ceil(renderProgress.eta / 60)} min` : `${renderProgress.eta} sec`} baaki` : "Time ka andaza lag raha hai…"}
+                  </div></div>
               </div>
             )}
             {renderError && !busyRender && (

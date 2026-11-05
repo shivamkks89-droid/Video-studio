@@ -1,3 +1,4 @@
+import time
 import re
 """CineReel AI — FastAPI backend."""
 import asyncio
@@ -324,7 +325,7 @@ async def _push_render_done(user_id: str, project_id: str, ok: bool):
     dead = await fb.send_push((u or {}).get("push_tokens") or [],
                               "Video ready hai 🎬" if ok else "Render fail hua",
                               f"{title} — dekhne ke liye tap karo" if ok else f"{title} — dobara try karo",
-                              {"route": f"/dashboard/projects/{project_id}"})
+                              {"route": f"/dashboard/projects/{project_id}" + ("?play=1" if ok else "")})
     if dead:
         await db.users.update_one({"user_id": user_id}, {"$pull": {"push_tokens": {"$in": dead}}})
 
@@ -1885,7 +1886,21 @@ async def _run_render_job(job_id: str, user_id: str, project_id: str,
                           talking_avatar_mode: str = "off"):
     try:
         await _job_live(user_id, job_id, project_id, "rendering")
-        video_url = await render_video(scenes=scenes, audio_data_uri=audio_url,
+        loop = asyncio.get_running_loop()
+        t0 = time.time()
+        last_pct = [-5]
+
+        def _progress(pct: int):
+            if pct - last_pct[0] < 3:
+                return
+            last_pct[0] = pct
+            el = time.time() - t0
+            eta = int(el / max(pct, 1) * (100 - pct)) if pct >= 5 else None
+            asyncio.run_coroutine_threadsafe(db.render_jobs.update_one(
+                {"job_id": job_id, "status": {"$in": ["pending", "rendering"]}},
+                {"$set": {"status": "rendering", "progress": pct, "eta_s": eta}}), loop)
+
+        video_url = await render_video(progress_cb=_progress, scenes=scenes, audio_data_uri=audio_url,
                                        aspect_ratio=aspect_ratio, fps=fps,
                                        caption_words=caption_words,
                                        caption_style=caption_style,
@@ -1902,7 +1917,7 @@ async def _run_render_job(job_id: str, user_id: str, project_id: str,
         await db.users.update_one({"user_id": user_id}, {"$addToSet": {"video_projects": project_id}})
         await db.render_jobs.update_one(
             {"job_id": job_id},
-            {"$set": {"status": "complete", "video_url": video_url}}
+            {"$set": {"status": "complete", "video_url": video_url, "progress": 100, "eta_s": 0}}
         )
         asyncio.create_task(_push_render_done(user_id, project_id, True))
         await _job_live(user_id, job_id, project_id, "complete")
