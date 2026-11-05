@@ -15,8 +15,8 @@
       "backgroundColor": "#0A0A0B",
       "androidScaleType": "CENTER_CROP",
       "showSpinner": false,
-      "splashFullScreen": true,
-      "splashImmersive": true,
+      "splashFullScreen": false,
+      "splashImmersive": false,
       "launchFadeOutDuration": 300,
       "androidSplashResourceName": "splash",
       "useDialog": false
@@ -24,11 +24,9 @@
     "Haptics": {},
     "FirebaseAuthentication": {
       "skipNativeAuth": true,
-      "providers": ["google.com"]
-    },
-    "StatusBar": {
-      "style": "DARK",
-      "backgroundColor": "#0A0A0B"
+      "providers": [
+        "google.com"
+      ]
     }
   },
   "android": {

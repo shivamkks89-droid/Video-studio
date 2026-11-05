@@ -24,15 +24,7 @@ public class ShareTargetPlugin extends Plugin {
     public void setSystemBars(PluginCall call) {
         boolean light = Boolean.TRUE.equals(call.getBoolean("light", false));
         getActivity().runOnUiThread(() -> {
-            android.view.Window w = getActivity().getWindow();
-            int bg = android.graphics.Color.parseColor(light ? "#E4E4DF" : "#000000");
-            w.getDecorView().setBackgroundColor(bg);
-            w.setStatusBarColor(bg);
-            w.setNavigationBarColor(bg);
-            androidx.core.view.WindowInsetsControllerCompat c =
-                androidx.core.view.WindowCompat.getInsetsController(w, w.getDecorView());
-            c.setAppearanceLightStatusBars(light);
-            c.setAppearanceLightNavigationBars(light);
+            MainActivity.applyBars(getActivity(), light);
             call.resolve();
         });
     }

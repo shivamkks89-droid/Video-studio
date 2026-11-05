@@ -1,3 +1,4 @@
+import { getThemePref, setThemePref } from "./theme";
 // Capacitor platform helpers — degrade to no-op on the web.
 // Everything is wrapped in try/catch so a missing plugin never crashes the app.
 
@@ -17,6 +18,7 @@ export async function hideNativeSplash() {
   try {
     const { SplashScreen } = await import("@capacitor/splash-screen");
     await SplashScreen.hide({ fadeOutDuration: 300 });
+    setTimeout(() => setThemePref(getThemePref()), 350);
   } catch { /* plugin absent — ignore */ }
 }
 

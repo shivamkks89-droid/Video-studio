@@ -20,19 +20,44 @@ import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
-    private static final int APP_BG = Color.parseColor("#000000");
+
+    private static boolean lightBars = false;
+
+    /** Single source of truth for status/nav bar colour + icon contrast (follows app theme). */
+    static void applyBars(android.app.Activity a, boolean light) {
+        lightBars = light;
+        android.view.Window w = a.getWindow();
+        int bg = Color.parseColor(light ? "#E4E4DF" : "#000000");
+        w.clearFlags(android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS
+                | android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION);
+        w.addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        w.getDecorView().setBackgroundColor(bg);
+        w.setStatusBarColor(bg);
+        w.setNavigationBarColor(bg);
+        WindowInsetsControllerCompat c = WindowCompat.getInsetsController(w, w.getDecorView());
+        c.setAppearanceLightStatusBars(light);
+        c.setAppearanceLightNavigationBars(light);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        applyBars(this, lightBars);
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) applyBars(this, lightBars);
+    }
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(ShareTargetPlugin.class);
         super.onCreate(savedInstanceState);
         handleShare(getIntent());
-        // Area behind the system bars = app dark colour; bar icons stay light (gesture pill + 3-button).
-        getWindow().getDecorView().setBackgroundColor(APP_BG);
-        getWindow().setNavigationBarColor(APP_BG);
-        WindowInsetsControllerCompat bars = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
-        bars.setAppearanceLightNavigationBars(false);
-        bars.setAppearanceLightStatusBars(false);
+        int night = getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+        applyBars(this, night != android.content.res.Configuration.UI_MODE_NIGHT_YES);
 
         // Android 15+ forces edge-to-edge: keep the WebView out of the system bars and above the keyboard.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM && getBridge() != null) {

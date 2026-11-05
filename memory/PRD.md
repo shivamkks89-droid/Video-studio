@@ -181,3 +181,4 @@ InVideo AI + CapCut + Canva AI.
 - Phone accuracy: phone_mockup.py composites REAL screenshots in a phone frame (real scenes) and overlays a real-screen phone on AI scenes whose prompt mentions phone/app (prompt asks AI to keep its phone screen hidden). Storyboard sets scene.phone_screen_url. No extra AI calls.
 - Android: status/nav bar colour distinct from header (#000 dark / #E4E4DF light), header box-content + stronger border.
 - Limitation: tier_0 CPU is slow; long (60s) renders may take several minutes. Upgrade tier in Deployment → Resources for faster renders.
+- 2026-11: Status bar icon contrast fix — removed Capacitor StatusBar DARK config + splash immersive (they reset icons to white); MainActivity.applyBars() single source, re-applied onResume/focus/after splash hide.
