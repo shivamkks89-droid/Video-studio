@@ -1336,8 +1336,10 @@ async def ai_storyboard(body: StoryboardRequest, request: Request):
             motion = sc.get("motion", "")
             if real_assets and re.search(r"\b(phone|mobile|smartphone|screen|app)\b", prompt, re.I):
                 phone_shot = real_assets[i % len(real_assets)]
-                prompt += (". The person holds the phone naturally with its screen facing away from the camera "
-                           "(screen not visible); leave the lower-right area of the frame uncluttered")
+                prompt = re.sub(r"\b(holding|holds|looking at|scrolling|using|staring at|checking)\b[^,.;]*\b(phone|mobile|smartphone|screen)\b",
+                                "reacting expressively", prompt, flags=re.I)
+                prompt += (". IMPORTANT: NO phone, NO smartphone, NO screen and NO device anywhere in the image — "
+                           "show only the person's face, hands and emotion; keep the lower-right third of the frame empty background")
             full = (
                 f"{prompt}. Camera: {camera}. Lighting: {lighting}. Motion: {motion}. "
                 f"Do not include any text, logo, wordmark or app-store badge in this image."

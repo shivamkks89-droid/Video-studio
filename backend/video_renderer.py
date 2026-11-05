@@ -332,7 +332,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
         if extra_inputs:
             new += ["-map", f"{n}:a:0"]
         if "-c:v" not in out:
-            new += ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "20", "-pix_fmt", "yuv420p"]
+            new += ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "18", "-pix_fmt", "yuv420p"]
         return new + out
 
     def _work() -> Optional[str]:
@@ -406,9 +406,9 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                     f"[bg]scale={w}:{h}:force_original_aspect_ratio=increase,"
                     f"crop={w}:{h},boxblur=luma_radius=30:luma_power=1,"
                     f"eq=brightness=-0.15[bgb];"
-                    f"[fg]scale={w}:{h}:force_original_aspect_ratio=decrease[fgs];"
+                    f"[fg]scale={w}:{h}:force_original_aspect_ratio=decrease:flags=lanczos[fgs];"
                     f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2,"
-                    f"scale={cw}:{ch},loop=loop={dur_frames - 1}:size=1:start=0,setpts=N/{fps}/TB,"
+                    f"scale={cw}:{ch}:flags=lanczos,loop=loop={dur_frames - 1}:size=1:start=0,setpts=N/{fps}/TB,"
                     f"crop={w}:{h}:x='(iw-ow)/2':y='{pan_y}',"
                     f"format=yuv420p" + _text_vf(i, dur)
                 )
@@ -418,7 +418,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                     "-frames:v", str(dur_frames), "-r", str(fps),
                     "-filter_complex", vf,
                     "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
-                    "-crf", "20", "-pix_fmt", "yuv420p", "-threads", "0",
+                    "-crf", "16", "-pix_fmt", "yuv420p", "-threads", "0",
                     str(out),
                 ]
                 r = _run(cmd, capture_output=True, timeout=120)
@@ -579,7 +579,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                 if pad > 0.05:
                     vf.append(f"tpad=stop_mode=clone:stop_duration={pad + 0.2:.2f}")
                 print(f"[render] voice {voice_dur:.2f}s, video {video_dur:.2f}s, pad {max(pad, 0):.2f}s")
-                vargs = (["-vf", ",".join(vf), "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
+                vargs = (["-vf", ",".join(vf), "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
                           "-pix_fmt", "yuv420p"] if vf else ["-c:v", "copy"])
                 dur_args = ["-t", f"{voice_dur:.3f}"] if voice_dur > 0 else ["-shortest"]
                 cmd = [FFMPEG_BIN, "-y", "-threads", "0", "-i", str(combined), "-i", str(audio_path),

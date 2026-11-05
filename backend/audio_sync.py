@@ -112,17 +112,31 @@ def aligned_timings(scene_texts: List[str], words: list, duration: float) -> Lis
             m[a + k] = b + k
     if n < 2 or len(m) < max(3, len(sw) * 0.3):
         return []
-    cuts = []
+    # Anchor = first matched spoken word of each scene; keep only monotonic anchors,
+    # then place missing cuts proportionally (by script word position) between anchors.
+    first_pos = [owner.index(i) if i in owner else len(sw) for i in range(n)] + [len(sw)]
+    anchors = {}
+    last_t = 0.0
     for i in range(1, n):
         idx = [k for k in range(len(sw)) if owner[k] == i and k in m]
-        if idx:
-            j = m[idx[0]]
-            prev_end = float(words[j - 1]["end"]) if j > 0 else 0.0
-            c = (prev_end + float(words[j]["start"])) / 2
-        else:
-            first = owner.index(i) if i in owner else len(sw)
-            c = duration * first / max(1, len(sw))
-        cuts.append(c)
+        if not idx:
+            continue
+        j = m[idx[0]]
+        prev_end = float(words[j - 1]["end"]) if j > 0 else 0.0
+        c = (prev_end + float(words[j]["start"])) / 2
+        if c > last_t + 1.0 and c < duration - 1.0:
+            anchors[i] = c
+            last_t = c
+    known = [(0, 0.0)] + sorted(anchors.items()) + [(n, duration)]
+    cuts = []
+    for i in range(1, n):
+        if i in anchors:
+            cuts.append(anchors[i]); continue
+        lo = max(k for k in known if k[0] < i)
+        hi = min(k for k in known if k[0] > i)
+        span = max(1, first_pos[hi[0]] - first_pos[lo[0]])
+        frac = (first_pos[i] - first_pos[lo[0]]) / span
+        cuts.append(lo[1] + (hi[1] - lo[1]) * frac)
     bounds, out = [0.0], []
     for c in cuts:
         bounds.append(max(c, bounds[-1] + 1.5))
