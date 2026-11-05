@@ -185,3 +185,4 @@ InVideo AI + CapCut + Canva AI.
 - 2026-11: Render speed — xfade transitions now encoded in the same final pass as captions/tpad/audio (_single_pass in video_renderer.py), removing one full-length encode. Talking-avatar renders keep the old 2-pass path.
 - 2026-11: Render progress % + ETA (render_jobs.progress/eta_s via ffmpeg -progress; overlay bar in ProjectDetail). Push/browser ready notification opens project with ?play=1 → autoplay.
 - 2026-11: Phone scenes — AI prompt now forbids any phone/screen in AI images (real screenshot phone overlaid at render). Scene sync — aligned_timings keeps only monotonic anchors and interpolates missing cuts (no more giant/tiny scenes). Quality — scenes crf16 + lanczos scaling, final crf18 ultrafast 30fps (render time ~same).
+- 2026-11: Per-scene phone position (scene.phone_pos left/center/right, default right) — L/C/R buttons on AI+REAL SCREEN cards, saved via PUT /projects/{id}, used by phone_mockup.overlay_phone.

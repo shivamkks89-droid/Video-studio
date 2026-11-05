@@ -1431,6 +1431,21 @@ export default function ProjectDetail() {
                       {!s.video_clip_url && s.source === "ai" && (
                         <div className="absolute top-1.5 right-1.5 glass label-mono text-[9px] px-1.5 py-0.5 rounded">{s.phone_screen_url ? "AI + REAL SCREEN" : "AI"}</div>
                       )}
+                      {!s.video_clip_url && s.source === "ai" && s.phone_screen_url && (
+                        <div data-testid={`phone-pos-${i}`} className="absolute bottom-1.5 right-1.5 keep-dark flex gap-0.5 bg-black/70 rounded-full p-0.5">
+                          {[["left", "L"], ["center", "C"], ["right", "R"]].map(([v, l]) => (
+                            <button key={v} data-testid={`phone-pos-${i}-${v}`} title={`Phone ${v}`}
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                const scenes = project.scenes.map((x, k) => (k === i ? { ...x, phone_pos: v } : x));
+                                setProject({ ...project, scenes });
+                                try { await api.put(`/projects/${id}`, { scenes }); toast.success("Phone position save — agle render me lagegi"); }
+                                catch { toast.error("Save nahi hua, dobara try karo"); }
+                              }}
+                              className={`w-6 h-6 rounded-full text-[10px] font-semibold ${(s.phone_pos || "right") === v ? "bg-[#E2FF3D] text-black" : "text-white hover:bg-white/20"}`}>{l}</button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="p-2 text-[11px] text-zinc-400 leading-snug line-clamp-2">{s.voiceover || s.visual_prompt}</div>
                     <div className="px-2 pb-2 flex items-center gap-1 flex-wrap">

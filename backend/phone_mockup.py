@@ -51,14 +51,15 @@ def screenshot_scene(shot_bytes: bytes, w: int, h: int) -> bytes:
     return out.getvalue()
 
 
-def overlay_phone(scene_bytes: bytes, shot_bytes: bytes, w: int, h: int) -> bytes:
+def overlay_phone(scene_bytes: bytes, shot_bytes: bytes, w: int, h: int, pos: str = "right") -> bytes:
     """AI scene + real screenshot phone composited in the lower-right safe area."""
     scene = ImageOps.fit(Image.open(io.BytesIO(scene_bytes)).convert("RGB"), (w, h), Image.LANCZOS).convert("RGBA")
     shot = Image.open(io.BytesIO(shot_bytes))
     phone_h = int(min(h * 0.46, w * 0.42 / 0.49))
     phone = _phone(shot, phone_h)
     m = int(w * 0.06)
-    _with_shadow(scene, phone, w - phone.width - m, int(h * 0.62) - phone.height // 2)
+    x = {"left": m, "center": (w - phone.width) // 2}.get(pos, w - phone.width - m)
+    _with_shadow(scene, phone, x, int(h * 0.62) - phone.height // 2)
     out = io.BytesIO()
     scene.convert("RGB").save(out, "PNG")
     return out.getvalue()

@@ -229,7 +229,8 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
             phone = sc.get("phone_screen_url")
             items.append({"type": "image", "bytes": b, "text": (sc.get("on_screen_text") or "").strip(),
                           "duration": dur, "caption": sc.get("voiceover") or "",
-                          "source": sc.get("source"), "phone": await _fetch(phone) if phone else None})
+                          "source": sc.get("source"), "phone": await _fetch(phone) if phone else None,
+                          "phone_pos": sc.get("phone_pos") or "right"})
         elif items:
             items[-1]["duration"] += dur  # keep timeline: missing visual extends previous scene
         else:
@@ -389,7 +390,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                     if item.get("source") == "real":
                         img_bytes = screenshot_scene(img_bytes, w, h)
                     elif item.get("phone"):
-                        img_bytes = overlay_phone(img_bytes, item["phone"], w, h)
+                        img_bytes = overlay_phone(img_bytes, item["phone"], w, h, item.get("phone_pos"))
                 except Exception as e:
                     print(f"[render] phone mockup skipped scene {i}: {e}")
                 p.write_bytes(img_bytes)
