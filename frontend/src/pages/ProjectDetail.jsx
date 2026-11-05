@@ -54,6 +54,23 @@ export default function ProjectDetail() {
   const [busyRender, setBusyRender] = useState(false);
   const [renderError, setRenderError] = useState(null);
   const [renderProgress, setRenderProgress] = useState({ pct: 0, eta: null });
+  const busyRenderRef = useRef(false);
+  busyRenderRef.current = busyRender;
+  // Re-attach to a render still running on the server (app reopened / resumed from background).
+  useEffect(() => {
+    if (!project?.project_id) return undefined;
+    const check = async () => {
+      if (busyRenderRef.current || document.hidden) return;
+      try {
+        const { data } = await api.get(`/projects/${id}/render/active`);
+        if (data.job && !busyRenderRef.current) renderVideo(data.job.job_id);
+      } catch (_e) { /* offline — next resume will retry */ }
+    };
+    check();
+    document.addEventListener("visibilitychange", check);
+    return () => document.removeEventListener("visibilitychange", check);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.project_id]);
   const playerRef = useRef(null);
   const autoPlay = new URLSearchParams(window.location.search).get("play") === "1";
   useEffect(() => { setExitGuard("render", busyRender); return () => setExitGuard("render", false); }, [busyRender]);
@@ -529,9 +546,10 @@ export default function ProjectDetail() {
     finally { setBusyQa(false); }
   };
 
-  const renderVideo = async () => {
-    if (!project.scenes?.length) return toast.error("Generate the storyboard first");
-    if (!project.audio_url) {
+  const renderVideo = async (resumeJobId) => {
+    if (typeof resumeJobId !== "string") resumeJobId = null;
+    if (!resumeJobId && !project.scenes?.length) return toast.error("Generate the storyboard first");
+    if (!resumeJobId && !project.audio_url) {
       const proceed = window.confirm(
         "Voiceover not generated yet — the video will be SILENT. Click Cancel to first press 'Generate voiceover', or OK to render a silent slideshow."
       );
@@ -543,8 +561,8 @@ export default function ProjectDetail() {
     // Ask for notification permission the first time a render starts.
     ensureNotifyPermission();
     try {
-      const { data } = await api.post(`/projects/${id}/render`);
-      trackEvent("render_video", { aspect: project.aspect_ratio });
+      const { data } = resumeJobId ? { data: { job_id: resumeJobId } } : await api.post(`/projects/${id}/render`);
+      if (!resumeJobId) trackEvent("render_video", { aspect: project.aspect_ratio });
       if (data.error) { toast.error(data.error); setBusyRender(false); return; }
       const jobId = data.job_id;
       if (!jobId) {
@@ -556,7 +574,7 @@ export default function ProjectDetail() {
         setBusyRender(false);
         return;
       }
-      toast.message("Rendering shuru — lambi video me kuch minute lag sakte hain. Aap app band bhi kar sakte ho, ready hone par notification aayega.");
+      if (!resumeJobId) toast.message("Rendering shuru — lambi video me kuch minute lag sakte hain. Aap app band bhi kar sakte ho, ready hone par notification aayega.");
       // Poll job status — tolerate transient network failures (Cloudflare 524s during
       // ffmpeg CPU bursts are common). Fall back to reading the project directly
       // when the job endpoint stalls.

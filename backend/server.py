@@ -1628,6 +1628,14 @@ async def render_project_video(project_id: str, request: Request):
 
     user = await _charge_credits(user, 10, "video_render", project_id)
     job_id = "job_" + uuid.uuid4().hex[:12]
+    args = dict(
+        scenes=scenes, audio_url=p.get("audio_url"),
+        aspect_ratio=p.get("aspect_ratio", "9:16"), fps=int(p.get("fps", 30)),
+        caption_words=p.get("caption_words") if p.get("captions_enabled") else None,
+        caption_style=p.get("caption_style"),
+        talking_avatar_url=p.get("talking_avatar_url"),
+        talking_avatar_mode=p.get("talking_avatar_mode") or "off",
+    )
     await db.render_jobs.insert_one({
         "job_id": job_id,
         "user_id": user.user_id,
@@ -1635,19 +1643,13 @@ async def render_project_video(project_id: str, request: Request):
         "status": "pending",
         "video_url": None,
         "error": None,
+        "attempts": 0,
+        "args": args,
         "created_at": utc_now().isoformat(),
     })
     asyncio.create_task(fraud.on_render(db, user.user_id))
     asyncio.create_task(_job_live(user.user_id, job_id, project_id, "queued"))
-    asyncio.create_task(_run_render_job(
-        job_id=job_id, user_id=user.user_id, project_id=project_id,
-        scenes=scenes, audio_url=p.get("audio_url"),
-        aspect_ratio=p.get("aspect_ratio", "9:16"), fps=int(p.get("fps", 30)),
-        caption_words=p.get("caption_words") if p.get("captions_enabled") else None,
-        caption_style=p.get("caption_style"),
-        talking_avatar_url=p.get("talking_avatar_url"),
-        talking_avatar_mode=p.get("talking_avatar_mode") or "off",
-    ))
+    _bg(_queued_render(job_id))
     return {"job_id": job_id, "status": "pending", "credits_left": user.credits}
 
 
@@ -1853,17 +1855,60 @@ async def firebase_token(request: Request):
         raise HTTPException(status_code=503, detail="Firebase not configured")
 
 
+@api.get("/projects/{project_id}/render/active")
+async def render_active(project_id: str, request: Request):
+    user = await _current(request)
+    job = await db.render_jobs.find_one(
+        {"project_id": project_id, "user_id": user.user_id, "status": {"$in": ["pending", "rendering"]}},
+        {"_id": 0, "job_id": 1, "status": 1, "progress": 1, "eta_s": 1}, sort=[("created_at", -1)])
+    return {"job": job}
+
+
 @api.get("/render/jobs/{job_id}")
 async def render_job_status(job_id: str, request: Request):
     user = await _current(request)
-    job = await db.render_jobs.find_one({"job_id": job_id, "user_id": user.user_id}, {"_id": 0, "error_detail": 0})
+    job = await db.render_jobs.find_one({"job_id": job_id, "user_id": user.user_id}, {"_id": 0, "error_detail": 0, "args": 0})
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    if job["status"] in ("pending", "rendering") and job["created_at"] < (utc_now() - timedelta(minutes=30)).isoformat():
+    if job["status"] in ("pending", "rendering") and job["created_at"] < (utc_now() - timedelta(minutes=90)).isoformat():
         await _render_failed(job_id, user.user_id, job["project_id"],
-                             "Render beech me ruk gaya (server restart). Credits wapas kar diye gaye — dobara try karo.")
-        job = await db.render_jobs.find_one({"job_id": job_id}, {"_id": 0, "error_detail": 0})
+                             "Render bahut der se atka tha. Credits wapas kar diye gaye — dobara try karo.")
+        job = await db.render_jobs.find_one({"job_id": job_id}, {"_id": 0, "error_detail": 0, "args": 0})
     return job
+
+
+_BG_TASKS: set = set()
+RENDER_SEM = asyncio.Semaphore(1)  # one ffmpeg render at a time keeps memory/CPU stable on small pods
+
+
+def _bg(coro):
+    """Keep a strong reference so background tasks are never garbage-collected mid-run."""
+    t = asyncio.create_task(coro)
+    _BG_TASKS.add(t)
+    t.add_done_callback(_BG_TASKS.discard)
+    return t
+
+
+async def _queued_render(job_id: str):
+    async with RENDER_SEM:
+        job = await db.render_jobs.find_one_and_update(
+            {"job_id": job_id, "status": {"$in": ["pending", "rendering"]}},
+            {"$inc": {"attempts": 1}}, return_document=True, projection={"_id": 0})
+        if not job or not job.get("args"):
+            return
+        if job.get("attempts", 1) > 2:
+            await _render_failed(job_id, job["user_id"], job["project_id"],
+                                 "Render 2 baar try karke bhi poora nahi hua. Credits wapas kar diye gaye — dobara try karo.")
+            return
+        await _run_render_job(job_id=job_id, user_id=job["user_id"], project_id=job["project_id"], **job["args"])
+
+
+async def resume_render_jobs():
+    """After a server restart, continue any render that was queued or mid-way."""
+    async for j in db.render_jobs.find({"status": {"$in": ["pending", "rendering"]}, "args": {"$exists": True}},
+                                       {"_id": 0, "job_id": 1}):
+        print(f"[render] resuming {j['job_id']} after restart")
+        _bg(_queued_render(j["job_id"]))
 
 
 async def _render_failed(job_id: str, user_id: str, project_id: str, msg: str, detail: str = ""):
@@ -2114,6 +2159,7 @@ async def admin_analytics(request: Request):
 @app.on_event("startup")
 async def on_startup():
     asyncio.create_task(purge_deleted_accounts())
+    _bg(resume_render_jobs())
     from routes_keys import load_key_overrides as _load_keys
     await _load_keys(db)
     # default admin
