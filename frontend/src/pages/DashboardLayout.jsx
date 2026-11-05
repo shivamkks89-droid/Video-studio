@@ -3,7 +3,7 @@ import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useBackClose } from "../lib/backStack";
 import { PlanExpiryBanner } from "../components/PlanExpiryBanner";
 import {
-  LayoutDashboard, FolderKanban, LayoutTemplate, Palette, Library, CreditCard,
+  LayoutDashboard, FolderKanban, ListOrdered, LayoutTemplate, Palette, Library, CreditCard,
   Settings, ShieldCheck, LogOut, Plus, Film, Sparkles, Mic, Image as ImageIcon,
   Menu, X, Megaphone, Users, User, Rocket,
 } from "lucide-react";
@@ -15,6 +15,7 @@ import BrandMark from "../components/BrandMark";
 const SIDE_LINKS = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { to: "/dashboard/projects", label: "Projects", icon: FolderKanban },
+  { to: "/dashboard/queue", label: "Render Queue", icon: ListOrdered },
   { to: "/dashboard/workspaces", label: "Workspaces", icon: Users },
   { to: "/dashboard/ad-studio", label: "Ad Studio", icon: Megaphone },
   { to: "/dashboard/avatars", label: "Avatar Studio", icon: User },

@@ -1855,6 +1855,33 @@ async def firebase_token(request: Request):
         raise HTTPException(status_code=503, detail="Firebase not configured")
 
 
+async def _queue_position(job: dict) -> int:
+    """1 = rendering now, 2 = next in line, ... (global FIFO of the single render worker)."""
+    if job.get("status") == "rendering":
+        return 1
+    ahead = await db.render_jobs.count_documents(
+        {"status": {"$in": ["pending", "rendering"]}, "created_at": {"$lt": job["created_at"]}})
+    return ahead + 1
+
+
+@api.get("/render/queue")
+async def render_queue(request: Request):
+    user = await _current(request)
+    since = (utc_now() - timedelta(hours=24)).isoformat()
+    jobs = await db.render_jobs.find(
+        {"user_id": user.user_id, "$or": [{"status": {"$in": ["pending", "rendering"]}}, {"created_at": {"$gte": since}}]},
+        {"_id": 0, "job_id": 1, "project_id": 1, "status": 1, "progress": 1, "eta_s": 1,
+         "error": 1, "video_url": 1, "created_at": 1}).sort("created_at", -1).to_list(30)
+    pids = list({j["project_id"] for j in jobs})
+    titles = {p["project_id"]: p.get("title") async for p in db.projects.find(
+        {"project_id": {"$in": pids}}, {"_id": 0, "project_id": 1, "title": 1})}
+    for j in jobs:
+        j["title"] = titles.get(j["project_id"]) or "Untitled"
+        if j["status"] in ("pending", "rendering"):
+            j["position"] = await _queue_position(j)
+    return {"jobs": jobs}
+
+
 @api.get("/projects/{project_id}/render/active")
 async def render_active(project_id: str, request: Request):
     user = await _current(request)
@@ -1870,6 +1897,8 @@ async def render_job_status(job_id: str, request: Request):
     job = await db.render_jobs.find_one({"job_id": job_id, "user_id": user.user_id}, {"_id": 0, "error_detail": 0, "args": 0})
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    if job["status"] in ("pending", "rendering"):
+        job["position"] = await _queue_position(job)
     if job["status"] in ("pending", "rendering") and job["created_at"] < (utc_now() - timedelta(minutes=90)).isoformat():
         await _render_failed(job_id, user.user_id, job["project_id"],
                              "Render bahut der se atka tha. Credits wapas kar diye gaye — dobara try karo.")

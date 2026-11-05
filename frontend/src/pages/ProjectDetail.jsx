@@ -1,3 +1,4 @@
+import { ordinal } from "./RenderQueue";
 import { useBackClose, setExitGuard } from "../lib/backStack";
 import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
@@ -586,7 +587,7 @@ export default function ProjectDetail() {
           const { data: job } = await api.get(`/render/jobs/${jobId}`);
           consecutiveErrors = 0;
           pollInterval = 4000;
-          setRenderProgress({ pct: job.progress || 0, eta: job.eta_s ?? null });
+          setRenderProgress({ pct: job.progress || 0, eta: job.eta_s ?? null, position: job.position || null });
           if (job.status === "complete" && job.video_url) {
             setProject({ ...project, video_url: job.video_url, status: "complete" });
             toast.success("Video rendered — play or download below");
@@ -790,7 +791,8 @@ export default function ProjectDetail() {
                     <div data-testid="render-progress-bar" className="h-full bg-[#E2FF3D] transition-[width] duration-700" style={{ width: `${renderProgress.pct}%` }} />
                   </div>
                   <div data-testid="render-progress-eta" className="mt-1.5 text-[11px] text-zinc-400">
-                    {renderProgress.eta != null ? `Lagbhag ${renderProgress.eta >= 60 ? `${Math.ceil(renderProgress.eta / 60)} min` : `${renderProgress.eta} sec`} baaki` : "Time ka andaza lag raha hai…"}
+                    {renderProgress.position > 1 ? `Aapki video line me ${ordinal(renderProgress.position)} number par hai`
+                      : renderProgress.eta != null ? `Lagbhag ${renderProgress.eta >= 60 ? `${Math.ceil(renderProgress.eta / 60)} min` : `${renderProgress.eta} sec`} baaki` : "Time ka andaza lag raha hai…"}
                   </div></div>
               </div>
             )}

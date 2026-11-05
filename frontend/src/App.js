@@ -17,6 +17,7 @@ import Templates from "./pages/Templates";
 import BrandKit from "./pages/BrandKit";
 import Assets from "./pages/Assets";
 import Credits from "./pages/Credits";
+import RenderQueue from "./pages/RenderQueue";
 import Pricing from "./pages/Pricing";
 import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
@@ -65,6 +66,7 @@ function AppRouter() {
         <Route path="brand-kit" element={<BrandKit />} />
         <Route path="assets" element={<Assets />} />
         <Route path="credits" element={<Credits />} />
+        <Route path="queue" element={<RenderQueue />} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route
