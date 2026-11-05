@@ -326,25 +326,27 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                 k += 2; continue
             out.append(tail[k]); k += 1
         fc = graph + f";[{last}]" + (vf + "," if vf else "") + "format=yuv420p[vout]"
-        new = [FFMPEG_BIN, "-y", "-threads", "0"]
+        new = [FFMPEG_BIN, "-y", "-threads", "2"]
         for v in scene_videos:
             new += ["-i", str(v)]
         new += extra_inputs + ["-filter_complex", fc, "-map", "[vout]"]
         if extra_inputs:
             new += ["-map", f"{n}:a:0"]
         if "-c:v" not in out:
-            new += ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "18", "-pix_fmt", "yuv420p"]
+            new += ["-c:v", "libx264", "-x264-params", "rc-lookahead=8:threads=2:sliced-threads=1", "-preset", "ultrafast", "-crf", "18", "-pix_fmt", "yuv420p"]
         return new + out
 
     def _work() -> Optional[str]:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            use_xfade = transitions and len(items) > 1
+            # Transitions are baked into each scene clip (2-input xfade from the previous clip's last
+            # frame), so scenes join with a stream-copy concat — low memory, timeline-neutral.
+            in_clip_trans = transitions and len(items) > 1
+            use_xfade = False
             base_durs = []
 
             def _extra(i):
-                # Scenes overlap by XFADE_T so the cross-fade never shifts later scenes off the narration.
-                return XFADE_T if use_xfade and i < len(items) - 1 else 0.0
+                return 0.0
 
             def _text_vf(i, dur):
                 return ""  # headlines are burned later via ASS (bundled ffmpeg has no drawtext)
@@ -366,10 +368,10 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                         + _text_vf(i, total)
                     )
                     cmd = [
-                        FFMPEG_BIN, "-y", "-threads", "0", "-i", str(src),
+                        FFMPEG_BIN, "-y", "-threads", "2", "-i", str(src),
                         "-t", f"{total:.2f}", "-r", str(fps),
                         "-vf", vf,
-                        "-c:v", "libx264", "-preset", "ultrafast",
+                        "-c:v", "libx264", "-x264-params", "rc-lookahead=8:threads=2:sliced-threads=1", "-preset", "ultrafast",
                         "-crf", "20", "-pix_fmt", "yuv420p",
                         "-an", "-threads", "1",
                         str(out),
@@ -413,13 +415,23 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                     f"crop={w}:{h}:x='(iw-ow)/2':y='{pan_y}',"
                     f"format=yuv420p" + _text_vf(i, dur)
                 )
+                trans_in = []
+                if in_clip_trans:
+                    # Dip-through-black between scenes: single-input fades, ~zero extra memory/CPU.
+                    fades = []
+                    if i > 0:
+                        fades.append(f"fade=t=in:st=0:d={XFADE_T / 2:.2f}")
+                    if i < len(items) - 1:
+                        fades.append(f"fade=t=out:st={max(0.0, dur - XFADE_T / 2):.2f}:d={XFADE_T / 2:.2f}")
+                    if fades:
+                        vf += "," + ",".join(fades)
                 # Single input frame: blur/scale run once, zoompan emits all frames (CPU-light on small pods).
                 cmd = [
-                    FFMPEG_BIN, "-y", "-threads", "0", "-i", str(p),
+                    FFMPEG_BIN, "-y", "-threads", "2", "-i", str(p), *trans_in,
                     "-frames:v", str(dur_frames), "-r", str(fps),
                     "-filter_complex", vf,
-                    "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
-                    "-crf", "16", "-pix_fmt", "yuv420p", "-threads", "0",
+                    "-c:v", "libx264", "-x264-params", "rc-lookahead=8:threads=2:sliced-threads=1", "-preset", "ultrafast", "-tune", "stillimage",
+                    "-crf", "16", "-pix_fmt", "yuv420p", "-threads", "2",
                     str(out),
                 ]
                 r = _run(cmd, capture_output=True, timeout=120)
@@ -445,7 +457,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                 xf_graph = (";".join(parts), prev)
                 joined = True
             elif use_xfade:
-                cmd = [FFMPEG_BIN, "-y", "-threads", "0"]
+                cmd = [FFMPEG_BIN, "-y", "-threads", "2"]
                 for v in scene_videos:
                     cmd += ["-i", str(v)]
                 parts, prev, offset = [], "0:v", 0.0
@@ -455,7 +467,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                                  f":duration={XFADE_T}:offset={offset:.2f}[x{k}]")
                     prev = f"x{k}"
                 cmd += ["-filter_complex", ";".join(parts), "-map", f"[{prev}]",
-                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20", "-pix_fmt", "yuv420p", str(combined)]
+                        "-c:v", "libx264", "-x264-params", "rc-lookahead=8:threads=2:sliced-threads=1", "-preset", "ultrafast", "-crf", "20", "-pix_fmt", "yuv420p", str(combined)]
                 r = _run(cmd, capture_output=True, timeout=240)
                 joined = r.returncode == 0
                 if not joined:
@@ -463,7 +475,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
             concat_list = tmp_path / "concat.txt"
             concat_list.write_text("\n".join(f"file '{v}'" for v in scene_videos))
             r = _run(
-                [FFMPEG_BIN, "-y", "-threads", "0", "-f", "concat", "-safe", "0", "-i", str(concat_list),
+                [FFMPEG_BIN, "-y", "-threads", "2", "-f", "concat", "-safe", "0", "-i", str(concat_list),
                  "-c", "copy", str(combined)],
                 capture_output=True, timeout=120,
             ) if not joined else None
@@ -483,9 +495,9 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                         f"scale={w}:{h}:force_original_aspect_ratio=increase,"
                         f"crop={w}:{h},setsar=1,fps={fps},format=yuv420p"
                     )
-                    cmd = [FFMPEG_BIN, "-y", "-threads", "0",
+                    cmd = [FFMPEG_BIN, "-y", "-threads", "2",
                            "-i", str(tsrc), "-vf", vf,
-                           "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
+                           "-c:v", "libx264", "-x264-params", "rc-lookahead=8:threads=2:sliced-threads=1", "-preset", "ultrafast", "-crf", "20",
                            "-pix_fmt", "yuv420p", "-an", str(tout)]
                     r = _run(cmd, capture_output=True, timeout=180)
                     if r.returncode == 0:
@@ -512,11 +524,11 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                         f"pad={pip_w + 8}:{pip_h + 8}:4:4:color=0xE2FF3D@0.9[pip];"
                         f"[0:v][pip]overlay={x_expr}:{y_expr}:shortest=1,format=yuv420p"
                     )
-                    cmd = [FFMPEG_BIN, "-y", "-threads", "0",
+                    cmd = [FFMPEG_BIN, "-y", "-threads", "2",
                            "-i", str(combined),
                            "-stream_loop", "-1", "-i", str(tsrc),
                            "-filter_complex", fc,
-                           "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
+                           "-c:v", "libx264", "-x264-params", "rc-lookahead=8:threads=2:sliced-threads=1", "-preset", "ultrafast", "-crf", "20",
                            "-pix_fmt", "yuv420p", "-an", str(tout)]
                     r = _run(cmd, capture_output=True, timeout=240)
                     if r.returncode == 0:
@@ -580,20 +592,20 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                 if pad > 0.05:
                     vf.append(f"tpad=stop_mode=clone:stop_duration={pad + 0.2:.2f}")
                 print(f"[render] voice {voice_dur:.2f}s, video {video_dur:.2f}s, pad {max(pad, 0):.2f}s")
-                vargs = (["-vf", ",".join(vf), "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
+                vargs = (["-vf", ",".join(vf), "-c:v", "libx264", "-x264-params", "rc-lookahead=8:threads=2:sliced-threads=1", "-preset", "ultrafast", "-crf", "18",
                           "-pix_fmt", "yuv420p"] if vf else ["-c:v", "copy"])
                 dur_args = ["-t", f"{voice_dur:.3f}"] if voice_dur > 0 else ["-shortest"]
-                cmd = [FFMPEG_BIN, "-y", "-threads", "0", "-i", str(combined), "-i", str(audio_path),
+                cmd = [FFMPEG_BIN, "-y", "-threads", "2", "-i", str(combined), "-i", str(audio_path),
                        "-map", "0:v:0", "-map", "1:a:0", *vargs,
                        "-c:a", "aac", "-b:a", "192k", *dur_args, "-movflags", "+faststart", str(final)]
             else:
                 if subs_path and subs_path.exists():
-                    cmd = [FFMPEG_BIN, "-y", "-threads", "0", "-i", str(combined),
+                    cmd = [FFMPEG_BIN, "-y", "-threads", "2", "-i", str(combined),
                            "-vf", f"subtitles={subs_path}:fontsdir={FONT_DIR}",
-                           "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
+                           "-c:v", "libx264", "-x264-params", "rc-lookahead=8:threads=2:sliced-threads=1", "-preset", "ultrafast", "-crf", "20",
                            "-pix_fmt", "yuv420p", str(final)]
                 else:
-                    cmd = [FFMPEG_BIN, "-y", "-threads", "0", "-i", str(combined),
+                    cmd = [FFMPEG_BIN, "-y", "-threads", "2", "-i", str(combined),
                            "-c", "copy", str(final)]
             if xf_graph:
                 cmd = _single_pass(cmd, xf_graph, scene_videos)

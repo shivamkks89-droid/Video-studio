@@ -1677,7 +1677,8 @@ async def render_project_video(project_id: str, request: Request):
         "status": "pending",
         "video_url": None,
         "error": None,
-        "attempts": 0,
+        "owner": POD_ID,
+        "hb_at": utc_now().isoformat(),
         "args": args,
         "created_at": utc_now().isoformat(),
     })
@@ -1952,24 +1953,35 @@ def _bg(coro):
     return t
 
 
+POD_ID = os.environ.get("HOSTNAME") or os.urandom(4).hex()
+
+
 async def _queued_render(job_id: str):
     async with RENDER_SEM:
+        # Atomic claim: only the owning pod (or anyone, if the owner went silent >10 min) may run it.
+        stale = (utc_now() - timedelta(minutes=10)).isoformat()
         job = await db.render_jobs.find_one_and_update(
-            {"job_id": job_id, "status": {"$in": ["pending", "rendering"]}},
-            {"$inc": {"attempts": 1}}, return_document=True, projection={"_id": 0})
+            {"job_id": job_id, "status": {"$in": ["pending", "rendering"]},
+             "$or": [{"owner": POD_ID}, {"owner": {"$exists": False}}, {"hb_at": {"$lt": stale}}]},
+            {"$set": {"owner": POD_ID, "hb_at": utc_now().isoformat(), "status": "rendering"}},
+            return_document=True, projection={"_id": 0})
         if not job or not job.get("args"):
             return
-        if job.get("attempts", 1) > 2:
+        if job.get("crashes", 0) >= 2:
             await _render_failed(job_id, job["user_id"], job["project_id"],
-                                 "Render 2 baar try karke bhi poora nahi hua. Credits wapas kar diye gaye — dobara try karo.")
+                                 "Ye video server ki memory se bada pad raha hai. Credits wapas kar diye gaye — chhoti video ya kam scenes ke saath dobara try karo.")
             return
         await _run_render_job(job_id=job_id, user_id=job["user_id"], project_id=job["project_id"], **job["args"])
 
 
 async def resume_render_jobs():
-    """After a server restart, continue any render that was queued or mid-way."""
-    async for j in db.render_jobs.find({"status": {"$in": ["pending", "rendering"]}, "args": {"$exists": True}},
-                                       {"_id": 0, "job_id": 1}):
+    """After a crash/restart, continue renders this pod owned (or orphaned ones)."""
+    stale = (utc_now() - timedelta(minutes=10)).isoformat()
+    async for j in db.render_jobs.find(
+            {"status": {"$in": ["pending", "rendering"]}, "args": {"$exists": True},
+             "$or": [{"owner": POD_ID}, {"hb_at": {"$lt": stale}}]}, {"_id": 0, "job_id": 1, "status": 1}):
+        if j["status"] == "rendering":
+            await db.render_jobs.update_one({"job_id": j["job_id"]}, {"$inc": {"crashes": 1}})
         print(f"[render] resuming {j['job_id']} after restart")
         _bg(_queued_render(j["job_id"]))
 
@@ -2008,7 +2020,7 @@ async def _run_render_job(job_id: str, user_id: str, project_id: str,
             eta = int(el / max(pct, 1) * (100 - pct)) if pct >= 5 else None
             asyncio.run_coroutine_threadsafe(db.render_jobs.update_one(
                 {"job_id": job_id, "status": {"$in": ["pending", "rendering"]}},
-                {"$set": {"status": "rendering", "progress": pct, "eta_s": eta}}), loop)
+                {"$set": {"status": "rendering", "progress": pct, "eta_s": eta, "hb_at": utc_now().isoformat()}}), loop)
 
         video_url = await render_video(progress_cb=_progress, scenes=scenes, audio_data_uri=audio_url,
                                        aspect_ratio=aspect_ratio, fps=fps,
