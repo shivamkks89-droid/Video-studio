@@ -40,3 +40,8 @@
 -keep class com.google.android.gms.** { *; }
 -dontwarn com.google.**
 -dontwarn org.apache.cordova.**
+# Optional sign-in providers bundled by @capacitor-firebase/authentication but not used by CineReel
+-dontwarn com.facebook.**
+-dontwarn com.twitter.**
+-dontwarn com.apple.**
+-dontwarn io.capawesome.capacitorjs.plugins.firebase.authentication.handlers.FacebookAuthProviderHandler
