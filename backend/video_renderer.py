@@ -186,7 +186,8 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                        talking_avatar_mode: str = "off",
                        motion_text: bool = True,
                        transitions: bool = True,
-                       progress_cb=None) -> Optional[str]:
+                       progress_cb=None,
+                       watermark: bool = False) -> Optional[str]:
     """Render an MP4 from a list of scenes.
 
     Each scene can carry either a still `image_url` (rendered with ken-burns) or
@@ -560,6 +561,16 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                     subs_path.write_text(_build_ass_captions([], w, h, {}).replace(
                         "\n\n[Events]", f"\n{style_line}\n\n[Events]", 1).rstrip("\n") + "\n" + events + "\n",
                         encoding="utf-8")
+
+            if watermark:
+                fs = max(26, w // 30)
+                wm_style = (f"Style: WM,Arial,{fs},&H55FFFFFF,&H55FFFFFF,&H99000000,&H00000000,"
+                            f"-1,0,0,0,100,100,1,0,1,2,0,9,{w // 28},{w // 28},{h // 40},1")
+                wm_event = "Dialogue: 2,0:00:00.00,9:59:59.00,WM,,0,0,0,,Made with CineReel AI"
+                base = subs_path.read_text(encoding="utf-8") if subs_path else _build_ass_captions([], w, h, {})
+                subs_path = tmp_path / "final.ass"
+                subs_path.write_text(base.replace("\n\n[Events]", f"\n{wm_style}\n\n[Events]", 1).rstrip("\n")
+                                     + "\n" + wm_event + "\n", encoding="utf-8")
 
             if audio_bytes:
                 audio_path = tmp_path / "voice.mp3"

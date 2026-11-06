@@ -196,3 +196,4 @@ InVideo AI + CapCut + Canva AI.
 - 2026-11: R8 missing com.facebook.* (optional Capawesome provider) → -dontwarn rules.
 - 2026-11: Google AdSense verification script (ca-pub-3735972538807236) added once in frontend/public/index.html <head>; public/ads.txt added. No ad units created.
 - 2026-11: Public Hinglish guides (/guides + /guides/:slug, content in src/lib/guides.js, footer link). CookieConsent banner (public pages only, Accept/Reject in localStorage cinereel_cookie_consent; reject → no Firebase Analytics + AdSense non-personalized).
+- 2026-11: Android native ActionBar ('CineReel' bar) removed — AppTheme now NoActionBar + postSplashScreenTheme. Free-plan renders get 'Made with CineReel AI' ASS watermark top-right (paid/admin/unlimited none).

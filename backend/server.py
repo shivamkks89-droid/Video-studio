@@ -1669,6 +1669,7 @@ async def render_project_video(project_id: str, request: Request):
         caption_style=p.get("caption_style"),
         talking_avatar_url=p.get("talking_avatar_url"),
         talking_avatar_mode=p.get("talking_avatar_mode") or "off",
+        watermark=(user.plan or "free") == "free" and user.role != "admin" and not getattr(user, "unlimited_credits", False),
     )
     await db.render_jobs.insert_one({
         "job_id": job_id,
@@ -2005,7 +2006,8 @@ async def _run_render_job(job_id: str, user_id: str, project_id: str,
                           caption_words: Optional[list] = None,
                           caption_style: Optional[dict] = None,
                           talking_avatar_url: Optional[str] = None,
-                          talking_avatar_mode: str = "off"):
+                          talking_avatar_mode: str = "off",
+                          watermark: bool = False):
     try:
         await _job_live(user_id, job_id, project_id, "rendering")
         loop = asyncio.get_running_loop()
@@ -2022,7 +2024,7 @@ async def _run_render_job(job_id: str, user_id: str, project_id: str,
                 {"job_id": job_id, "status": {"$in": ["pending", "rendering"]}},
                 {"$set": {"status": "rendering", "progress": pct, "eta_s": eta, "hb_at": utc_now().isoformat()}}), loop)
 
-        video_url = await render_video(progress_cb=_progress, scenes=scenes, audio_data_uri=audio_url,
+        video_url = await render_video(progress_cb=_progress, watermark=watermark, scenes=scenes, audio_data_uri=audio_url,
                                        aspect_ratio=aspect_ratio, fps=fps,
                                        caption_words=caption_words,
                                        caption_style=caption_style,
