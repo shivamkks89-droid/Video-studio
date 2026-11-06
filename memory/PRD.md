@@ -192,3 +192,4 @@ InVideo AI + CapCut + Canva AI.
 - 2026-11: shivamkks545@gmail.com promoted to admin (server startup update_many in server.py; preview done, live after next deploy).
 - 2026-11: shivamkks545@gmail.com unlimited_credits=True (startup update_many).
 - 2026-11: PROD OOM fix (deployer RCA: pod OOMKilled at 512Mi during multi-input xfade, ~1.3GB ffmpeg). Transitions now per-scene dip-through-black fades + stream-copy concat + single-input final pass → ffmpeg peak ~130MB. ffmpeg -threads 2 + rc-lookahead=8. Render jobs: owner pod + hb_at atomic claim (2 replicas safe), crashes counter only on real mid-render restarts (fail after 2 crashes).
+- 2026-11: Play Console fixes — release R8 (minifyEnabled+shrinkResources, proguard-android-optimize + Capacitor/Firebase keep rules); MainActivity EdgeToEdge.enable() + insets on all SDKs, removed deprecated setStatusBarColor/NavigationBarColor; versionCode 4 / 1.0.3.
