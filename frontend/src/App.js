@@ -18,6 +18,8 @@ import BrandKit from "./pages/BrandKit";
 import Assets from "./pages/Assets";
 import Credits from "./pages/Credits";
 import RenderQueue from "./pages/RenderQueue";
+import { GuidesList, GuidePage } from "./pages/Guides";
+import { CookieConsent } from "./components/CookieConsent";
 import Pricing from "./pages/Pricing";
 import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
@@ -42,6 +44,8 @@ function AppRouter() {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Auth mode="login" />} />
       <Route path="/privacy" element={<Privacy />} />
+      <Route path="/guides" element={<GuidesList />} />
+      <Route path="/guides/:slug" element={<GuidePage />} />
       <Route path="/terms" element={<Terms />} />
       <Route path="/signup" element={<Auth mode="signup" />} />
       <Route path="/pricing" element={<Pricing />} />
@@ -90,6 +94,7 @@ export default function App() {
             <BackButtonHandler />
             <SharedAudioHandler />
             <FirebaseTracker />
+            <CookieConsent />
             <AppUpdatePrompt />
             <AppRouter />
           </ErrorBoundary>

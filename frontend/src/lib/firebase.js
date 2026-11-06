@@ -26,14 +26,16 @@ export const getFirebaseApp = () => {
 
 const isNative = () => !!window.Capacitor?.isNativePlatform?.();
 
+const analyticsBlocked = () => localStorage.getItem("cinereel_cookie_consent") === "rejected";
+
 export const initFirebase = async () => {
   const app = await getFirebaseApp();
-  if (!isNative() && app.options.measurementId && (await isSupported())) getAnalytics(app);
+  if (!isNative() && !analyticsBlocked() && app.options.measurementId && (await isSupported())) getAnalytics(app);
   return app;
 };
 
 export const trackEvent = async (name, params = {}) => {
-  if (isNative() || !(await isSupported())) return;
+  if (isNative() || analyticsBlocked() || !(await isSupported())) return;
   const { logEvent } = await import("firebase/analytics");
   logEvent(getAnalytics(await getFirebaseApp()), name, params);
 };
