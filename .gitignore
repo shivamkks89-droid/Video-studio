@@ -96,3 +96,5 @@ credentials.json
 *.key
 .credentials
 frontend/node_modules/.cache/default-development/0.pack
+backend/static/videos/1573a1211a4e42.mp4
+backend/static/videos/946f9e684165.mp4

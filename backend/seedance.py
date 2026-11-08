@@ -33,7 +33,7 @@ def _clamp_duration(d: Optional[float]) -> int:
     """Seedance supports 5s or 10s clips."""
     if not d:
         return 5
-    return 10 if d >= 8 else 5
+    return max(2, min(12, int(round(d))))
 
 
 def _resolution_for(aspect_ratio: str) -> str:

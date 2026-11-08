@@ -913,7 +913,7 @@ async def video_clip_generate(body: VideoClipReq, request: Request):
             actual_duration = duration
         else:
             # Seedance: T2V or I2V, 5/10s
-            duration = max(5, min(10, int(body.duration_seconds or 5)))
+            duration = max(2, min(12, int(round(body.duration_seconds or 5))))
             if mode == "i2v":
                 src = scene.get("image_url")
                 if not src:
