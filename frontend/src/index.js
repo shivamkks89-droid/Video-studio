@@ -7,6 +7,7 @@ import { initFirebase } from "@/lib/firebase";
 import { initTheme } from "@/lib/theme";
 import "@/theme-light.css";
 
+if (window.Capacitor?.isNativePlatform?.()) document.documentElement.classList.add("native-app");
 initTheme();
 
 initFirebase().catch(() => {});

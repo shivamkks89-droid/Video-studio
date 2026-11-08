@@ -8,6 +8,7 @@ html.light .surface { border-color: rgba(0,0,0,0.10) !important; }
 html.light .surface:hover { border-color: rgba(0,0,0,0.22) !important; }
 html.light .bg-\[\#1C1C1F\] { background-color: #EDEDEA !important; }
 html.light .glass { background: rgba(255,255,255,0.75); border-color: rgba(0,0,0,0.08); }
+html.light [data-testid="app-header"] { background: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
 html.light .text-white, html.light .text-zinc-100, html.light .text-zinc-200 { color: #111113 !important; }
 html.light .text-zinc-300 { color: #27272a !important; }
 html.light .text-zinc-400 { color: #3f3f46 !important; }

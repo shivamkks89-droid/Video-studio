@@ -28,7 +28,7 @@ public class MainActivity extends BridgeActivity {
     static void applyBars(android.app.Activity a, boolean light) {
         lightBars = light;
         android.view.Window w = a.getWindow();
-        int bg = Color.parseColor(light ? "#E4E4DF" : "#000000");
+        int bg = Color.parseColor(light ? "#FFFFFF" : "#0A0A0B");
         // Edge-to-edge: bars are transparent; the decor background shows behind them.
         w.getDecorView().setBackgroundColor(bg);
         WindowInsetsControllerCompat c = WindowCompat.getInsetsController(w, w.getDecorView());
@@ -63,6 +63,7 @@ public class MainActivity extends BridgeActivity {
         // Edge-to-edge on every Android version: keep the WebView out of the system bars, cutout and keyboard.
         if (getBridge() != null) {
             View webView = getBridge().getWebView();
+            webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
             ViewCompat.setOnApplyWindowInsetsListener(webView, (v, insets) -> {
                 Insets sys = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
                 Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
