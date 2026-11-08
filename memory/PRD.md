@@ -203,3 +203,9 @@ InVideo AI + CapCut + Canva AI.
 - 2026-11: ActionBar strip still seen on device → MainActivity hides supportActionBar after super.onCreate; application theme = AppTheme.NoActionBar.
 - 2026-11: Divine Avatar Studio (components/DivinePanel.jsx in ProjectDetail): 8 deity cards, 4 modes, topic/lang/duration/style, narration toggle, credit estimate. POST /api/divine/character (3 CR, refund on fail) stores project.character {name, description, image_url}. Storyboard + /ai/scene-image pass the master image as Nano Banana reference (ImageContent) + description → consistent identity; character projects skip app screenshots. Verified 3 consistent Lakshmi images + music-only render.
 - 2026-11: Trending Effects (paid only; project.trending_effects; shake+white flash+eq/vignette in renderer; TrendingToggle above Render). Divine Step 3: sequential Seedance i2v (existing /ai/video-clip/generate, 30 CR/scene, refund on fail, approve confirm, per-scene status/redo, stop prompt on failure). clip_generations log (provider/model/duration/720p/credits/status). Demo proj_97e6c1240bc3: 6 consistent Lakshmi scenes + Hindi TTS + music → 30.5s MP4; i2v blocked: fal.ai balance exhausted (402, refunded).
+
+## 2026-06 Divine moving clips via Emergent Universal Key
+- seedance.py now uses Emergent integration proxy (EMERGENT_LLM_KEY), model fal-ai/bytedance/seedance/v1/pro/image-to-video (lite not available on proxy). No FAL_KEY needed.
+- Scene image fetched locally (127.0.0.1:8001) and sent as data URL (public preview URL returned 403).
+- Tested: 1 scene (Maa Lakshmi scene 0) -> 5.04s 704x1248 MP4. Remaining 5 scenes pending user approval.
+- Android: native-app class zeroes CSS safe-area (native margins handle insets); light status bar white.

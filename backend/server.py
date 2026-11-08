@@ -918,7 +918,7 @@ async def video_clip_generate(body: VideoClipReq, request: Request):
                 src = scene.get("image_url")
                 if not src:
                     raise SeedanceError("Scene has no image to animate — regenerate the storyboard first.")
-                fal_url = await seedance_i2v(_absolute_asset_url(request, src),
+                fal_url = await seedance_i2v(f"http://127.0.0.1:8001{src}" if src.startswith("/api/") else src,
                                              prompt=prompt, aspect_ratio=aspect,
                                              duration_seconds=duration)
             else:
@@ -941,7 +941,7 @@ async def video_clip_generate(body: VideoClipReq, request: Request):
         if "exhausted balance" in detail.lower() or "top up" in detail.lower():
             raise HTTPException(
                 status_code=402,
-                detail=("fal.ai account balance exhausted — top up at fal.ai/dashboard/billing, "
+                detail=("Universal Key balance khatam — Profile → Universal Key → Add Balance karein, "
                         "or switch to the free Sora 2 engine."),
             )
         raise HTTPException(status_code=400, detail=f"{engine.title()} error: {detail[:300]}")

@@ -13,19 +13,16 @@ import asyncio
 import os
 from typing import Optional
 
-import fal_client
+import time
+from urllib.parse import urlparse
 
-# Model IDs on fal.ai (bytedance seedance family). Lite = cheaper/faster, Pro = higher quality.
-MODEL_T2V = os.environ.get("SEEDANCE_T2V_MODEL", "fal-ai/bytedance/seedance/v1/lite/text-to-video")
-MODEL_I2V = os.environ.get("SEEDANCE_I2V_MODEL", "fal-ai/bytedance/seedance/v1/lite/image-to-video")
+import requests
 
-# Fall-back model IDs if the primary route 404s (fal renames endpoints occasionally).
-_T2V_FALLBACKS = [
-    "fal-ai/bytedance/seedance/v1/pro/text-to-video",
-]
-_I2V_FALLBACKS = [
-    "fal-ai/bytedance/seedance/v1/pro/image-to-video",
-]
+# Fal Universal Key supports queue inference through Emergent proxy only, not Fal Platform APIs.
+_PROXY = os.environ.get("INTEGRATION_PROXY_URL", "https://integrations.emergentagent.com").rstrip("/") + "/api/v1/fal"
+
+MODEL_T2V = "fal-ai/bytedance/seedance/v1/pro/text-to-video"
+MODEL_I2V = "fal-ai/bytedance/seedance/v1/pro/image-to-video"
 
 
 class SeedanceError(RuntimeError):
@@ -44,22 +41,62 @@ def _resolution_for(aspect_ratio: str) -> str:
     return "720p"
 
 
-async def _submit_with_fallback(models: list[str], arguments: dict) -> dict:
-    """Submit to fal, trying fallback models on 404/unknown-model errors."""
-    last_err: Optional[Exception] = None
-    for m in models:
+def _headers(extra: Optional[dict] = None) -> dict:
+    h = {"Authorization": f"Bearer {os.environ['EMERGENT_LLM_KEY']}", "Content-Type": "application/json"}
+    for env, names in (("job_id", ("X-App-ID", "X-Job-ID")), ("run_id", ("X-Environment-ID",))):
+        if os.environ.get(env):
+            for n in names:
+                h[n] = os.environ[env]
+    h.update(extra or {})
+    return h
+
+
+def _trusted(url: str) -> str:
+    c, q = urlparse(url), urlparse(_PROXY + "/queue/")
+    if c.scheme != q.scheme or c.netloc != q.netloc or not c.path.startswith(q.path):
+        raise SeedanceError("Untrusted queue URL from proxy")
+    return url
+
+
+def _get(url: str, deadline: float) -> dict:
+    delay = 1
+    for attempt in range(5):
         try:
-            handler = await fal_client.submit_async(m, arguments=arguments)
-            return await handler.get()
-        except Exception as e:  # noqa: BLE001
-            last_err = e
-            msg = str(e).lower()
-            # Only try fallbacks for model-not-found style errors
-            if "not found" in msg or "404" in msg or "no such" in msg or "unknown" in msg:
-                continue
-            # Any other error (bad input, quota, etc.) — abort immediately
-            raise SeedanceError(f"{m}: {e}") from e
-    raise SeedanceError(f"All Seedance model routes failed. Last error: {last_err}")
+            r = requests.get(url, headers=_headers(), timeout=max(1, min(60, deadline - time.monotonic())))
+            r.raise_for_status()
+            return r.json()
+        except (requests.ConnectTimeout, requests.ReadTimeout, requests.ConnectionError):
+            if attempt == 4 or time.monotonic() + delay > deadline:
+                raise SeedanceError("Video polling failed after network errors")
+            time.sleep(delay)
+            delay *= 2
+
+
+def _run(endpoint: str, payload: dict, timeout_s: int = 900) -> dict:
+    r = requests.post(f"{_PROXY}/proxy", json=payload, timeout=60,
+                      headers=_headers({"X-Fal-Target-Url": f"https://queue.fal.run/{endpoint}"}))
+    if r.status_code == 402:
+        raise SeedanceError("Universal Key balance exhausted — top up to generate video clips.")
+    if r.status_code >= 400:
+        raise SeedanceError(f"{r.status_code}: {r.text[:300]}")
+    sub = r.json()
+    status_url, response_url = _trusted(sub["status_url"]), _trusted(sub["response_url"])
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        st = _get(status_url, deadline)
+        status = (st.get("status") or "").upper()
+        if status in {"COMPLETED", "OK"}:
+            if st.get("error"):
+                raise SeedanceError(f"Generation failed: {st['error']}")
+            return _get(response_url, deadline)
+        if status in {"FAILED", "CANCELLED", "CANCELED", "ERROR"}:
+            raise SeedanceError(f"Generation failed: {status}")
+        time.sleep(3)
+    raise SeedanceError("Timed out waiting for video generation")
+
+
+async def _submit_with_fallback(models: list, arguments: dict) -> dict:
+    return await asyncio.to_thread(_run, models[0], arguments)
 
 
 def _extract_video_url(result: dict) -> Optional[str]:
@@ -93,8 +130,6 @@ async def text_to_video(
     duration_seconds: Optional[float] = 5,
 ) -> str:
     """Generate a cinematic video clip from a text prompt. Returns MP4 URL."""
-    if not os.environ.get("FAL_KEY"):
-        raise SeedanceError("FAL_KEY is not configured on the server.")
     dur = _clamp_duration(duration_seconds)
     args = {
         "prompt": prompt,
@@ -102,7 +137,7 @@ async def text_to_video(
         "resolution": _resolution_for(aspect_ratio),
         "duration": str(dur),
     }
-    result = await _submit_with_fallback([MODEL_T2V] + _T2V_FALLBACKS, args)
+    result = await _submit_with_fallback([MODEL_T2V], args)
     url = _extract_video_url(result)
     if not url:
         raise SeedanceError(f"Seedance returned no video URL. Payload: {result}")
@@ -120,10 +155,15 @@ async def image_to_video(
     `image_url` must be publicly reachable OR a data URI. If it's a `/api/files/...`
     relative path, the caller must upgrade it to an absolute URL first.
     """
-    if not os.environ.get("FAL_KEY"):
-        raise SeedanceError("FAL_KEY is not configured on the server.")
     if not image_url:
         raise SeedanceError("image_url is required for image-to-video mode.")
+    if image_url.startswith("http"):
+        import base64
+        try:
+            b = await download_to_bytes(image_url, timeout=30)
+        except Exception as e:
+            raise SeedanceError(f"Scene image fetch failed: {e}") from e
+        image_url = ("data:image/jpeg;base64," if b[:2] == b"\xff\xd8" else "data:image/png;base64,") + base64.b64encode(b).decode()
     dur = _clamp_duration(duration_seconds)
     args = {
         "image_url": image_url,
@@ -132,7 +172,7 @@ async def image_to_video(
         "resolution": _resolution_for(aspect_ratio),
         "duration": str(dur),
     }
-    result = await _submit_with_fallback([MODEL_I2V] + _I2V_FALLBACKS, args)
+    result = await _submit_with_fallback([MODEL_I2V], args)
     url = _extract_video_url(result)
     if not url:
         raise SeedanceError(f"Seedance returned no video URL. Payload: {result}")

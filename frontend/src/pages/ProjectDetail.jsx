@@ -285,7 +285,7 @@ export default function ProjectDetail() {
       const msg = err.response?.data?.detail || `${engineLabel} failed`;
       const lower = String(msg).toLowerCase();
       if (lower.includes("balance")) {
-        toast.error("fal.ai balance exhausted — top up at fal.ai/dashboard/billing, or use Sora 2 instead", { id: t, duration: 6000 });
+        toast.error("Universal Key balance khatam — Profile → Universal Key → Add Balance karein", { id: t, duration: 6000 });
       } else if (lower.includes("upgrade") || lower.includes("creator plan")) {
         toast.error("Seedance is a Premium engine — upgrade your plan, or use the free Sora 2 instead", { id: t, duration: 6000 });
       } else {
