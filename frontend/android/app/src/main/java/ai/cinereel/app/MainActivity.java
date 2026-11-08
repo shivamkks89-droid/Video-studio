@@ -53,6 +53,9 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(ShareTargetPlugin.class);
         EdgeToEdge.enable(this);
         super.onCreate(savedInstanceState);
+        // Never show the native title bar ("CineReel" strip) — the web UI has its own header.
+        if (getSupportActionBar() != null) getSupportActionBar().hide();
+        setTitle("");
         handleShare(getIntent());
         int night = getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
         applyBars(this, night != android.content.res.Configuration.UI_MODE_NIGHT_YES);
