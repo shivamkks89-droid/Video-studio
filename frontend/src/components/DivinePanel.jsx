@@ -18,6 +18,8 @@ const MODES = ["Divine Avatar", "Mythological Stories", "Devotional Reels", "Fes
 const STYLES = ["Realistic 3D CGI", "Mythological fantasy", "Cinematic devotional", "Ultra-realistic animation"];
 const LANGS = [["hindi", "Hindi"], ["english", "English"], ["hinglish", "Hinglish"]];
 const DURS = [15, 30, 45, 60];
+const RES_CR = { "480p": 15, "720p": 30, "1080p": 60 };
+const RES_OPTS = [["480p", "480p · Sasta (15 CR)"], ["720p", "720p · Standard (30 CR)"], ["1080p", "1080p · Premium (60 CR)"]];
 
 const Chips = ({ items, value, onChange, testid }) => (
   <div className="flex flex-wrap gap-1.5">
@@ -32,6 +34,8 @@ const pairs = (a) => a.map((x) => [x, x]);
 const DivineAnimate = ({ project, character, onDone }) => {
   const [st, setSt] = useState({});
   const [running, setRunning] = useState(false);
+  const [res, setRes] = useState("720p");
+  const per = RES_CR[res];
   const scenes = project.scenes || [];
   const pending = scenes.map((s, i) => i).filter((i) => scenes[i].image_url && !scenes[i].video_clip_url);
   if (!scenes.length) return null;
@@ -40,7 +44,7 @@ const DivineAnimate = ({ project, character, onDone }) => {
     setSt((x) => ({ ...x, [i]: "running" }));
     try {
       await api.post("/ai/video-clip/generate", {
-        project_id: project.project_id, scene_index: i, engine: "seedance", mode: "i2v",
+        project_id: project.project_id, scene_index: i, engine: "seedance", mode: "i2v", resolution: res,
         duration_seconds: Math.max(5, Math.min(10, Math.round(s.duration || 5))),
         prompt: `${character?.name || ""} ${s.description || s.visual || ""}. Natural graceful body and hand movement, expressive gentle facial animation, `
           + `flowing silk clothes and swaying jewellery, drifting golden particles and moving light, ${s.camera || "slow push-in"} cinematic camera movement, divine volumetric light. Keep the same character identity.`,
@@ -53,7 +57,7 @@ const DivineAnimate = ({ project, character, onDone }) => {
     }
   };
   const runAll = async () => {
-    if (!window.confirm(`${pending.length} scenes ko AI video banana hai. Kharcha ~${pending.length * 30} CR (har scene 30 CR, fail hone par wapas). Approve?`)) return;
+    if (!window.confirm(`${pending.length} scenes ko AI video banana hai. Kharcha ~${pending.length * per} CR (${res}, har scene ${per} CR, fail hone par wapas). Approve?`)) return;
     setRunning(true);
     for (const i of pending) { // sequential; no auto-retry
       const ok = await one(i);
@@ -65,7 +69,8 @@ const DivineAnimate = ({ project, character, onDone }) => {
   return (
     <div data-testid="divine-animate" className="surface rounded-lg p-3">
       <div className="text-sm font-medium">Step 3 · Scenes ko asli moving video banao (optional, paid)</div>
-      <div className="text-xs text-zinc-400 mt-0.5">AI image-to-video, 720p, har scene 5-10s · Creator/Studio/Enterprise plan. Kuch bhi bina aapke approve kiye nahi banega.</div>
+      <div className="text-xs text-zinc-400 mt-0.5">AI image-to-video, har scene 5-10s · Creator/Studio/Enterprise plan. Kuch bhi bina aapke approve kiye nahi banega.</div>
+      <div data-testid="divine-quality" className="mt-2"><Chips items={RES_OPTS} value={res} onChange={setRes} testid="divine-quality" /></div>
       <div className="mt-2 space-y-1">
         {scenes.map((s, i) => (
           <div key={i} data-testid={`divine-scene-status-${i}`} className="flex items-center justify-between text-xs">
@@ -76,7 +81,7 @@ const DivineAnimate = ({ project, character, onDone }) => {
               </span>
               {s.image_url && !running && (st[i] && st[i] !== "running" && st[i] !== "done" || s.video_clip_url) && (
                 <button data-testid={`divine-scene-redo-${i}`} onClick={async () => {
-                  if (window.confirm(`Scene ${i + 1} dobara banana hai? ~30 CR`)) { setRunning(true); await one(i); setRunning(false); onDone?.(); }
+                  if (window.confirm(`Scene ${i + 1} dobara banana hai (${res})? ~${per} CR`)) { setRunning(true); await one(i); setRunning(false); onDone?.(); }
                 }} className="underline text-zinc-300">Dobara</button>
               )}
             </span>
@@ -86,7 +91,7 @@ const DivineAnimate = ({ project, character, onDone }) => {
       {pending.length > 0 && (
         <button data-testid="divine-animate-all" disabled={running} onClick={runAll}
           className="mt-3 rounded-full px-4 py-1.5 text-xs border border-[#E2FF3D]/50 text-[#E2FF3D] hover:bg-[#E2FF3D]/10 disabled:opacity-50 flex items-center gap-1.5">
-          {running && <Loader2 className="w-3 h-3 animate-spin" />} {pending.length} scenes animate karo (~{pending.length * 30} CR)
+          {running && <Loader2 className="w-3 h-3 animate-spin" />} {pending.length} scenes animate karo (~{pending.length * per} CR)
         </button>
       )}
     </div>

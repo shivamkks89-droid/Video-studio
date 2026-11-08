@@ -210,3 +210,4 @@ InVideo AI + CapCut + Canva AI.
 - Tested: 1 scene (Maa Lakshmi scene 0) -> 5.04s 704x1248 MP4. Remaining 5 scenes pending user approval.
 - Android: native-app class zeroes CSS safe-area (native margins handle insets); light status bar white.
 - 2026-06: Maa Lakshmi 6 scenes all Seedance I2V clips (scene0 5s, 1-5 8s); voice rewritten to 47s; final render /api/files/videos/1573a1211a4e42.mp4 = 47.0s 1080x1920 + audio. Clip duration now 2-12s (was 5/10).
+- 2026-06: Divine clip quality selector (480p 15CR / 720p 30CR / 1080p 60CR) in DivinePanel; backend VideoClipReq.resolution + RES_COST_MULT.

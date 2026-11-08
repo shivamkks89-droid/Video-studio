@@ -841,6 +841,9 @@ CLIP_COST = {
 }
 
 
+RES_COST_MULT = {"480p": 0.5, "720p": 1.0, "1080p": 2.0}
+
+
 class VideoClipReq(BaseModel):
     project_id: str
     scene_index: int
@@ -849,6 +852,7 @@ class VideoClipReq(BaseModel):
     prompt: Optional[str] = None
     duration_seconds: Optional[int] = None
     aspect_ratio: Optional[str] = None
+    resolution: str = "720p"   # seedance only: 480p | 720p | 1080p
 
 
 def _absolute_asset_url(request: Request, path: str) -> str:
@@ -898,7 +902,8 @@ async def video_clip_generate(body: VideoClipReq, request: Request):
     motion_hint = "cinematic subtle motion, natural camera movement, high detail, no text, no watermarks"
     prompt = f"{scene_prompt}. {motion_hint}".strip(". ").strip()
 
-    cost = CLIP_COST[(engine, mode)]
+    res = body.resolution if body.resolution in RES_COST_MULT else "720p"
+    cost = CLIP_COST[(engine, mode)] if engine == "sora" else int(CLIP_COST[(engine, mode)] * RES_COST_MULT[res])
     user = await _charge_credits(user, cost, f"videoclip_{engine}_{mode}", body.project_id)
 
     try:
@@ -920,7 +925,7 @@ async def video_clip_generate(body: VideoClipReq, request: Request):
                     raise SeedanceError("Scene has no image to animate — regenerate the storyboard first.")
                 fal_url = await seedance_i2v(f"http://127.0.0.1:8001{src}" if src.startswith("/api/") else src,
                                              prompt=prompt, aspect_ratio=aspect,
-                                             duration_seconds=duration)
+                                             duration_seconds=duration, resolution=res)
             else:
                 fal_url = await seedance_t2v(prompt, aspect_ratio=aspect, duration_seconds=duration)
             # Mirror the fal.ai URL to our own store so the link never expires.

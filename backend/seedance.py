@@ -149,6 +149,7 @@ async def image_to_video(
     prompt: str = "",
     aspect_ratio: str = "9:16",
     duration_seconds: Optional[float] = 5,
+    resolution: str = "720p",
 ) -> str:
     """Animate a still image into a natural-motion clip. Returns MP4 URL.
 
@@ -169,7 +170,7 @@ async def image_to_video(
         "image_url": image_url,
         "prompt": prompt or "cinematic subtle motion, natural camera movement",
         "aspect_ratio": aspect_ratio,
-        "resolution": _resolution_for(aspect_ratio),
+        "resolution": resolution,
         "duration": str(dur),
     }
     result = await _submit_with_fallback([MODEL_I2V], args)
