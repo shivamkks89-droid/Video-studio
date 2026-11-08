@@ -933,6 +933,10 @@ async def video_clip_generate(body: VideoClipReq, request: Request):
             actual_duration = duration
     except (SoraError, SeedanceError) as e:
         await _refund(user, cost, f"videoclip_refund_{engine}", body.project_id)
+        await db.clip_generations.insert_one({
+            "user_id": user.user_id, "project_id": body.project_id, "scene_index": body.scene_index,
+            "engine": engine, "mode": mode, "credits": 0, "status": "failed_refunded",
+            "created_at": utc_now().isoformat()})
         detail = str(e)
         if "exhausted balance" in detail.lower() or "top up" in detail.lower():
             raise HTTPException(
@@ -953,6 +957,13 @@ async def video_clip_generate(body: VideoClipReq, request: Request):
         {"project_id": body.project_id, "user_id": user.user_id},
         {"$set": {"scenes": scenes, "updated_at": utc_now().isoformat()}},
     )
+    from seedance import MODEL_I2V, MODEL_T2V
+    await db.clip_generations.insert_one({
+        "user_id": user.user_id, "project_id": body.project_id, "scene_index": body.scene_index,
+        "provider": "fal.ai" if engine == "seedance" else "openai", "engine": engine, "mode": mode,
+        "model": (MODEL_I2V if mode == "i2v" else MODEL_T2V) if engine == "seedance" else "sora-2",
+        "duration_s": actual_duration, "resolution": "720p", "credits": cost, "status": "success",
+        "created_at": utc_now().isoformat()})
 
     return {
         "ok": True,
@@ -1727,6 +1738,8 @@ async def render_project_video(project_id: str, request: Request):
         talking_avatar_mode=p.get("talking_avatar_mode") or "off",
         music_url=p.get("music_url"), music_volume=float(p.get("music_volume") or 0.2), greeting=greeting,
         greeting_pos=p.get("greeting_pos") or "center",
+        trending=bool(p.get("trending_effects")) and ((user.plan or "free") != "free" or user.role == "admin"
+                                                       or getattr(user, "unlimited_credits", False)),
         watermark=(user.plan or "free") == "free" and user.role != "admin" and not getattr(user, "unlimited_credits", False),
     )
     await db.render_jobs.insert_one({
@@ -2073,7 +2086,8 @@ async def _run_render_job(job_id: str, user_id: str, project_id: str,
                           talking_avatar_mode: str = "off",
                           watermark: bool = False,
                           music_url: Optional[str] = None, music_volume: float = 0.2,
-                          greeting: Optional[str] = None, greeting_pos: str = "center"):
+                          greeting: Optional[str] = None, greeting_pos: str = "center",
+                          trending: bool = False):
     try:
         await _job_live(user_id, job_id, project_id, "rendering")
         loop = asyncio.get_running_loop()
@@ -2090,7 +2104,7 @@ async def _run_render_job(job_id: str, user_id: str, project_id: str,
                 {"job_id": job_id, "status": {"$in": ["pending", "rendering"]}},
                 {"$set": {"status": "rendering", "progress": pct, "eta_s": eta, "hb_at": utc_now().isoformat()}}), loop)
 
-        video_url = await render_video(progress_cb=_progress, watermark=watermark, music_url=music_url, greeting=greeting, greeting_pos=greeting_pos,
+        video_url = await render_video(progress_cb=_progress, watermark=watermark, music_url=music_url, greeting=greeting, greeting_pos=greeting_pos, trending=trending,
                                        music_volume=music_volume, scenes=scenes, audio_data_uri=audio_url,
                                        aspect_ratio=aspect_ratio, fps=fps,
                                        caption_words=caption_words,

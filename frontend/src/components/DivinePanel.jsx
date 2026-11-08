@@ -29,6 +29,70 @@ const Chips = ({ items, value, onChange, testid }) => (
 );
 const pairs = (a) => a.map((x) => [x, x]);
 
+const DivineAnimate = ({ project, character, onDone }) => {
+  const [st, setSt] = useState({});
+  const [running, setRunning] = useState(false);
+  const scenes = project.scenes || [];
+  const pending = scenes.map((s, i) => i).filter((i) => scenes[i].image_url && !scenes[i].video_clip_url);
+  if (!scenes.length) return null;
+  const one = async (i) => {
+    const s = scenes[i];
+    setSt((x) => ({ ...x, [i]: "running" }));
+    try {
+      await api.post("/ai/video-clip/generate", {
+        project_id: project.project_id, scene_index: i, engine: "seedance", mode: "i2v",
+        duration_seconds: Math.max(5, Math.min(10, Math.round(s.duration || 5))),
+        prompt: `${character?.name || ""} ${s.description || s.visual || ""}. Natural graceful body and hand movement, expressive gentle facial animation, `
+          + `flowing silk clothes and swaying jewellery, drifting golden particles and moving light, ${s.camera || "slow push-in"} cinematic camera movement, divine volumetric light. Keep the same character identity.`,
+      });
+      setSt((x) => ({ ...x, [i]: "done" }));
+      return true;
+    } catch (e) {
+      setSt((x) => ({ ...x, [i]: e.response?.data?.detail || "failed" }));
+      return false;
+    }
+  };
+  const runAll = async () => {
+    if (!window.confirm(`${pending.length} scenes ko AI video banana hai. Kharcha ~${pending.length * 30} CR (har scene 30 CR, fail hone par wapas). Approve?`)) return;
+    setRunning(true);
+    for (const i of pending) { // sequential; no auto-retry
+      const ok = await one(i);
+      if (!ok && !window.confirm("Ye scene nahi bana (credits wapas). Baaki scenes try karein?")) break;
+    }
+    setRunning(false);
+    onDone?.();
+  };
+  return (
+    <div data-testid="divine-animate" className="surface rounded-lg p-3">
+      <div className="text-sm font-medium">Step 3 · Scenes ko asli moving video banao (optional, paid)</div>
+      <div className="text-xs text-zinc-400 mt-0.5">AI image-to-video, 720p, har scene 5-10s · Creator/Studio/Enterprise plan. Kuch bhi bina aapke approve kiye nahi banega.</div>
+      <div className="mt-2 space-y-1">
+        {scenes.map((s, i) => (
+          <div key={i} data-testid={`divine-scene-status-${i}`} className="flex items-center justify-between text-xs">
+            <span className="truncate">Scene {i + 1}</span>
+            <span className="flex items-center gap-2">
+              <span className={s.video_clip_url || st[i] === "done" ? "text-emerald-400" : st[i] && st[i] !== "running" ? "text-red-400" : "text-zinc-400"}>
+                {s.video_clip_url || st[i] === "done" ? "Video ready" : st[i] === "running" ? "Ban raha hai…" : st[i] ? "Fail (credits wapas)" : "Sirf tasveer"}
+              </span>
+              {s.image_url && !running && (st[i] && st[i] !== "running" && st[i] !== "done" || s.video_clip_url) && (
+                <button data-testid={`divine-scene-redo-${i}`} onClick={async () => {
+                  if (window.confirm(`Scene ${i + 1} dobara banana hai? ~30 CR`)) { setRunning(true); await one(i); setRunning(false); onDone?.(); }
+                }} className="underline text-zinc-300">Dobara</button>
+              )}
+            </span>
+          </div>
+        ))}
+      </div>
+      {pending.length > 0 && (
+        <button data-testid="divine-animate-all" disabled={running} onClick={runAll}
+          className="mt-3 rounded-full px-4 py-1.5 text-xs border border-[#E2FF3D]/50 text-[#E2FF3D] hover:bg-[#E2FF3D]/10 disabled:opacity-50 flex items-center gap-1.5">
+          {running && <Loader2 className="w-3 h-3 animate-spin" />} {pending.length} scenes animate karo (~{pending.length * 30} CR)
+        </button>
+      )}
+    </div>
+  );
+};
+
 export const DivinePanel = ({ project, onDone }) => {
   const [deity, setDeity] = useState(project.character?.name || "Lakshmi");
   const [customDesc, setCustomDesc] = useState("");
@@ -111,6 +175,7 @@ export const DivinePanel = ({ project, onDone }) => {
           </div>
         </div>
 
+        <DivineAnimate project={project} character={character} onDone={onDone} />
         <div data-testid="divine-estimate" className="text-xs text-zinc-400">
           Andaazan kharcha: <span className="text-[#E2FF3D] font-semibold">~{(character ? 0 : 3) + 5 + scenes * 3 + 10} CR</span>
           {" "}({character ? "" : "character 3 + "}script 5 + {scenes} scenes × 3 + render 10){narration ? " + voiceover" : ""}. AI video clips har scene par alag se, sirf aap chunein to.

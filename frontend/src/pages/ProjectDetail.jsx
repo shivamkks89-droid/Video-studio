@@ -1,3 +1,4 @@
+import { TrendingToggle } from "../components/TrendingToggle";
 import { DivinePanel } from "../components/DivinePanel";
 import { FestivalPanel } from "../components/FestivalPanel";
 import { ScriptHistory } from "../components/ScriptHistory";
@@ -1532,6 +1533,7 @@ export default function ProjectDetail() {
             <p className="text-xs text-zinc-500 mb-3">Combine storyboard + voiceover into an MP4 with Ken-Burns motion.
               {!project.audio_url && " (Add voiceover for sound, or render a silent slideshow.)"}
             </p>
+            <TrendingToggle project={project} />
             <button data-testid="render-video" onClick={renderVideo} disabled={busyRender || !project.scenes?.length}
               className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
               {busyRender ? <Loader2 className="w-4 h-4 animate-spin" /> : <Video className="w-4 h-4" />}

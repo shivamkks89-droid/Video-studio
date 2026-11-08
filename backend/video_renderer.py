@@ -191,7 +191,8 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                        music_url: Optional[str] = None,
                        music_volume: float = 0.2,
                        greeting: Optional[str] = None,
-                       greeting_pos: str = "center") -> Optional[str]:
+                       greeting_pos: str = "center",
+                       trending: bool = False) -> Optional[str]:
     """Render an MP4 from a list of scenes.
 
     Each scene can carry either a still `image_url` (rendered with ken-burns) or
@@ -424,15 +425,17 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                     f"[fg]scale={w}:{h}:force_original_aspect_ratio=decrease:flags=lanczos[fgs];"
                     f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2,"
                     f"scale={cw}:{ch}:flags=lanczos,loop=loop={dur_frames - 1}:size=1:start=0,setpts=N/{fps}/TB,"
-                    f"crop={w}:{h}:x='(iw-ow)/2':y='{pan_y}',"
-                    f"format=yuv420p" + _text_vf(i, dur)
+                    + (f"crop={w}:{h}:x='(iw-ow)/2+if(lt(t,0.35),14*sin(n*2.7),0)':y='min(ih-oh,{pan_y}+if(lt(t,0.35),5+5*cos(n*3.1),0))',"
+                       f"eq=contrast=1.07:saturation=1.22,vignette=PI/5," if trending else
+                       f"crop={w}:{h}:x='(iw-ow)/2':y='{pan_y}',")
+                    + f"format=yuv420p" + _text_vf(i, dur)
                 )
                 trans_in = []
                 if in_clip_trans:
                     # Dip-through-black between scenes: single-input fades, ~zero extra memory/CPU.
                     fades = []
                     if i > 0:
-                        fades.append(f"fade=t=in:st=0:d={XFADE_T / 2:.2f}")
+                        fades.append(f"fade=t=in:st=0:d={XFADE_T / 2:.2f}" + (":color=white" if trending else ""))
                     if i < len(items) - 1:
                         fades.append(f"fade=t=out:st={max(0.0, dur - XFADE_T / 2):.2f}:d={XFADE_T / 2:.2f}")
                     if fades:
