@@ -1,5 +1,6 @@
 import { TrendingToggle } from "../components/TrendingToggle";
 import { DivinePanel } from "../components/DivinePanel";
+import { MusicCaptionPanel } from "../components/MusicCaptionPanel";
 import { FestivalPanel } from "../components/FestivalPanel";
 import { ScriptHistory } from "../components/ScriptHistory";
 import { ordinal } from "./RenderQueue";
@@ -1178,6 +1179,8 @@ export default function ProjectDetail() {
                 </a>
               </div>
             )}
+
+            {project.scenes?.length > 0 && <MusicCaptionPanel project={project} setProject={setProject} />}
 
             {/* CAPTIONS: burn word-level animated captions into every scene */}
             {project.audio_url && (
