@@ -189,7 +189,8 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                        progress_cb=None,
                        watermark: bool = False,
                        music_url: Optional[str] = None,
-                       music_volume: float = 0.2) -> Optional[str]:
+                       music_volume: float = 0.2,
+                       greeting: Optional[str] = None) -> Optional[str]:
     """Render an MP4 from a list of scenes.
 
     Each scene can carry either a still `image_url` (rendered with ken-burns) or
@@ -570,6 +571,21 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                     subs_path.write_text(_build_ass_captions([], w, h, {}).replace(
                         "\n\n[Events]", f"\n{style_line}\n\n[Events]", 1).rstrip("\n") + "\n" + events + "\n",
                         encoding="utf-8")
+
+            if greeting and base_durs:
+                st = max(0.0, sum(base_durs) - base_durs[-1] + 0.3)
+                gfs = max(48, w // 12)
+                g_style = (f"Style: GR,Arial,{gfs},&H00FFFFFF,&H00FFFFFF,&H00000000,&H90000000,"
+                           f"-1,0,0,0,100,100,2,0,1,4,3,5,60,60,0,1")
+                g_t = f"{int(st // 3600)}:{int(st % 3600 // 60):02d}:{st % 60:05.2f}"
+                g_event = (f"Dialogue: 3,{g_t},9:59:59.00,GR,,0,0,0,,"
+                           f"{{\\fad(500,0)\\c&H3DFFE2&}}{_ass_escape(greeting.split(chr(92) + 'N')[0])}"
+                           + (f"\\N{{\\c&HFFFFFF&\\fs{gfs * 2 // 3}}}{_ass_escape(greeting.split(chr(92) + 'N', 1)[1])}"
+                              if chr(92) + "N" in greeting else ""))
+                base = subs_path.read_text(encoding="utf-8") if subs_path else _build_ass_captions([], w, h, {})
+                subs_path = tmp_path / "greet.ass"
+                subs_path.write_text(base.replace("\n\n[Events]", f"\n{g_style}\n\n[Events]", 1).rstrip("\n")
+                                     + "\n" + g_event + "\n", encoding="utf-8")
 
             if watermark:
                 fs = max(26, w // 30)

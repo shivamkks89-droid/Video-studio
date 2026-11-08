@@ -1663,6 +1663,9 @@ async def render_project_video(project_id: str, request: Request):
     user = await _charge_credits(user, 10, "video_render", project_id)
     job_id = "job_" + uuid.uuid4().hex[:12]
     music_only = p.get("creation_mode") == "music_only"
+    greet = FESTIVAL_GREETINGS.get(p.get("festival_theme") or "")
+    brand = ((p.get("source_assets") or {}).get("title") or "").strip()[:40]
+    greeting = (f"{greet}\\Nfrom {brand}" if brand else greet) if greet else None
     args = dict(
         scenes=scenes, audio_url=None if music_only else p.get("audio_url"),
         aspect_ratio=p.get("aspect_ratio", "9:16"), fps=int(p.get("fps", 30)),
@@ -1670,7 +1673,7 @@ async def render_project_video(project_id: str, request: Request):
         caption_style=p.get("caption_style"),
         talking_avatar_url=p.get("talking_avatar_url"),
         talking_avatar_mode=p.get("talking_avatar_mode") or "off",
-        music_url=p.get("music_url"), music_volume=float(p.get("music_volume") or 0.2),
+        music_url=p.get("music_url"), music_volume=float(p.get("music_volume") or 0.2), greeting=greeting,
         watermark=(user.plan or "free") == "free" and user.role != "admin" and not getattr(user, "unlimited_credits", False),
     )
     await db.render_jobs.insert_one({
@@ -1956,6 +1959,12 @@ def _bg(coro):
     return t
 
 
+FESTIVAL_GREETINGS = {
+    "Festival": "Happy Festive Season", "Diwali": "Happy Diwali", "Holi": "Happy Holi", "Eid": "Eid Mubarak",
+    "Christmas": "Merry Christmas", "New Year": "Happy New Year", "Wedding": "Best Wishes on Your Wedding",
+    "Birthday": "Happy Birthday", "Anniversary": "Happy Anniversary", "Navratri": "Happy Navratri",
+    "Durga Puja": "Shubho Durga Puja", "Devotional": "Blessings & Happiness",
+}
 POD_ID = os.environ.get("HOSTNAME") or os.urandom(4).hex()
 
 
@@ -2010,7 +2019,8 @@ async def _run_render_job(job_id: str, user_id: str, project_id: str,
                           talking_avatar_url: Optional[str] = None,
                           talking_avatar_mode: str = "off",
                           watermark: bool = False,
-                          music_url: Optional[str] = None, music_volume: float = 0.2):
+                          music_url: Optional[str] = None, music_volume: float = 0.2,
+                          greeting: Optional[str] = None):
     try:
         await _job_live(user_id, job_id, project_id, "rendering")
         loop = asyncio.get_running_loop()
@@ -2027,7 +2037,7 @@ async def _run_render_job(job_id: str, user_id: str, project_id: str,
                 {"job_id": job_id, "status": {"$in": ["pending", "rendering"]}},
                 {"$set": {"status": "rendering", "progress": pct, "eta_s": eta, "hb_at": utc_now().isoformat()}}), loop)
 
-        video_url = await render_video(progress_cb=_progress, watermark=watermark, music_url=music_url,
+        video_url = await render_video(progress_cb=_progress, watermark=watermark, music_url=music_url, greeting=greeting,
                                        music_volume=music_volume, scenes=scenes, audio_data_uri=audio_url,
                                        aspect_ratio=aspect_ratio, fps=fps,
                                        caption_words=caption_words,
