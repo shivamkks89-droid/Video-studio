@@ -6,7 +6,7 @@ import os
 import re
 from typing import List, Optional
 
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 
 
 EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
@@ -484,7 +484,8 @@ def _safe_json(text: str):
 
 
 # ---------- Gemini Nano Banana image generation ----------
-async def generate_scene_image(prompt: str, aspect_ratio: str = "9:16") -> Optional[str]:
+async def generate_scene_image(prompt: str, aspect_ratio: str = "9:16",
+                               reference_data_uri: Optional[str] = None) -> Optional[str]:
     """Returns a data: URL of a PNG image, or None on failure."""
     try:
         chat = LlmChat(
@@ -512,7 +513,15 @@ async def generate_scene_image(prompt: str, aspect_ratio: str = "9:16") -> Optio
             f"studio-grade lighting, magazine-quality composition. "
             f"Absolutely NO text, NO captions, NO logos, NO watermarks, NO subtitles anywhere in the image."
         )
-        text, images = await chat.send_message_multimodal_response(UserMessage(text=full_prompt))
+        msg = UserMessage(text=full_prompt)
+        if reference_data_uri and reference_data_uri.startswith("data:") and "," in reference_data_uri:
+            # Character-consistency: same face, costume, jewellery, skin tone and proportions as the reference.
+            msg = UserMessage(
+                text=("Use the attached image as the MASTER CHARACTER REFERENCE. Keep the exact same character identity — "
+                      "same face, skin tone, costume, jewellery, crown, body proportions and colours — in a NEW scene: "
+                      + full_prompt),
+                file_contents=[ImageContent(reference_data_uri.split(",", 1)[1])])
+        text, images = await chat.send_message_multimodal_response(msg)
         if not images:
             print(f"[Image gen] no images returned; text={text[:120] if text else ''}")
             return None

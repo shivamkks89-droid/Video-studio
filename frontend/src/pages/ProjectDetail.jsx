@@ -1,3 +1,4 @@
+import { DivinePanel } from "../components/DivinePanel";
 import { FestivalPanel } from "../components/FestivalPanel";
 import { ScriptHistory } from "../components/ScriptHistory";
 import { ordinal } from "./RenderQueue";
@@ -1007,6 +1008,7 @@ export default function ProjectDetail() {
                 </div>
               </div>
             )}
+            <div className="mt-4"><DivinePanel project={project} onDone={async () => { const { data: p } = await api.get(`/projects/${id}`); setProject(p); }} /></div>
             <div className="mt-4"><FestivalPanel project={project} onDone={async () => { const { data: p } = await api.get(`/projects/${id}`); setProject(p); }} /></div>
             <ScriptHistory project={project} onRestored={(script) => setProject({ ...project, script, voice_stale: true })} />
             {project.script?.hook && (

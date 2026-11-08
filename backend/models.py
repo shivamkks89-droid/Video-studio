@@ -148,6 +148,7 @@ class TTSRequest(BaseModel):
 class SceneImageRequest(BaseModel):
     prompt: str
     aspect_ratio: str = "9:16"
+    project_id: Optional[str] = None
 
 
 class StoryboardRequest(BaseModel):

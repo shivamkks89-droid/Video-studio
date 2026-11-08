@@ -1,3 +1,4 @@
+import base64
 import random
 import time
 import re
@@ -1252,12 +1253,58 @@ async def ai_tts_openai(body: OpenAITTSReq, request: Request):
             "provider": "openai", "credits_left": user.credits}
 
 
+async def _character_ref(project_id: Optional[str], user_id: str):
+    """(description, reference data-URI) of the project's master character, if any."""
+    if not project_id:
+        return None, None
+    p = await db.projects.find_one({"project_id": project_id, "user_id": user_id}, {"_id": 0, "character": 1})
+    ch = (p or {}).get("character") or {}
+    if not ch.get("image_url"):
+        return ch.get("description"), None
+    try:
+        b = await fetch_asset_bytes(ch["image_url"])
+        mime = "image/jpeg" if b and b[:2] == b"\xff\xd8" else "image/png"
+        return ch.get("description"), f"data:{mime};base64," + base64.b64encode(b).decode() if b else None
+    except Exception:
+        return ch.get("description"), None
+
+
+class DivineCharReq(BaseModel):
+    project_id: str
+    name: str
+    description: str
+    style: str = "Realistic 3D CGI"
+    aspect_ratio: str = "9:16"
+
+
+@api.post("/divine/character")
+async def divine_character(body: DivineCharReq, request: Request):
+    """Generate the master character reference image (3 CR; refunded on failure)."""
+    user = await _current(request)
+    p = await db.projects.find_one({"project_id": body.project_id, "user_id": user.user_id}, {"_id": 1})
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+    user = await _charge_credits(user, 3, "divine_character", body.project_id)
+    desc = f"{body.name}: {body.description.strip()[:600]}"
+    prompt = (f"Full-body character reference portrait of {desc}. Style: {body.style}, divine golden aura, "
+              f"volumetric light, soft particles, centred, plain dark temple background, front view, respectful devotional depiction")
+    img = await generate_scene_image(prompt, body.aspect_ratio)
+    if not img:
+        await _refund(user, 3, "divine_character", body.project_id)
+        raise HTTPException(status_code=502, detail="Character image nahi bani — credits wapas kar diye gaye, dobara try karo")
+    url = await save_image_persistent(img) or img
+    character = {"name": body.name, "description": desc, "style": body.style, "image_url": url}
+    await db.projects.update_one({"project_id": body.project_id}, {"$set": {"character": character}})
+    return {"character": character, "credits_left": user.credits}
+
+
 # ---------- AI: scene images ----------
 @api.post("/ai/scene-image")
 async def ai_scene_image(body: SceneImageRequest, request: Request):
     user = await _current(request)
     user = await _charge_credits(user, 3, "scene_image")
-    img = await generate_scene_image(body.prompt, body.aspect_ratio)
+    ch_desc, ch_ref = await _character_ref(body.project_id, user.user_id)
+    img = await generate_scene_image(f"{ch_desc}. {body.prompt}" if ch_desc else body.prompt, body.aspect_ratio, ch_ref)
     if not img:
         await _refund(user, 3, "scene_image")
         return {"image_url": None, "credits_left": user.credits,
@@ -1310,6 +1357,9 @@ async def ai_storyboard(body: StoryboardRequest, request: Request):
         real_assets = list(sa.get("screenshots") or [])
         real_icon = sa.get("icon")
         real_title = sa.get("title")
+    ch_desc, ch_ref = await _character_ref(body.project_id, user.user_id)
+    if ch_desc:  # Divine/character projects: every scene is the master character, never app screenshots
+        real_assets, real_icon = [], None
 
     out: List[dict] = []
     succeeded = 0
@@ -1378,7 +1428,9 @@ async def ai_storyboard(body: StoryboardRequest, request: Request):
                 f"{prompt}. Camera: {camera}. Lighting: {lighting}. Motion: {motion}. "
                 f"Do not include any text, logo, wordmark or app-store badge in this image."
             )
-            img = await generate_scene_image(full, body.aspect_ratio)
+            if ch_desc:
+                full = f"Main character (keep identical in every scene): {ch_desc}. {full}"
+            img = await generate_scene_image(full, body.aspect_ratio, ch_ref)
             if img:
                 img = (await save_image_persistent(img)) or img
                 source_tag = "ai"
