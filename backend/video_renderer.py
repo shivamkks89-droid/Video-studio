@@ -187,7 +187,9 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                        motion_text: bool = True,
                        transitions: bool = True,
                        progress_cb=None,
-                       watermark: bool = False) -> Optional[str]:
+                       watermark: bool = False,
+                       music_url: Optional[str] = None,
+                       music_volume: float = 0.2) -> Optional[str]:
     """Render an MP4 from a list of scenes.
 
     Each scene can carry either a still `image_url` (rendered with ken-burns) or
@@ -243,6 +245,13 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
     job_id = uuid.uuid4().hex[:12]
 
     # Pre-fetch audio bytes (async) before entering the sync render thread.
+    music_bytes: Optional[bytes] = None
+    if music_url:
+        try:
+            from asset_store import fetch_to_bytes as _fetch_music
+            music_bytes = _data_uri_to_bytes(music_url) if music_url.startswith("data:") else await _fetch_music(music_url)
+        except Exception as e:
+            print(f"[render] music fetch failed (rendering without music): {e}")
     audio_bytes: Optional[bytes] = None
     if audio_data_uri:
         if audio_data_uri.startswith("data:"):
@@ -572,52 +581,59 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                 subs_path.write_text(base.replace("\n\n[Events]", f"\n{wm_style}\n\n[Events]", 1).rstrip("\n")
                                      + "\n" + wm_event + "\n", encoding="utf-8")
 
-            if audio_bytes:
-                audio_path = tmp_path / "voice.mp3"
-                audio_path.write_bytes(audio_bytes)
-
-                # Measure both durations quickly.
-                def _probe(path: Path) -> float:
-                    try:
-                        pr = _run(
-                            [FFMPEG_BIN, "-i", str(path)],
-                            capture_output=True, timeout=15,
-                        )
-                        for line in pr.stderr.decode(errors="ignore").splitlines():
-                            if "Duration:" in line:
-                                # e.g. "  Duration: 00:00:12.34, ..."
-                                h, m, s = line.split("Duration:")[1].split(",")[0].strip().split(":")
-                                return int(h) * 3600 + int(m) * 60 + float(s)
-                    except Exception:
-                        return 0.0
+            def _probe(path: Path) -> float:
+                try:
+                    pr = _run([FFMPEG_BIN, "-i", str(path)], capture_output=True, timeout=15)
+                    for line in pr.stderr.decode(errors="ignore").splitlines():
+                        if "Duration:" in line:
+                            hh, mm, ss = line.split("Duration:")[1].split(",")[0].strip().split(":")
+                            return int(hh) * 3600 + int(mm) * 60 + float(ss)
+                except Exception:
                     return 0.0
+                return 0.0
 
-                video_dur = sum(base_durs) if xf_graph else _probe(combined)
-                voice_dur = _probe(audio_path)
-                # Final length == voice length. Original audio is never sped up; if the
-                # voice runs longer, the last frame is held (tpad) so no dialogue is cut.
-                vf = []
-                if subs_path and subs_path.exists():
-                    vf.append(f"subtitles={subs_path}:fontsdir={FONT_DIR}")
-                pad = voice_dur - video_dur if video_dur > 0 and voice_dur > 0 else 0
-                if pad > 0.05:
-                    vf.append(f"tpad=stop_mode=clone:stop_duration={pad + 0.2:.2f}")
-                print(f"[render] voice {voice_dur:.2f}s, video {video_dur:.2f}s, pad {max(pad, 0):.2f}s")
-                vargs = (["-vf", ",".join(vf), "-c:v", "libx264", "-x264-params", "rc-lookahead=8:threads=2:sliced-threads=1", "-preset", "ultrafast", "-crf", "18",
-                          "-pix_fmt", "yuv420p"] if vf else ["-c:v", "copy"])
-                dur_args = ["-t", f"{voice_dur:.3f}"] if voice_dur > 0 else ["-shortest"]
-                cmd = [FFMPEG_BIN, "-y", "-threads", "2", "-i", str(combined), "-i", str(audio_path),
-                       "-map", "0:v:0", "-map", "1:a:0", *vargs,
-                       "-c:a", "aac", "-b:a", "192k", *dur_args, "-movflags", "+faststart", str(final)]
-            else:
-                if subs_path and subs_path.exists():
-                    cmd = [FFMPEG_BIN, "-y", "-threads", "2", "-i", str(combined),
-                           "-vf", f"subtitles={subs_path}:fontsdir={FONT_DIR}",
-                           "-c:v", "libx264", "-x264-params", "rc-lookahead=8:threads=2:sliced-threads=1", "-preset", "ultrafast", "-crf", "20",
-                           "-pix_fmt", "yuv420p", str(final)]
+            voice_path = music_path = None
+            if audio_bytes:
+                voice_path = tmp_path / "voice.mp3"
+                voice_path.write_bytes(audio_bytes)
+            if music_bytes:
+                music_path = tmp_path / "music.mp3"
+                music_path.write_bytes(music_bytes)
+            video_dur = _probe(combined)
+            voice_dur = _probe(voice_path) if voice_path else 0.0
+            # Final length == voice length (voice never sped up); music-only == visuals length.
+            total = voice_dur if voice_dur > 0 else video_dur
+            vf = []
+            if subs_path and subs_path.exists():
+                vf.append(f"subtitles={subs_path}:fontsdir={FONT_DIR}")
+            pad = total - video_dur if video_dur > 0 else 0
+            if pad > 0.05:
+                vf.append(f"tpad=stop_mode=clone:stop_duration={pad + 0.2:.2f}")
+            print(f"[render] voice {voice_dur:.2f}s, video {video_dur:.2f}s, music {bool(music_path)}, pad {max(pad, 0):.2f}s")
+            inputs, fc, amap = ["-i", str(combined)], [], None
+            if voice_path:
+                inputs += ["-i", str(voice_path)]
+                amap = "1:a:0"
+            if music_path:
+                mi = 2 if voice_path else 1
+                inputs += ["-stream_loop", "-1", "-i", str(music_path)]
+                vol = max(0.0, min(1.0, music_volume)) if voice_path else 0.85
+                fc.append(f"[{mi}:a]volume={vol:.2f},afade=t=in:st=0:d=0.6,"
+                          f"afade=t=out:st={max(0.0, total - 1.5):.2f}:d=1.5[m]")
+                if voice_path:
+                    fc.append("[1:a][m]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]")
+                    amap = "[a]"
                 else:
-                    cmd = [FFMPEG_BIN, "-y", "-threads", "2", "-i", str(combined),
-                           "-c", "copy", str(final)]
+                    amap = "[m]"
+            if vf:
+                fc.append(f"[0:v]{','.join(vf)}[v]")
+                venc = ["-map", "[v]", "-c:v", "libx264", "-x264-params", "rc-lookahead=8:threads=2:sliced-threads=1",
+                        "-preset", "ultrafast", "-crf", "18", "-pix_fmt", "yuv420p"]
+            else:
+                venc = ["-map", "0:v:0", "-c:v", "copy"]
+            cmd = [FFMPEG_BIN, "-y", "-threads", "2", *inputs, *(["-filter_complex", ";".join(fc)] if fc else []),
+                   *venc, *(["-map", amap, "-c:a", "aac", "-b:a", "192k"] if amap else []),
+                   *(["-t", f"{total:.3f}"] if total > 0 else []), "-movflags", "+faststart", str(final)]
             if xf_graph:
                 cmd = _single_pass(cmd, xf_graph, scene_videos)
             r = _run(cmd, capture_output=True, timeout=120, track=True)

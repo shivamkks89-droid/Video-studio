@@ -1627,7 +1627,7 @@ async def render_project_video(project_id: str, request: Request):
     # project.duration_sec) so subtitles/pacing feel natural. If no voice yet, we
     # fall back to the project's configured duration. Scene durations are then
     # distributed evenly to sum to the chosen target.
-    audio_url = p.get("audio_url")
+    audio_url = None if p.get("creation_mode") == "music_only" else p.get("audio_url")
     voice_dur = 0.0
     if audio_url:
         try:
@@ -1662,13 +1662,15 @@ async def render_project_video(project_id: str, request: Request):
 
     user = await _charge_credits(user, 10, "video_render", project_id)
     job_id = "job_" + uuid.uuid4().hex[:12]
+    music_only = p.get("creation_mode") == "music_only"
     args = dict(
-        scenes=scenes, audio_url=p.get("audio_url"),
+        scenes=scenes, audio_url=None if music_only else p.get("audio_url"),
         aspect_ratio=p.get("aspect_ratio", "9:16"), fps=int(p.get("fps", 30)),
-        caption_words=p.get("caption_words") if p.get("captions_enabled") else None,
+        caption_words=p.get("caption_words") if p.get("captions_enabled") and not music_only else None,
         caption_style=p.get("caption_style"),
         talking_avatar_url=p.get("talking_avatar_url"),
         talking_avatar_mode=p.get("talking_avatar_mode") or "off",
+        music_url=p.get("music_url"), music_volume=float(p.get("music_volume") or 0.2),
         watermark=(user.plan or "free") == "free" and user.role != "admin" and not getattr(user, "unlimited_credits", False),
     )
     await db.render_jobs.insert_one({
@@ -2007,7 +2009,8 @@ async def _run_render_job(job_id: str, user_id: str, project_id: str,
                           caption_style: Optional[dict] = None,
                           talking_avatar_url: Optional[str] = None,
                           talking_avatar_mode: str = "off",
-                          watermark: bool = False):
+                          watermark: bool = False,
+                          music_url: Optional[str] = None, music_volume: float = 0.2):
     try:
         await _job_live(user_id, job_id, project_id, "rendering")
         loop = asyncio.get_running_loop()
@@ -2024,7 +2027,8 @@ async def _run_render_job(job_id: str, user_id: str, project_id: str,
                 {"job_id": job_id, "status": {"$in": ["pending", "rendering"]}},
                 {"$set": {"status": "rendering", "progress": pct, "eta_s": eta, "hb_at": utc_now().isoformat()}}), loop)
 
-        video_url = await render_video(progress_cb=_progress, watermark=watermark, scenes=scenes, audio_data_uri=audio_url,
+        video_url = await render_video(progress_cb=_progress, watermark=watermark, music_url=music_url,
+                                       music_volume=music_volume, scenes=scenes, audio_data_uri=audio_url,
                                        aspect_ratio=aspect_ratio, fps=fps,
                                        caption_words=caption_words,
                                        caption_style=caption_style,

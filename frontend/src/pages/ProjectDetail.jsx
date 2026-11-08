@@ -1,3 +1,4 @@
+import { FestivalPanel } from "../components/FestivalPanel";
 import { ScriptHistory } from "../components/ScriptHistory";
 import { ordinal } from "./RenderQueue";
 import { useBackClose, setExitGuard } from "../lib/backStack";
@@ -140,7 +141,7 @@ export default function ProjectDetail() {
   // Voice Studio → Attach) and the project already had a rendered voiceover.
   useEffect(() => {
     if (!project || autoRegenTriedRef.current) return;
-    if (!project.voice_stale) return;
+    if (!project.voice_stale || project.creation_mode === "music_only") return;
     if (!project.audio_url || !project.script?.body) return;
     autoRegenTriedRef.current = true;
     toast.info("Voice changed — regenerating voiceover with the new voice…");
@@ -551,7 +552,7 @@ export default function ProjectDetail() {
   const renderVideo = async (resumeJobId) => {
     if (typeof resumeJobId !== "string") resumeJobId = null;
     if (!resumeJobId && !project.scenes?.length) return toast.error("Generate the storyboard first");
-    if (!resumeJobId && !project.audio_url) {
+    if (!resumeJobId && !project.audio_url && !project.music_url) {
       const proceed = window.confirm(
         "Voiceover not generated yet — the video will be SILENT. Click Cancel to first press 'Generate voiceover', or OK to render a silent slideshow."
       );
@@ -1006,6 +1007,7 @@ export default function ProjectDetail() {
                 </div>
               </div>
             )}
+            <div className="mt-4"><FestivalPanel project={project} onDone={async () => { const { data: p } = await api.get(`/projects/${id}`); setProject(p); }} /></div>
             <ScriptHistory project={project} onRestored={(script) => setProject({ ...project, script, voice_stale: true })} />
             {project.script?.hook && (
               <div className="mt-4 space-y-2 text-sm" data-testid="pd-script-out">
