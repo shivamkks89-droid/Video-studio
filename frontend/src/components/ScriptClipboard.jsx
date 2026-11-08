@@ -74,6 +74,14 @@ export const ShareVideoWhatsApp = ({ src, title }) => {
   const go = async () => {
     setBusy(true);
     try {
+      if (window.Capacitor?.isNativePlatform?.()) {
+        const [{ Filesystem, Directory }, { Share }] = await Promise.all([import("@capacitor/filesystem"), import("@capacitor/share")]);
+        const blob = await (await fetch(url)).blob();
+        const data = await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.onerror = no; r.readAsDataURL(blob); });
+        const { uri } = await Filesystem.writeFile({ path: `share_${Date.now()}.mp4`, data, directory: Directory.Cache });
+        await Share.share({ title: title || "CineReel video", text: "WhatsApp chuno → My Status", files: [uri], dialogTitle: "WhatsApp Status par lagao" });
+        return;
+      }
       if (navigator.canShare) {
         const blob = await (await fetch(url)).blob();
         const file = new File([blob], `${(title || "cinereel").replace(/[^\w-]+/g, "_")}.mp4`, { type: "video/mp4" });

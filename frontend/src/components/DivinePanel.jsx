@@ -22,6 +22,15 @@ const TEMPLATES = [
   ["ganesh", "Ganesh Chaturthi Katha", "Ganesha", "Mythological Stories", "Bal Ganesh aur Mata Parvati ki katha — kaise Ganesh ji pratham pujya bane", 45],
   ["krishna", "Janmashtami Leela", "Krishna", "Mythological Stories", "Bal Krishna ki makhan chori leela aur Yashoda maiya ka pyaar", 45],
   ["durga", "Navratri Mahishasur Vadh", "Durga", "Festival Specials", "Maa Durga ka shakti roop aur Mahishasur par vijay — Navratri ki shubhkamnayein", 45],
+  ["diwali", "Diwali Lakshmi Pujan", "Lakshmi", "Festival Specials", "Diwali ki raat Maa Lakshmi ka aagman, diye aur samriddhi ka ashirwad", 45],
+  ["shivratri", "Mahashivratri", "Shiva", "Festival Specials", "Mahashivratri par Shiv-Parvati vivah aur Bholenath ka dhyan", 45],
+  ["ramnavami", "Ram Navami", "Ram", "Festival Specials", "Prabhu Shri Ram ka janm aur Ayodhya ka utsav", 45],
+  ["dussehra", "Dussehra Vijay", "Ram", "Mythological Stories", "Shri Ram ki Ravan par vijay — buraai par achhai ki jeet", 45],
+  ["hanuman", "Hanuman Jayanti", "Hanuman", "Festival Specials", "Hanuman ji ki bhakti, shakti aur Sanjeevani parvat ki katha", 45],
+  ["holi", "Holi Radha-Krishna", "Krishna", "Festival Specials", "Vrindavan me Radha-Krishna ki rangon bhari Holi", 30],
+  ["basant", "Basant Panchami", "Saraswati", "Festival Specials", "Basant Panchami par Maa Saraswati se vidya aur buddhi ka vardaan", 30],
+  ["dhanteras", "Dhanteras", "Lakshmi", "Festival Specials", "Dhanteras par Maa Lakshmi aur sone-chandi ki shubh kharidari", 30],
+  ["ganesh-daily", "Daily Ganesh Vandana", "Ganesha", "Devotional Reels", "Subah ki shuruaat Ganpati Bappa ke ashirwad ke saath", 15],
 ];
 const RES_CR = { "480p": 15, "720p": 30, "1080p": 60 };
 const RES_OPTS = [["480p", "480p · Sasta (15 CR)"], ["720p", "720p · Standard (30 CR)"], ["1080p", "1080p · Premium (60 CR)"]];
@@ -152,7 +161,7 @@ export const DivinePanel = ({ project, onDone }) => {
       <div className="label-mono text-zinc-500 flex items-center gap-2"><Flame className="w-4 h-4 text-[#E2FF3D]" /> / DIVINE AVATAR STUDIO</div>
       <div data-testid="divine-templates" className="mt-3">
         <div className="text-xs text-zinc-400 mb-1.5">Ready templates — ek tap me shuru karo</div>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-3 gap-2 max-h-56 overflow-y-auto pr-1">
           {TEMPLATES.map(([k, label, d, m, t, du]) => (
             <button key={k} type="button" data-testid={`divine-template-${k}`}
               onClick={() => { setDeity(d); setMode(m); setTopic(t); setDur(du); setCustomDesc(""); toast.success(`${label} template lag gaya`); }}
