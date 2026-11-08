@@ -31,6 +31,12 @@ public class MainActivity extends BridgeActivity {
         int bg = Color.parseColor(light ? "#FFFFFF" : "#0A0A0B");
         // Edge-to-edge: bars are transparent; the decor background shows behind them.
         w.getDecorView().setBackgroundColor(bg);
+        // Paint the WebView parent too, so no white/splash background can ever show in a gap.
+        if (a instanceof BridgeActivity && ((BridgeActivity) a).getBridge() != null) {
+            View wv = ((BridgeActivity) a).getBridge().getWebView();
+            wv.setBackgroundColor(bg);
+            if (wv.getParent() instanceof View) ((View) wv.getParent()).setBackgroundColor(bg);
+        }
         WindowInsetsControllerCompat c = WindowCompat.getInsetsController(w, w.getDecorView());
         c.setAppearanceLightStatusBars(light);
         c.setAppearanceLightNavigationBars(light);
@@ -67,12 +73,21 @@ public class MainActivity extends BridgeActivity {
             ViewCompat.setOnApplyWindowInsetsListener(webView, (v, insets) -> {
                 Insets sys = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
                 Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
-                MarginLayoutParams mlp = (MarginLayoutParams) v.getLayoutParams();
-                mlp.leftMargin = sys.left;
-                mlp.topMargin = sys.top;
-                mlp.rightMargin = sys.right;
-                mlp.bottomMargin = Math.max(sys.bottom, ime.bottom);
-                v.setLayoutParams(mlp);
+                int bottom = Math.max(sys.bottom, ime.bottom);
+                // Subtract any offset the parent already has (some devices/plugins inset it) to avoid double gaps.
+                v.post(() -> {
+                    View parent = (View) v.getParent();
+                    int[] loc = new int[2];
+                    parent.getLocationOnScreen(loc);
+                    int screenH = parent.getRootView().getHeight();
+                    int parentBottomGap = Math.max(0, screenH - (loc[1] + parent.getHeight()));
+                    MarginLayoutParams mlp = (MarginLayoutParams) v.getLayoutParams();
+                    mlp.leftMargin = sys.left;
+                    mlp.rightMargin = sys.right;
+                    mlp.topMargin = Math.max(0, sys.top - loc[1]);
+                    mlp.bottomMargin = Math.max(0, bottom - parentBottomGap);
+                    v.setLayoutParams(mlp);
+                });
                 return WindowInsetsCompat.CONSUMED;
             });
             ViewCompat.requestApplyInsets(webView);

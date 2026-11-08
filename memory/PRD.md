@@ -214,3 +214,4 @@ InVideo AI + CapCut + Canva AI.
 - 2026-06: MusicCaptionPanel (library picker+preview, keyword auto-mood, no-music, volume; per-scene on_screen_text editor) in ProjectDetail.
 - 2026-06: Caption style picker (color/size s-m-l/position top-middle-bottom) saved in project.caption_style; applied to headline + subtitles in video_renderer. Divine templates: Ganesh, Krishna, Durga (one-tap fill).
 - 2026-06: 13 Divine festival templates (scrollable). Native WhatsApp Status share via @capacitor/filesystem (cache) + @capacitor/share in ShareVideoWhatsApp; cap sync done.
+- 2026-06: Android top/bottom white band (with splash squiggle) fix: MainActivity margins now subtract parent screen offset (no double inset), parent/WebView painted theme colour; launch theme android:background -> windowBackground. Needs device rebuild.
