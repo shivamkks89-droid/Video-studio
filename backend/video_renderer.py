@@ -93,19 +93,41 @@ def _ass_escape(text: str) -> str:
     return (text or "").replace("{", "").replace("}", "").replace("\n", " ")
 
 
-def _motion_text_ass(texts: List[str], durs: List[float], width: int, height: int):
-    """Animated per-scene headline (slide-up + fade, volt box) as ASS events timed to scene starts."""
+SIZE_MULT = {"s": 0.8, "m": 1.0, "l": 1.25}
+
+
+def _bgr(hex_color: Optional[str], default: str) -> str:
+    h = (hex_color or "").lstrip("#")
+    if len(h) != 6:
+        return default
+    return f"&H00{h[4:6]}{h[2:4]}{h[0:2]}".upper()
+
+
+def _is_light(hex_color: Optional[str]) -> bool:
+    h = (hex_color or "E2FF3D").lstrip("#")
+    try:
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    except ValueError:
+        return True
+    return r * 0.299 + g * 0.587 + b * 0.114 > 150
+
+
+def _motion_text_ass(texts: List[str], durs: List[float], width: int, height: int, cs: Optional[dict] = None):
+    """Animated per-scene headline (slide-up + fade, coloured box) as ASS events timed to scene starts."""
     if not any(t.strip() for t in texts):
         return None
-    fs = int(min(width, height) * 0.065)
+    cs = cs or {}
+    fs = int(min(width, height) * 0.065 * SIZE_MULT.get(cs.get("size"), 1.0))
+    box = _bgr(cs.get("color"), "&H003DFFE2")
+    ink = "&H000B0A0A" if _is_light(cs.get("color")) else "&H00FFFFFF"
 
     def ft(sec):
         cs = int(round(max(0.0, sec) * 100))
         return f"{cs // 360000:d}:{cs // 6000 % 60:02d}:{cs // 100 % 60:02d}.{cs % 100:02d}"
 
-    style = (f"Style: Motion,FreeSans,{fs},&H000B0A0A,&H000B0A0A,&H003DFFE2,&H003DFFE2,"
+    style = (f"Style: Motion,FreeSans,{fs},{ink},{ink},{box},{box},"
              f"1,0,0,0,100,100,1,0,3,{int(fs * 0.3)},0,8,60,60,0,1")
-    x, y = width // 2, int(height * 0.13)
+    x, y = width // 2, int(height * {"middle": 0.45, "bottom": 0.7}.get(cs.get("position"), 0.13))
     events, start = [], 0.0
     for t, d in zip(texts, durs):
         t = _ass_escape(t.strip().upper()[:40])
@@ -122,9 +144,10 @@ def _build_ass_captions(words: List[dict], width: int, height: int,
     """Build an ASS subtitle file with 2-3 word chunks + karaoke-style word
     highlighting. Placed in the bottom safe zone."""
     font = style.get("font", "Arial")
-    font_size = int(style.get("font_size", max(36, height // 22)))
+    font_size = int(int(style.get("font_size", max(36, height // 22))) * SIZE_MULT.get(style.get("size"), 1.0))
     prim_color = "&H00FFFFFF"      # white text (ASS uses AABBGGRR)
-    highlight = "&H003DFFE2"       # #E2FF3D-ish yellow (BGR)
+    highlight = _bgr(style.get("color"), "&H003DFFE2")
+    align = {"top": 8, "middle": 5}.get(style.get("position"), 2)
     outline = "&H00000000"         # black outline
     margin_v = int(style.get("margin_v", max(60, height // 8)))
     max_words = int(style.get("group_size", 3))
@@ -169,7 +192,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{font},{font_size},{prim_color},{highlight},{outline},&H80000000,1,0,0,0,100,100,0,0,1,3,1,2,60,60,{margin_v},1
+Style: Default,{font},{font_size},{prim_color},{highlight},{outline},&H80000000,1,0,0,0,100,100,0,0,1,3,1,{align},60,60,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -564,7 +587,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                 subs_path.write_text(_build_ass_captions(
                     caption_words, w, h, caption_style or {}
                 ), encoding="utf-8")
-            motion = _motion_text_ass([it.get("text") or "" for it in items], base_durs, w, h) if motion_text else None
+            motion = _motion_text_ass([it.get("text") or "" for it in items], base_durs, w, h, caption_style) if motion_text else None
             if motion:
                 style_line, events = motion
                 if subs_path:

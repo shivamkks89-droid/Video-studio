@@ -73,20 +73,48 @@ const MusicPicker = ({ project, setProject }) => {
   );
 };
 
+const COLORS = ["#E2FF3D", "#FFFFFF", "#FFD700", "#FF3B3B", "#00C2FF", "#FF7A00"];
+const SIZES = [["s", "Chhota"], ["m", "Medium"], ["l", "Bada"]];
+const POSITIONS = [["top", "Upar"], ["middle", "Beech"], ["bottom", "Neeche"]];
+
+const Opt = ({ items, value, onChange, testid }) => (
+  <div className="flex gap-1">
+    {items.map(([v, l]) => (
+      <button key={v} type="button" data-testid={`${testid}-${v}`} onClick={() => onChange(v)}
+        className={`px-2.5 py-1 rounded-full text-xs border ${value === v ? "bg-[#E2FF3D] text-black border-[#E2FF3D]" : "border-white/15"}`}>{l}</button>
+    ))}
+  </div>
+);
+
+const CaptionStyle = ({ cs, setCs }) => (
+  <div data-testid="caption-style" className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+    <div className="flex items-center gap-1">
+      {COLORS.map((c) => (
+        <button key={c} type="button" data-testid={`caption-color-${c.slice(1).toLowerCase()}`} onClick={() => setCs({ ...cs, color: c })}
+          style={{ background: c }} className={`w-6 h-6 rounded-full border-2 ${(cs.color || "#E2FF3D") === c ? "border-zinc-400 scale-110" : "border-transparent"}`} />
+      ))}
+    </div>
+    <Opt items={SIZES} value={cs.size || "m"} onChange={(v) => setCs({ ...cs, size: v })} testid="caption-size" />
+    <Opt items={POSITIONS} value={cs.position || ""} onChange={(v) => setCs({ ...cs, position: v })} testid="caption-position" />
+  </div>
+);
+
 const CaptionEditor = ({ project, setProject }) => {
   const [texts, setTexts] = useState((project.scenes || []).map((s) => s.on_screen_text || ""));
+  const [cs, setCs] = useState(project.caption_style || {});
   const save = async () => {
     const scenes = (project.scenes || []).map((s, i) => ({ ...s, on_screen_text: texts[i].trim() }));
     try {
-      await api.put(`/projects/${project.project_id}`, { scenes });
-      setProject((p) => ({ ...p, scenes })); toast.success("Captions save ho gaye");
+      await api.put(`/projects/${project.project_id}`, { scenes, caption_style: cs });
+      setProject((p) => ({ ...p, scenes, caption_style: cs })); toast.success("Captions save ho gaye");
     } catch { toast.error("Save nahi hua"); }
   };
   if (!texts.length) return null;
   return (
     <div data-testid="caption-editor" className="mt-4">
       <div className="text-sm font-medium flex items-center gap-1.5"><Type className="w-4 h-4" /> Scene Captions (video ke upar text)</div>
-      <div className="text-xs text-zinc-500">Text badlo, ya khali chhodo to us scene me caption nahi aayega.</div>
+      <div className="text-xs text-zinc-500">Text badlo, ya khali chhodo to us scene me caption nahi aayega. Rang, size aur jagah subtitles par bhi lagegi.</div>
+      <CaptionStyle cs={cs} setCs={setCs} />
       <div className="mt-2 space-y-1.5">
         {texts.map((t, i) => (
           <div key={i} className="flex items-center gap-2">

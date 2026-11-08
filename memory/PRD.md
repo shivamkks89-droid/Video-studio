@@ -212,3 +212,4 @@ InVideo AI + CapCut + Canva AI.
 - 2026-06: Maa Lakshmi 6 scenes all Seedance I2V clips (scene0 5s, 1-5 8s); voice rewritten to 47s; final render /api/files/videos/1573a1211a4e42.mp4 = 47.0s 1080x1920 + audio. Clip duration now 2-12s (was 5/10).
 - 2026-06: Divine clip quality selector (480p 15CR / 720p 30CR / 1080p 60CR) in DivinePanel; backend VideoClipReq.resolution + RES_COST_MULT.
 - 2026-06: MusicCaptionPanel (library picker+preview, keyword auto-mood, no-music, volume; per-scene on_screen_text editor) in ProjectDetail.
+- 2026-06: Caption style picker (color/size s-m-l/position top-middle-bottom) saved in project.caption_style; applied to headline + subtitles in video_renderer. Divine templates: Ganesh, Krishna, Durga (one-tap fill).

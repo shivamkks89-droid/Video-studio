@@ -270,7 +270,7 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
             {"project_id": body.project_id, "user_id": user.user_id},
             {"$set": {
                 "caption_words": words,
-                "caption_style": body.style or {},
+                "caption_style": body.style or proj.get("caption_style") or {},
                 "captions_enabled": True,
                 "updated_at": utc_now().isoformat(),
             }},

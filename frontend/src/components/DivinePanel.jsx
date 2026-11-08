@@ -18,6 +18,11 @@ const MODES = ["Divine Avatar", "Mythological Stories", "Devotional Reels", "Fes
 const STYLES = ["Realistic 3D CGI", "Mythological fantasy", "Cinematic devotional", "Ultra-realistic animation"];
 const LANGS = [["hindi", "Hindi"], ["english", "English"], ["hinglish", "Hinglish"]];
 const DURS = [15, 30, 45, 60];
+const TEMPLATES = [
+  ["ganesh", "Ganesh Chaturthi Katha", "Ganesha", "Mythological Stories", "Bal Ganesh aur Mata Parvati ki katha — kaise Ganesh ji pratham pujya bane", 45],
+  ["krishna", "Janmashtami Leela", "Krishna", "Mythological Stories", "Bal Krishna ki makhan chori leela aur Yashoda maiya ka pyaar", 45],
+  ["durga", "Navratri Mahishasur Vadh", "Durga", "Festival Specials", "Maa Durga ka shakti roop aur Mahishasur par vijay — Navratri ki shubhkamnayein", 45],
+];
 const RES_CR = { "480p": 15, "720p": 30, "1080p": 60 };
 const RES_OPTS = [["480p", "480p · Sasta (15 CR)"], ["720p", "720p · Standard (30 CR)"], ["1080p", "1080p · Premium (60 CR)"]];
 
@@ -145,6 +150,18 @@ export const DivinePanel = ({ project, onDone }) => {
   return (
     <div data-testid="divine-panel" className="surface rounded-xl p-4 sm:p-5">
       <div className="label-mono text-zinc-500 flex items-center gap-2"><Flame className="w-4 h-4 text-[#E2FF3D]" /> / DIVINE AVATAR STUDIO</div>
+      <div data-testid="divine-templates" className="mt-3">
+        <div className="text-xs text-zinc-400 mb-1.5">Ready templates — ek tap me shuru karo</div>
+        <div className="grid grid-cols-3 gap-2">
+          {TEMPLATES.map(([k, label, d, m, t, du]) => (
+            <button key={k} type="button" data-testid={`divine-template-${k}`}
+              onClick={() => { setDeity(d); setMode(m); setTopic(t); setDur(du); setCustomDesc(""); toast.success(`${label} template lag gaya`); }}
+              className="rounded-lg px-2 py-2.5 text-xs text-left border border-white/10 hover:border-[#E2FF3D]/60 transition-colors">
+              <div className="font-medium">{label}</div><div className="text-zinc-500 mt-0.5">{d} · {du}s</div>
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="mt-3 grid grid-cols-4 gap-2">
         {DEITIES.map(([n]) => (
           <button key={n} type="button" data-testid={`divine-deity-${n.toLowerCase()}`} onClick={() => setDeity(n)}
