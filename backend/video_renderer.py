@@ -190,7 +190,8 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                        watermark: bool = False,
                        music_url: Optional[str] = None,
                        music_volume: float = 0.2,
-                       greeting: Optional[str] = None) -> Optional[str]:
+                       greeting: Optional[str] = None,
+                       greeting_pos: str = "center") -> Optional[str]:
     """Render an MP4 from a list of scenes.
 
     Each scene can carry either a still `image_url` (rendered with ken-burns) or
@@ -576,7 +577,7 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
                 st = max(0.0, sum(base_durs) - base_durs[-1] + 0.3)
                 gfs = max(48, w // 12)
                 g_style = (f"Style: GR,Arial,{gfs},&H00FFFFFF,&H00FFFFFF,&H00000000,&H90000000,"
-                           f"-1,0,0,0,100,100,2,0,1,4,3,5,60,60,0,1")
+                           f"-1,0,0,0,100,100,2,0,1,4,3,{ {'top': 8, 'bottom': 2}.get(greeting_pos, 5)},60,60,{h // 9},1")
                 g_t = f"{int(st // 3600)}:{int(st % 3600 // 60):02d}:{st % 60:05.2f}"
                 g_event = (f"Dialogue: 3,{g_t},9:59:59.00,GR,,0,0,0,,"
                            f"{{\\fad(500,0)\\c&H3DFFE2&}}{_ass_escape(greeting.split(chr(92) + 'N')[0])}"
