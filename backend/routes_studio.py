@@ -768,6 +768,104 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
             raise HTTPException(status_code=404, detail="Not found")
         return rec
 
+    # ---------- ALL-IN-ONE PLAY STORE KIT (from a Play Store ID) ----------
+    class KitReq(BaseModel):
+        app_id: str
+
+    KIT_COST = 20
+
+    async def _kit_job(user, kit_id: str, app: dict):
+        import json as _json
+        from playstore_shots import compose_all, compose_feature, build_promo, open_upload
+        from asset_store import save_image_data_uri, save_video_bytes
+        from ai_services import _claude_send, _safe_json, generate_scene_image
+        try:
+            system = ("You are a Google Play Store ASO expert. Reply ONLY with JSON: "
+                      '{"title":"...","short":"...","full":"...","tagline":"...",'
+                      '"items":[{"headline":"...","sub":"...","points":"a, b, c"}]} '
+                      "title max 30 chars, short max 80 chars, full 1500-3500 chars with line breaks and bullet "
+                      "lines starting with '• ', tagline max 6 words, exactly 4 items (headline 2-5 words, "
+                      "sub max 8 words, points 3 bullets max 3 words). Latin letters only. No emojis. "
+                      "Follow Google Play policy: no rankings, no 'best/#1', no price claims.")
+            ctx = (f"App: {app.get('title')} by {app.get('developer')}. Category: {app.get('category')}. "
+                   f"Summary: {app.get('summary')}. Description: {app.get('description')}")
+            p = _safe_json(await _claude_send(system, ctx)) or {}
+            listing = {"title": str(p.get("title", ""))[:30], "short": str(p.get("short", ""))[:80],
+                       "full": str(p.get("full", ""))[:4000], "tagline": str(p.get("tagline", ""))[:60]}
+            items = [{"headline": str(i.get("headline", ""))[:60], "sub": str(i.get("sub", ""))[:80],
+                      "points": str(i.get("points", ""))[:90]} for i in (p.get("items") or []) if isinstance(i, dict)][:4]
+            if not listing["title"] or len(items) < 4:
+                raise RuntimeError("AI listing incomplete")
+            name = app.get("title") or listing["title"]
+            icon_url = app.get("icon")
+            hdr = await fetch_to_bytes(app["header_image"]) if app.get("header_image") else None
+            if not hdr:
+                hdr = await fetch_to_bytes(await generate_scene_image(
+                    f"Google Play feature graphic background for the app '{name}' ({app.get('category')}): "
+                    f"{app.get('summary')}. Wide cinematic, hero visual on the left, clean right side, NO text.", "16:9"))
+            feature = await asyncio.to_thread(compose_feature, hdr, name, listing["tagline"], {})
+            feature_url = await save_image_data_uri("data:image/png;base64," + base64.b64encode(feature).decode())
+            shots = [open_upload(b) for b in [await fetch_to_bytes(u) for u in (app.get("screenshots") or [])[:4]] if b]
+            shots = [s for s in shots if s]
+            if not shots:
+                raise RuntimeError("App screenshots not found on Play Store")
+            pngs = await asyncio.to_thread(compose_all, shots, items, "brand", name, "classic", {})
+            shot_urls = [await save_image_data_uri("data:image/png;base64," + base64.b64encode(x).decode()) for x in pngs]
+            track = next((t for t in MUSIC_TRACKS if t.get("mood") == "corporate"), MUSIC_TRACKS[0])
+            mp4 = await asyncio.to_thread(build_promo, pngs, await fetch_to_bytes(track["url"]), 15 / len(pngs))
+            promo_url = await save_video_bytes(mp4)
+            await db.playstore_assets.update_one({"id": kit_id}, {"$set": {
+                "status": "complete", "listing": listing, "icon_url": icon_url, "feature_text_url": feature_url,
+                "screenshot_urls": shot_urls, "promo_url": promo_url}})
+        except Exception as e:
+            log.exception("playstore kit failed")
+            await refund(user, KIT_COST, "playstore_kit_error")
+            await db.playstore_assets.update_one({"id": kit_id}, {"$set": {"status": "failed", "error": str(e)[:200]}})
+
+    @router.post("/studio/playstore-kit")
+    async def kit_create(body: KitReq, request: Request):
+        from scraper import scrape as scrape_query
+        user = await current_user_dep(request)
+        app = await scrape_query(body.app_id.strip())
+        if not app.get("ok") or app.get("kind") != "playstore":
+            raise HTTPException(status_code=400, detail="Play Store app nahi mila — sahi ID ya link daalein")
+        user = await charge_credits(user, KIT_COST, "playstore_kit")
+        kit_id = new_id("kit")
+        await db.playstore_assets.insert_one({"id": kit_id, "kind": "kit", "user_id": user.user_id,
+                                              "app_id": app.get("id"), "brand_name": app.get("title"),
+                                              "status": "rendering", "created_at": utc_now().isoformat()})
+        asyncio.create_task(_kit_job(user, kit_id, app))
+        return {"kit_id": kit_id, "status": "rendering", "credits_left": user.credits}
+
+    @router.get("/studio/playstore-kit/{kit_id}")
+    async def kit_get(kit_id: str, request: Request):
+        user = await current_user_dep(request)
+        rec = await db.playstore_assets.find_one({"id": kit_id, "user_id": user.user_id}, {"_id": 0})
+        if not rec:
+            raise HTTPException(status_code=404, detail="Not found")
+        return rec
+
+    @router.get("/studio/playstore-kit/{kit_id}/zip")
+    async def kit_zip(kit_id: str, request: Request):
+        import zipfile
+        user = await current_user_dep(request)
+        rec = await db.playstore_assets.find_one({"id": kit_id, "user_id": user.user_id}, {"_id": 0})
+        if not rec or rec.get("status") != "complete":
+            raise HTTPException(status_code=404, detail="Kit not ready")
+        l = rec["listing"]
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("listing.txt", f"TITLE:\n{l['title']}\n\nSHORT DESCRIPTION:\n{l['short']}\n\nFULL DESCRIPTION:\n{l['full']}\n")
+            files = [("icon-512.png", rec.get("icon_url")), ("feature-graphic-1024x500.png", rec.get("feature_text_url")),
+                     ("promo-video-15s.mp4", rec.get("promo_url"))]
+            files += [(f"screenshot-{i + 1}-1080x1920.png", u) for i, u in enumerate(rec.get("screenshot_urls") or [])]
+            for fname, u in files:
+                data = await fetch_to_bytes(u) if u else None
+                if data:
+                    z.writestr(fname, data)
+        return Response(content=out.getvalue(), media_type="application/zip", headers={
+            "Content-Disposition": f'attachment; filename="playstore-kit-{rec.get("app_id", "app")}.zip"'})
+
     class PromoReq(BaseModel):
         music_id: Optional[str] = None
 

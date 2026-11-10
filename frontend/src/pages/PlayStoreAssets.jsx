@@ -6,6 +6,7 @@ import { assetUrl } from "../lib/assetUrl";
 import { AdaptiveIconCard } from "../components/playstore/AdaptiveIconCard";
 import { ScreenshotGenerator } from "../components/playstore/ScreenshotGenerator";
 import { KitSelect } from "../components/playstore/KitSelect";
+import { PlayStoreKit } from "../components/playstore/PlayStoreKit";
 
 const STYLES = [
   { id: "modern",  label: "Modern",  hint: "flat + bold geometry" },
@@ -112,6 +113,8 @@ export default function PlayStoreAssets() {
           Gemini Nano Banana.
         </p>
       </div>
+
+      <PlayStoreKit />
 
       {/* Info tip */}
       <div className="surface rounded-xl p-4 flex items-start gap-3 border border-white/5" data-testid="ps-tip">
