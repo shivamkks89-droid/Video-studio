@@ -12,7 +12,7 @@ import logging
 import re
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
 
@@ -829,6 +829,14 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
         app = await scrape_query(body.app_id.strip())
         if not app.get("ok") or app.get("kind") != "playstore":
             raise HTTPException(status_code=400, detail="Play Store app nahi mila — sahi ID ya link daalein")
+        # Self-heal kits killed mid-render (pod restart/OOM): fail + refund anything stuck >8 min.
+        stale = (utc_now() - timedelta(minutes=8)).isoformat()
+        async for k in db.playstore_assets.find({"kind": "kit", "user_id": user.user_id, "status": "rendering",
+                                                 "created_at": {"$lt": stale}}, {"id": 1}):
+            r = await db.playstore_assets.update_one({"id": k["id"], "status": "rendering"},
+                                                     {"$set": {"status": "failed", "error": "Server restart — credits wapas"}})
+            if r.modified_count:
+                await refund(user, KIT_COST, "playstore_kit_stale")
         user = await charge_credits(user, KIT_COST, "playstore_kit")
         kit_id = new_id("kit")
         await db.playstore_assets.insert_one({"id": kit_id, "kind": "kit", "user_id": user.user_id,

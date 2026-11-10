@@ -297,7 +297,8 @@ def build_promo(pngs: List[bytes], music: Optional[bytes] = None, seg: float = 5
             cmd += ["-map", f"{n}:a", "-af", f"afade=t=in:d=1,afade=t=out:st={total - 2.5}:d=2.5",
                     "-c:a", "aac", "-b:a", "128k"]
         out = Path(td) / "promo.mp4"
-        cmd += ["-t", f"{total}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-r", "30",
+        cmd += ["-t", f"{total}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-r", "30", "-threads", "2",
+                "-x264-params", "rc-lookahead=10", "-filter_complex_threads", "1",
                 "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(out)]
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=280)
         if not out.exists():
