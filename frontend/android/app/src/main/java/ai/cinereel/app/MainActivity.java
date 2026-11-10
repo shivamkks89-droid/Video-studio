@@ -74,20 +74,11 @@ public class MainActivity extends BridgeActivity {
                 Insets sys = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
                 Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
                 int bottom = Math.max(sys.bottom, ime.bottom);
-                // Subtract any offset the parent already has (some devices/plugins inset it) to avoid double gaps.
-                v.post(() -> {
-                    View parent = (View) v.getParent();
-                    int[] loc = new int[2];
-                    parent.getLocationOnScreen(loc);
-                    int screenH = parent.getRootView().getHeight();
-                    int parentBottomGap = Math.max(0, screenH - (loc[1] + parent.getHeight()));
-                    MarginLayoutParams mlp = (MarginLayoutParams) v.getLayoutParams();
-                    mlp.leftMargin = sys.left;
-                    mlp.rightMargin = sys.right;
-                    mlp.topMargin = Math.max(0, sys.top - loc[1]);
-                    mlp.bottomMargin = Math.max(0, bottom - parentBottomGap);
+                MarginLayoutParams mlp = (MarginLayoutParams) v.getLayoutParams();
+                if (mlp.leftMargin != sys.left || mlp.topMargin != sys.top || mlp.rightMargin != sys.right || mlp.bottomMargin != bottom) {
+                    mlp.setMargins(sys.left, sys.top, sys.right, bottom);
                     v.setLayoutParams(mlp);
-                });
+                }
                 return WindowInsetsCompat.CONSUMED;
             });
             ViewCompat.requestApplyInsets(webView);
