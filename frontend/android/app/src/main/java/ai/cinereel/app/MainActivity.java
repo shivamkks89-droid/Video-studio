@@ -73,15 +73,51 @@ public class MainActivity extends BridgeActivity {
             ViewCompat.setOnApplyWindowInsetsListener(webView, (v, insets) -> {
                 Insets sys = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
                 Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
-                int bottom = Math.max(sys.bottom, ime.bottom);
-                MarginLayoutParams mlp = (MarginLayoutParams) v.getLayoutParams();
-                if (mlp.leftMargin != sys.left || mlp.topMargin != sys.top || mlp.rightMargin != sys.right || mlp.bottomMargin != bottom) {
-                    mlp.setMargins(sys.left, sys.top, sys.right, bottom);
+                wantLeft = sys.left;
+                wantTop = sys.top;
+                wantRight = sys.right;
+                wantBottom = Math.max(sys.bottom, ime.bottom);
+                if (v.getWidth() == 0 || v.getHeight() == 0) {
+                    // Not laid out yet: apply directly, alignWebView() corrects it after layout.
+                    MarginLayoutParams mlp = (MarginLayoutParams) v.getLayoutParams();
+                    mlp.setMargins(wantLeft, wantTop, wantRight, wantBottom);
                     v.setLayoutParams(mlp);
+                } else {
+                    alignWebView(v);
                 }
                 return WindowInsetsCompat.CONSUMED;
             });
+            // Some Android versions / OEM skins also pad a parent view by the same inset, which doubled the
+            // top gap. After every layout, measure where the WebView really sits and correct the margins.
+            webView.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+                if (l != ol || t != ot || r != or || b != ob) v.post(() -> alignWebView(v));
+            });
             ViewCompat.requestApplyInsets(webView);
+        }
+    }
+
+
+    private int wantLeft = 0, wantTop = 0, wantRight = 0, wantBottom = 0;
+
+    /** Makes the WebView sit exactly below the status bar / cutout and above the nav bar / keyboard, once. */
+    private void alignWebView(View v) {
+        if (v.getWidth() == 0 || v.getHeight() == 0) return;
+        if (!(v.getLayoutParams() instanceof MarginLayoutParams)) return;
+        View root = v.getRootView();
+        int[] loc = new int[2];
+        v.getLocationInWindow(loc);
+        int curLeft = loc[0];
+        int curTop = loc[1];
+        int curRight = root.getWidth() - (loc[0] + v.getWidth());
+        int curBottom = root.getHeight() - (loc[1] + v.getHeight());
+        MarginLayoutParams mlp = (MarginLayoutParams) v.getLayoutParams();
+        int l = Math.max(0, mlp.leftMargin + wantLeft - curLeft);
+        int t = Math.max(0, mlp.topMargin + wantTop - curTop);
+        int r = Math.max(0, mlp.rightMargin + wantRight - curRight);
+        int b = Math.max(0, mlp.bottomMargin + wantBottom - curBottom);
+        if (l != mlp.leftMargin || t != mlp.topMargin || r != mlp.rightMargin || b != mlp.bottomMargin) {
+            mlp.setMargins(l, t, r, b);
+            v.setLayoutParams(mlp);
         }
     }
 
