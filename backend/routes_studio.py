@@ -812,7 +812,7 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
             pngs = await asyncio.to_thread(compose_all, shots, items, "brand", name, "classic", {})
             shot_urls = [await save_image_data_uri("data:image/png;base64," + base64.b64encode(x).decode()) for x in pngs]
             track = next((t for t in MUSIC_TRACKS if t.get("mood") == "corporate"), MUSIC_TRACKS[0])
-            mp4 = await asyncio.to_thread(build_promo, pngs, await fetch_to_bytes(track["url"]), 15 / len(pngs))
+            mp4 = await asyncio.to_thread(build_promo, pngs, await fetch_to_bytes(track["url"]), 15 / len(pngs), "720:1280")
             promo_url = await save_video_bytes(mp4)
             await db.playstore_assets.update_one({"id": kit_id}, {"$set": {
                 "status": "complete", "listing": listing, "icon_url": icon_url, "feature_text_url": feature_url,

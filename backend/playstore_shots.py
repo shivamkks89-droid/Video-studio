@@ -275,7 +275,7 @@ def compose_feature(img_bytes: bytes, brand_name: str, tagline: str, kit: Option
 TRANSITIONS = ["slideleft", "fade", "smoothup", "slideleft", "circleopen"]
 
 
-def build_promo(pngs: List[bytes], music: Optional[bytes] = None, seg: float = 5.0) -> bytes:
+def build_promo(pngs: List[bytes], music: Optional[bytes] = None, seg: float = 5.0, size: str = "1080:1920") -> bytes:
     """6 screenshots → ~30s 1080x1920 MP4 with xfade transitions + optional music bed."""
     with tempfile.TemporaryDirectory() as td:
         cmd = [FFMPEG_BIN, "-y"]
@@ -286,7 +286,7 @@ def build_promo(pngs: List[bytes], music: Optional[bytes] = None, seg: float = 5
         if music:
             mp = Path(td) / "m.mp3"; mp.write_bytes(music)
             cmd += ["-stream_loop", "-1", "-i", str(mp)]
-        parts = [f"[{i}:v]scale=1080:1920,setsar=1,format=yuv420p[v{i}]" for i in range(n)]
+        parts = [f"[{i}:v]scale={size},setsar=1,format=yuv420p[v{i}]" for i in range(n)]
         prev = "v0"
         for k in range(1, n):
             parts.append(f"[{prev}][v{k}]xfade=transition={TRANSITIONS[(k - 1) % 5]}:duration=0.5:offset={seg * k}[x{k}]")

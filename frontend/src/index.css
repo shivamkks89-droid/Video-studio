@@ -30,6 +30,10 @@ img, video, canvas, svg { max-width: 100%; height: auto; }
 }
 /* Android: native MainActivity already offsets the WebView by system-bar insets */
 html.native-app { --safe-top: 0px; --safe-bottom: 0px; --safe-left: 0px; --safe-right: 0px; }
+/* Explicit (the CSS minifier inlines the vars above into env(), so override the utilities directly) */
+html.native-app .safe-top { padding-top: 0 !important; }
+html.native-app .safe-bottom { padding-bottom: 0 !important; }
+html.native-app .safe-x { padding-left: 0 !important; padding-right: 0 !important; }
 .safe-top    { padding-top: max(var(--safe-top), 0px); }
 .safe-bottom { padding-bottom: max(var(--safe-bottom), 0px); }
 .safe-x      { padding-left: max(var(--safe-left), 0px); padding-right: max(var(--safe-right), 0px); }
