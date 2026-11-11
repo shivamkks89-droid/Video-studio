@@ -255,6 +255,15 @@ async def render_video(scenes: List[dict], audio_data_uri: Optional[str],
         img_url = sc.get("image_url") or ""
         b = await _fetch(img_url) if img_url else None
         if b:
+            try:
+                import io as _io
+                from PIL import Image as _Img
+                with _Img.open(_io.BytesIO(b)) as _im:
+                    _im.verify()
+            except Exception as e:
+                print(f"[render] skipping undecodable image {img_url[:80]}: {e}")
+                b = None
+        if b:
             phone = sc.get("phone_screen_url")
             items.append({"type": "image", "bytes": b, "text": (sc.get("on_screen_text") or "").strip(),
                           "duration": dur, "caption": sc.get("voiceover") or "",

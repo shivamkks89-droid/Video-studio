@@ -1351,8 +1351,13 @@ async def _fetch_as_data_uri(url: str) -> Optional[str]:
             if r.status_code != 200 or len(r.content) < 1024:
                 return None
             mime = r.headers.get("content-type", "image/jpeg").split(";")[0]
+            content = r.content
+            if "svg" in mime or content.lstrip()[:5] in (b"<?xml", b"<svg ") or b"<svg" in content[:512]:
+                import cairosvg
+                content = cairosvg.svg2png(bytestring=content, output_width=1024)
+                mime = "image/png"
             import base64 as _b64
-            data_uri = f"data:{mime};base64,{_b64.b64encode(r.content).decode()}"
+            data_uri = f"data:{mime};base64,{_b64.b64encode(content).decode()}"
             return (await save_image_persistent(data_uri)) or data_uri
     except Exception:
         return None
