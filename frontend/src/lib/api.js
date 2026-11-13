@@ -20,3 +20,12 @@ api.interceptors.request.use((cfg) => {
   cfg.headers["X-Device-Id"] = deviceId();
   return cfg;
 });
+
+
+api.interceptors.response.use(undefined, (err) => {
+  const d = err.response?.data?.detail;
+  if (err.response?.status === 402 && typeof d === "string" && d.includes("paid feature") && !window.location.pathname.startsWith("/pricing")) {
+    setTimeout(() => { window.location.href = "/pricing?reason=video"; }, 1800);
+  }
+  return Promise.reject(err);
+});

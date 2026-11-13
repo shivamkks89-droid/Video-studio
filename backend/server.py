@@ -874,6 +874,7 @@ async def video_clip_generate(body: VideoClipReq, request: Request):
     mode = (body.mode or "t2v").lower()
     if engine not in ("sora", "seedance"):
         raise HTTPException(status_code=400, detail="engine must be 'sora' or 'seedance'")
+    require_video_entitlement(await _current(request))
     if mode not in ("t2v", "i2v"):
         raise HTTPException(status_code=400, detail="mode must be 't2v' or 'i2v'")
     if engine == "sora" and mode == "i2v":
@@ -1649,7 +1650,7 @@ def _probe_audio_duration(audio_bytes: bytes) -> float:
     return 0.0
 
 
-FREE_VIDEO_LIMIT = 2
+FREE_VIDEO_LIMIT = 0
 
 
 async def _free_video_projects(user: User) -> list:
@@ -1673,13 +1674,24 @@ async def free_videos(request: Request):
             "left": max(0, FREE_VIDEO_LIMIT - used)}
 
 
+def has_video_entitlement(user: User) -> bool:
+    """Paid-only video: admin/unlimited, or a non-free plan that has not expired."""
+    if user.role == "admin" or user.unlimited_credits:
+        return True
+    if user.plan == "free":
+        return False
+    exp = getattr(user, "plan_expires_at", None)
+    return not exp or str(exp) > utc_now().isoformat()
+
+
+def require_video_entitlement(user: User):
+    if not has_video_entitlement(user):
+        raise HTTPException(status_code=402, detail="Video generation paid feature hai — plan upgrade karein.")
+
+
 async def _check_free_video_limit(user: User, project_id: str):
-    """Free plan: max 2 distinct videos per account (re-rendering the same project is free)."""
-    if user.plan != "free" or user.role == "admin" or user.unlimited_credits:
-        return
-    done = await _free_video_projects(user)
-    if project_id not in done and len(done) >= FREE_VIDEO_LIMIT:
-        raise HTTPException(status_code=402, detail=f"Free plan me sirf {FREE_VIDEO_LIMIT} videos ban sakte hain. Aur videos ke liye plan upgrade karo.")
+    """Strict paid model: free / expired users get zero renders or MP4 exports."""
+    require_video_entitlement(user)
 
 
 @api.post("/projects/{project_id}/render")

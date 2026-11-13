@@ -21,7 +21,7 @@ class User(BaseModel):
     picture: Optional[str] = None
     auth_provider: Literal["google", "email"] = "email"
     role: Literal["user", "admin"] = "user"
-    credits: int = 100
+    credits: int = 0
     plan: Literal["free", "starter", "creator", "studio", "enterprise"] = "free"
     plan_expires_at: Optional[str] = None
     previous_plan: Optional[str] = None

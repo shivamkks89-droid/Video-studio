@@ -371,6 +371,8 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
     @router.post("/avatars/lipsync")
     async def lipsync_avatar(body: LipSyncRequest, request: Request):
         user = await current_user_dep(request)
+        from server import require_video_entitlement
+        require_video_entitlement(user)
         proj = await db.projects.find_one(
             {"project_id": body.project_id, "user_id": user.user_id}, {"_id": 0},
         )
@@ -825,7 +827,9 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
     @router.post("/studio/playstore-kit")
     async def kit_create(body: KitReq, request: Request):
         from scraper import scrape as scrape_query
+        from server import require_video_entitlement
         user = await current_user_dep(request)
+        require_video_entitlement(user)
         app = await scrape_query(body.app_id.strip())
         if not app.get("ok") or app.get("kind") != "playstore":
             raise HTTPException(status_code=400, detail="Play Store app nahi mila — sahi ID ya link daalein")
@@ -898,7 +902,9 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
 
     @router.post("/studio/playstore-screenshots/{shot_id}/promo")
     async def shot_promo(shot_id: str, body: PromoReq, request: Request):
+        from server import require_video_entitlement
         user = await current_user_dep(request)
+        require_video_entitlement(user)
         rec = await db.playstore_shots.find_one({"id": shot_id, "user_id": user.user_id}, {"_id": 0})
         if not rec:
             raise HTTPException(status_code=404, detail="Not found")
@@ -973,6 +979,8 @@ def build_studio_router(db, current_user_dep, charge_credits, refund):
     @router.post("/projects/{project_id}/kinetic-videos")
     async def save_kinetic_video(project_id: str, request: Request, file: UploadFile = File(...)):
         user = await current_user_dep(request)
+        from server import require_video_entitlement
+        require_video_entitlement(user)
         await _own_project(project_id, user.user_id)
         raw = await file.read()
         if not raw or len(raw) > 80 * 1024 * 1024:
