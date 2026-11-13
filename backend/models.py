@@ -76,6 +76,7 @@ class Project(BaseModel):
     aspect_ratio: str = "9:16"  # 9:16, 16:9, 1:1
     resolution: str = "1080p"
     fps: int = 30
+    visual_style: Optional[str] = None
     status: Literal["draft", "scripting", "voicing", "rendering", "complete", "failed"] = "draft"
     script: Optional[dict] = None  # {hook, body, cta, scenes:[]}
     voice_id: Optional[str] = None
@@ -101,6 +102,7 @@ class ProjectCreate(BaseModel):
     resolution: str = "1080p"
     fps: int = 30
     duration_sec: int = 30
+    visual_style: Optional[str] = None
 
 
 # ---------- SCRIPT ----------

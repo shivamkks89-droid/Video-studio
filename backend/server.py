@@ -1270,20 +1270,33 @@ async def ai_tts_openai(body: OpenAITTSReq, request: Request):
             "provider": "openai", "credits_left": user.credits}
 
 
+VISUAL_STYLES = {
+    "photoreal": "photorealistic cinematic film still, 35mm lens, natural skin texture, shallow depth of field",
+    "bollywood": "vibrant Bollywood film look, rich saturated colours, dramatic glamorous lighting, Indian settings",
+    "luxury": "luxury commercial look, glossy premium surfaces, soft studio rim light, elegant minimal set",
+    "documentary": "documentary realism, handheld natural light, authentic real-world environments",
+    "minimal": "minimal professional look, clean neutral backgrounds, soft even light, lots of negative space",
+    "animated": "high-quality 3D animated film style, stylised characters, soft global illumination",
+    "social": "social-media native look, smartphone selfie framing, bright natural daylight, authentic creator vibe",
+}
+
+
 async def _character_ref(project_id: Optional[str], user_id: str):
     """(description, reference data-URI) of the project's master character, if any."""
     if not project_id:
         return None, None
-    p = await db.projects.find_one({"project_id": project_id, "user_id": user_id}, {"_id": 0, "character": 1})
+    p = await db.projects.find_one({"project_id": project_id, "user_id": user_id}, {"_id": 0, "character": 1, "visual_style": 1})
     ch = (p or {}).get("character") or {}
+    style = VISUAL_STYLES.get((p or {}).get("visual_style") or "")
+    desc = "; ".join(x for x in (ch.get("description"), f"Visual style: {style}" if style else None) if x) or None
     if not ch.get("image_url"):
-        return ch.get("description"), None
+        return desc, None
     try:
         b = await fetch_asset_bytes(ch["image_url"])
         mime = "image/jpeg" if b and b[:2] == b"\xff\xd8" else "image/png"
-        return ch.get("description"), f"data:{mime};base64," + base64.b64encode(b).decode() if b else None
+        return desc, f"data:{mime};base64," + base64.b64encode(b).decode() if b else None
     except Exception:
-        return ch.get("description"), None
+        return desc, None
 
 
 class DivineCharReq(BaseModel):

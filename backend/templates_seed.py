@@ -148,6 +148,11 @@ VIDEO_TYPES = [
     {"id": "ai_news", "name": "AI News", "icon": "newspaper", "default_ratio": "16:9"},
     {"id": "real_estate", "name": "Real Estate", "icon": "home", "default_ratio": "16:9"},
     {"id": "app_promo", "name": "App Promotion", "icon": "smartphone", "default_ratio": "9:16"},
+    {"id": "ugc_creator", "name": "UGC Creator Video", "icon": "user-square", "default_ratio": "9:16"},
+    {"id": "viral_reel", "name": "Viral Social Reel", "icon": "instagram", "default_ratio": "9:16"},
+    {"id": "dialogue", "name": "Multi-Character Dialogue", "icon": "film", "default_ratio": "9:16"},
+    {"id": "product_demo", "name": "Product Demonstration", "icon": "package", "default_ratio": "9:16"},
+    {"id": "storytelling", "name": "Cinematic Storytelling", "icon": "film", "default_ratio": "16:9"},
     {"id": "ecom_ad", "name": "E-commerce Ad", "icon": "shopping-bag", "default_ratio": "1:1"},
 ]
 

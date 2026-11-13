@@ -1,6 +1,7 @@
 import { TrendingToggle } from "../components/TrendingToggle";
 import { DivinePanel } from "../components/DivinePanel";
 import { MusicCaptionPanel } from "../components/MusicCaptionPanel";
+import { VisualStylePicker } from "../components/VisualStylePicker";
 import { FestivalPanel } from "../components/FestivalPanel";
 import { ScriptHistory } from "../components/ScriptHistory";
 import { ordinal } from "./RenderQueue";
@@ -1422,6 +1423,7 @@ export default function ProjectDetail() {
               <div className="flex items-center gap-2"><ImageIcon className="w-4 h-4 text-[#E2FF3D]" /><div className="font-medium">Cinematic Storyboard</div></div>
               <span className="label-mono text-zinc-500 whitespace-nowrap">3 CR / scene</span>
             </div>
+            <VisualStylePicker project={project} setProject={setProject} />
             <button data-testid="gen-scenes" onClick={() => genScenes(false)} disabled={busyScenes || !project.script}
               className="btn-volt rounded-full px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-60">
               {busyScenes ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
