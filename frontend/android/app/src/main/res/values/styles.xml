@@ -26,6 +26,9 @@
 
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <!-- Never let the launch theme add a native title bar -->
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionBar">false</item>
         <item name="android:windowBackground">@drawable/splash</item>
         <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>

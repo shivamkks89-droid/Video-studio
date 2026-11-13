@@ -10,7 +10,6 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import android.os.Build;
 import android.os.Bundle;
-import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup.MarginLayoutParams;
 import androidx.core.graphics.Insets;
@@ -58,8 +57,11 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(ShareTargetPlugin.class);
-        EdgeToEdge.enable(this);
         super.onCreate(savedInstanceState);
+        // Must run after super.onCreate(): BridgeActivity switches from the splash launch theme to
+        // AppTheme.NoActionBar there. Calling it earlier builds the window decor with the launch theme,
+        // which adds an empty native title bar (the grey strip under the status bar).
+        EdgeToEdge.enable(this);
         // Never show the native title bar ("CineReel" strip) — the web UI has its own header.
         if (getSupportActionBar() != null) getSupportActionBar().hide();
         setTitle("");
@@ -82,7 +84,6 @@ public class MainActivity extends BridgeActivity {
                 wantTop = bars.top > 0 ? bars.top : cut.top;
                 wantRight = Math.max(bars.right, cut.right);
                 wantBottom = Math.max(bars.bottom > 0 ? bars.bottom : cut.bottom, ime.bottom);
-                Log.d("CRInsets", "bars=" + bars + " cutout=" + cut + " ime=" + ime + " want=" + wantLeft + "," + wantTop + "," + wantRight + "," + wantBottom);
                 if (v.getWidth() == 0 || v.getHeight() == 0) {
                     // Not laid out yet: apply directly, alignWebView() corrects it after layout.
                     MarginLayoutParams mlp = (MarginLayoutParams) v.getLayoutParams();
@@ -122,7 +123,6 @@ public class MainActivity extends BridgeActivity {
         int r = Math.max(0, mlp.rightMargin + wantRight - curRight);
         int b = Math.max(0, mlp.bottomMargin + wantBottom - curBottom);
         if (l != mlp.leftMargin || t != mlp.topMargin || r != mlp.rightMargin || b != mlp.bottomMargin) {
-            Log.d("CRInsets", "align: webViewTop=" + curTop + " wantTop=" + wantTop + " margins=" + l + "," + t + "," + r + "," + b);
             mlp.setMargins(l, t, r, b);
             v.setLayoutParams(mlp);
         }
