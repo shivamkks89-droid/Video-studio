@@ -10,6 +10,7 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup.MarginLayoutParams;
 import androidx.core.graphics.Insets;
@@ -71,12 +72,17 @@ public class MainActivity extends BridgeActivity {
             View webView = getBridge().getWebView();
             webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
             ViewCompat.setOnApplyWindowInsetsListener(webView, (v, insets) -> {
-                Insets sys = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
+                Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+                Insets cut = insets.getInsets(WindowInsetsCompat.Type.displayCutout());
                 Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
-                wantLeft = sys.left;
-                wantTop = sys.top;
-                wantRight = sys.right;
-                wantBottom = Math.max(sys.bottom, ime.bottom);
+                // Top/bottom follow the real status/nav bars only. Some OEM skins report a display-cutout inset
+                // much taller than the status bar, which pushed the WebView down by ~2x the status bar height.
+                // The cutout is only used where there is no bar (landscape sides, or status bar hidden).
+                wantLeft = Math.max(bars.left, cut.left);
+                wantTop = bars.top > 0 ? bars.top : cut.top;
+                wantRight = Math.max(bars.right, cut.right);
+                wantBottom = Math.max(bars.bottom > 0 ? bars.bottom : cut.bottom, ime.bottom);
+                Log.d("CRInsets", "bars=" + bars + " cutout=" + cut + " ime=" + ime + " want=" + wantLeft + "," + wantTop + "," + wantRight + "," + wantBottom);
                 if (v.getWidth() == 0 || v.getHeight() == 0) {
                     // Not laid out yet: apply directly, alignWebView() corrects it after layout.
                     MarginLayoutParams mlp = (MarginLayoutParams) v.getLayoutParams();
@@ -116,6 +122,7 @@ public class MainActivity extends BridgeActivity {
         int r = Math.max(0, mlp.rightMargin + wantRight - curRight);
         int b = Math.max(0, mlp.bottomMargin + wantBottom - curBottom);
         if (l != mlp.leftMargin || t != mlp.topMargin || r != mlp.rightMargin || b != mlp.bottomMargin) {
+            Log.d("CRInsets", "align: webViewTop=" + curTop + " wantTop=" + wantTop + " margins=" + l + "," + t + "," + r + "," + b);
             mlp.setMargins(l, t, r, b);
             v.setLayoutParams(mlp);
         }
