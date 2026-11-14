@@ -144,6 +144,8 @@ class TTSRequest(BaseModel):
     similarity_boost: float = 0.75
     style: float = 0.3
     project_id: Optional[str] = None
+    delivery: Optional[str] = None   # natural|cinematic|emotional|energetic_ad|commercial|devotional|reel
+    speed: Optional[float] = None    # 0.7 - 1.2 (ElevenLabs supported range)
 
 
 # ---------- SCENE / IMAGE ----------

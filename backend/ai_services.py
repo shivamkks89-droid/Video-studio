@@ -42,6 +42,32 @@ INDIAN_VOICES = [
 ]
 
 
+# Real Indian-accent voices from the ElevenLabs library. They need a paid ElevenLabs plan via API;
+# on the free plan synthesize_speech transparently falls back to the `fallback` premade voice.
+INDIAN_LIBRARY = [
+    {"id": "2iAXJEMO2o0PqUHzvZwQ", "name": "Ranbir (Indian male)", "gender": "male", "language": "hinglish", "style": "natural", "fallback": "TX3LPaxmHKxFdv7VOQHJ"},
+    {"id": "2zRM7PkgwBPiau2jvVXc", "name": "Monika (Indian female)", "gender": "female", "language": "hinglish", "style": "social", "fallback": "cgSgspJ2msm6clMCkdW9"},
+    {"id": "siw1N9V8LmYeEWKyWBxv", "name": "Ruhaan (Hindi narrator)", "gender": "male", "language": "hindi", "style": "narrator", "fallback": "JBFqnCBsd6RMkjVDRZzb"},
+    {"id": "vYENaCJHl4vFKNDYPr8y", "name": "Riya Rao (Indian English)", "gender": "female", "language": "english", "style": "professional", "fallback": "Xb7hH8MSUJpSbSDYk0k2"},
+    {"id": "1U02n4nD6AdIZ9CjF053", "name": "Viraj (Indian English)", "gender": "male", "language": "english", "style": "calm", "fallback": "nPczCjzI2devNBz1zQrb"},
+    {"id": "bajNon13EdhNMndG3z05", "name": "Viraj (Ad narrator)", "gender": "male", "language": "hinglish", "style": "energetic", "fallback": "TX3LPaxmHKxFdv7VOQHJ"},
+    {"id": "P7vsEyTOpZ6YUTulin8m", "name": "Tara (Hinglish chat)", "gender": "female", "language": "hinglish", "style": "conversational", "fallback": "9BWtsMINqrJLrRacOk9x"},
+    {"id": "xMagNCpMgZ83QOEsHNre", "name": "Aaditya (Devotional)", "gender": "male", "language": "hindi", "style": "soothing", "fallback": "iP95p4xoKVk53GoZ742B"},
+]
+for _v in INDIAN_LIBRARY:
+    _v["accent"] = "indian"
+    _v["premium"] = True
+INDIAN_VOICES[:0] = INDIAN_LIBRARY
+_FALLBACK = {v["id"]: v["fallback"] for v in INDIAN_LIBRARY}
+
+# Delivery style -> ElevenLabs voice_settings (stability, similarity, style, speed)
+DELIVERY_STYLES = {
+    "natural": (0.5, 0.75, 0.25, 1.0), "cinematic": (0.6, 0.8, 0.45, 0.92), "emotional": (0.35, 0.8, 0.6, 0.95),
+    "energetic_ad": (0.35, 0.75, 0.65, 1.08), "commercial": (0.65, 0.8, 0.3, 1.0), "devotional": (0.7, 0.8, 0.35, 0.88),
+    "reel": (0.4, 0.75, 0.55, 1.1),
+}
+
+
 def list_voices(language: Optional[str] = None) -> List[dict]:
     if not language or language == "all":
         return INDIAN_VOICES
@@ -539,7 +565,7 @@ async def generate_scene_image(prompt: str, aspect_ratio: str = "9:16",
 # ---------- ElevenLabs TTS ----------
 async def synthesize_speech(text: str, voice_id: str, stability: float = 0.55,
                             similarity_boost: float = 0.75, style: float = 0.3,
-                            language_code: Optional[str] = None) -> dict:
+                            language_code: Optional[str] = None, speed: float = 1.0) -> dict:
     """Returns {audio_url} on success or {error} on failure (so the route can refund credits).
 
     `language_code` (ISO-639-1: "hi", "en", etc.) tells ElevenLabs' multilingual v2
@@ -571,6 +597,7 @@ async def synthesize_speech(text: str, voice_id: str, stability: float = 0.55,
                     "similarity_boost": similarity_boost,
                     "style": style,
                     "use_speaker_boost": True,
+                    **({"speed": speed} if speed and speed != 1.0 else {}),
                 },
             }
             if language_code:
@@ -589,7 +616,12 @@ async def synthesize_speech(text: str, voice_id: str, stability: float = 0.55,
         msg = str(e)
         # If the API rejected `language_code` (older SDK), retry once without it.
         if language_code and ("language_code" in msg or "unexpected" in msg.lower()):
-            return await synthesize_speech(text, voice_id, stability, similarity_boost, style, None)
+            return await synthesize_speech(text, voice_id, stability, similarity_boost, style, None, speed)
+        if ("paid_plan_required" in msg or getattr(e, "status_code", None) == 402 or "Free users cannot" in msg) and voice_id in _FALLBACK:
+            r = await synthesize_speech(text, _FALLBACK[voice_id], stability, similarity_boost, style, language_code, speed)
+            if r.get("audio_url"):
+                r["note"] = "Indian voice ke liye ElevenLabs paid plan chahiye — abhi standard voice use hui."
+            return r
         if "paid_plan_required" in msg or "Free users cannot use library voices" in msg:
             return {"error": "Your ElevenLabs plan does not allow this voice. Please upgrade ElevenLabs or clone a voice into your library."}
         return {"error": f"Voice service error: {msg[:160]}"}

@@ -1197,9 +1197,12 @@ async def ai_tts(body: TTSRequest, request: Request):
     iso_source = proj_accent if (accent_locked and proj_accent) else proj_lang
     language_code = project_language_to_iso(iso_source)
     # Try ElevenLabs first (real human-grade voice if user's plan allows)
-    result = await synthesize_speech(speak_text, body.voice_id, body.stability,
-                                     body.similarity_boost, body.style,
-                                     language_code=language_code)
+    from ai_services import DELIVERY_STYLES
+    stab, sim, sty, spd = DELIVERY_STYLES.get(body.delivery or "", (body.stability, body.similarity_boost, body.style, 1.0))
+    if body.speed:
+        spd = max(0.7, min(1.2, body.speed))
+    result = await synthesize_speech(speak_text, body.voice_id, stab, sim, sty,
+                                     language_code=language_code, speed=spd)
     if result.get("audio_url"):
         url = await save_audio_persistent(result["audio_url"]) or result["audio_url"]
         # Mark project voice as fresh — synced with current script_version.
@@ -1211,7 +1214,7 @@ async def ai_tts(body: TTSRequest, request: Request):
                 {"project_id": body.project_id, "user_id": user.user_id},
                 {"$set": {"voice_stale": False, "voice_script_version": sv}},
             )
-        return {"audio_url": url, "provider": "elevenlabs",
+        return {"audio_url": url, "provider": "elevenlabs", "note": result.get("note"),
                 "credits_left": user.credits}
     # Fallback: OpenAI TTS via Emergent LLM key.
     # For config errors (invalid/missing ElevenLabs key) we still fall back

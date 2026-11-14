@@ -2,6 +2,7 @@ import { TrendingToggle } from "../components/TrendingToggle";
 import { DivinePanel } from "../components/DivinePanel";
 import { MusicCaptionPanel } from "../components/MusicCaptionPanel";
 import { VisualStylePicker } from "../components/VisualStylePicker";
+import { DeliveryPicker } from "../components/DeliveryPicker";
 import { FestivalPanel } from "../components/FestivalPanel";
 import { ScriptHistory } from "../components/ScriptHistory";
 import { ordinal } from "./RenderQueue";
@@ -57,6 +58,8 @@ export default function ProjectDetail() {
   const [axis, setAxis] = useState("gender"); // gender | age | region
   const [metrics, setMetrics] = useState(null);
   const [busyVoice, setBusyVoice] = useState(false);
+  const [delivery, setDelivery] = useState("natural");
+  const [voiceSpeed, setVoiceSpeed] = useState(1);
   const [busyScenes, setBusyScenes] = useState(false);
   const [busyRender, setBusyRender] = useState(false);
   const [renderError, setRenderError] = useState(null);
@@ -415,7 +418,8 @@ export default function ProjectDetail() {
     if (!text) return toast.error("Generate a script first");
     setBusyVoice(true);
     try {
-      const { data } = await api.post("/ai/tts", { text, voice_id: voiceId, project_id: id });
+      const { data } = await api.post("/ai/tts", { text, voice_id: voiceId, project_id: id, delivery: delivery || null, speed: voiceSpeed });
+      if (data.note) toast.message(data.note);
       if (data.error) {
         toast.error(data.error);
         return;
@@ -1134,6 +1138,7 @@ export default function ProjectDetail() {
               </form>
             )}
 
+            <DeliveryPicker delivery={delivery} setDelivery={setDelivery} speed={voiceSpeed} setSpeed={setVoiceSpeed} />
             <div className="flex items-center gap-2">
               <button data-testid="voice-preview" onClick={() => previewVoice()} disabled={busyPreview || !voiceId}
                 className="rounded-full surface px-3 py-1.5 text-xs border border-white/10 hover:border-[#E2FF3D]/40 disabled:opacity-50 flex items-center gap-1">
